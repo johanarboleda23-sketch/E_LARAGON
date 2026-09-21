@@ -18,3 +18,10 @@ Route::middleware('auth')->group(function () {
 });
 
 require __DIR__.'/auth.php';
+use App\Http\Controllers\ItemController;
+
+Route::middleware(['auth'])->group(function () {
+    Route::get('/inventario', [ItemController::class, 'index'])->name('items.index');
+    Route::get('/inventario/crear', [ItemController::class, 'create'])->name('items.create');
+    Route::post('/inventario', [ItemController::class, 'store'])->name('items.store');
+});

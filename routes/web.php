@@ -1,10 +1,11 @@
 <?php
 
-use App\Http\Controllers\ProfileController;
-use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\PurchaseController;
 
-Route::get('/', function () {
-    return view('welcome');
+Route::middleware(['auth'])->group(function () {
+    Route::get('/compras', [PurchaseController::class, 'index'])->name('purchases.index');
+    Route::get('/compras/crear', [PurchaseController::class, 'create'])->name('purchases.create');
+    Route::post('/compras', [PurchaseController::class, 'store'])->name('purchases.store');
 });
 
 Route::get('/dashboard', function () {

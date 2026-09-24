@@ -1,11 +1,10 @@
 <?php
 
-use App\Http\Controllers\PurchaseController;
+use App\Http\Controllers\ProfileController;
+use Illuminate\Support\Facades\Route;
 
-Route::middleware(['auth'])->group(function () {
-    Route::get('/compras', [PurchaseController::class, 'index'])->name('purchases.index');
-    Route::get('/compras/crear', [PurchaseController::class, 'create'])->name('purchases.create');
-    Route::post('/compras', [PurchaseController::class, 'store'])->name('purchases.store');
+Route::get('/', function () {
+    return view('welcome');
 });
 
 Route::get('/dashboard', function () {
@@ -19,10 +18,4 @@ Route::middleware('auth')->group(function () {
 });
 
 require __DIR__.'/auth.php';
-use App\Http\Controllers\ItemController;
-
-Route::middleware(['auth'])->group(function () {
-    Route::get('/inventario', [ItemController::class, 'index'])->name('items.index');
-    Route::get('/inventario/crear', [ItemController::class, 'create'])->name('items.create');
-    Route::post('/inventario', [ItemController::class, 'store'])->name('items.store');
-});
+Route::resource('purchases', \App\Http\Controllers\PurchaseController::class);

@@ -10,13 +10,11 @@ use Illuminate\Support\Facades\DB;
 
 class PurchaseController extends Controller
 {
-    // 1. Muestra la pantalla principal de compras
+  // 1. Muestra la pantalla principal de compras
     public function index()
     {
-        $purchases = Purchase::latest()->get();
-        return view('purchases.index', compact('purchases'));
+        return view('purchases.index');
     }
-
     // 2. Guarda la factura de compra y alimenta automáticamente el inventario
     public function store(Request $request)
     {

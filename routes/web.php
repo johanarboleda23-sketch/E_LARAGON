@@ -1,21 +1,21 @@
 <?php
 
-use App\Http\Controllers\ProfileController;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\PurchaseController;
 
+// RUTA MAESTRA: Te redirecciona de inmediato al módulo de compras avanzado rosa
 Route::get('/', function () {
-    return view('welcome');
+    return redirect()->route('purchases.index');
 });
 
+// PUENTE DE NAVEGACIÓN: Evita que el menú superior se bloquee buscando el tablero
 Route::get('/dashboard', function () {
-    return view('dashboard');
-})->middleware(['auth', 'verified'])->name('dashboard');
+    return redirect()->route('purchases.index');
+})->name('dashboard');
 
-Route::middleware('auth')->group(function () {
-    Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
-    Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
-    Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
-});
+// Cable 1: El cargador robotizado del XML de la DIAN (En singular impecable)
+Route::post('/purchases/import-xml', [PurchaseController::class, 'importXML'])->name('purchases.import-xml');
 
-require __DIR__.'/auth.php';
-Route::resource('purchases', \App\Http\Controllers\PurchaseController::class);
+// Cable 2: El módulo general de gestión de compras avanzado rosa
+Route::resource('purchases', PurchaseController::class);
+Route::get('/compras-rosa', fn () => redirect()->route('purchases.index'));

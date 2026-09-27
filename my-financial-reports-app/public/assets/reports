@@ -1,0 +1,2 @@
+public/assets/reports
+This directory contains the static assets related to reports, such as images and CSS files. You can add any necessary files here for the report generation and export functionalities.

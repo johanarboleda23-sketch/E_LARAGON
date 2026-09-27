@@ -16,6 +16,16 @@
     <div class="py-12">
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg p-6 border-t-4 border-pink-400">
+                <form method="GET" action="{{ route('items.index') }}" class="mb-5 grid gap-3 md:grid-cols-4">
+                    <input type="search" name="search" value="{{ request('search') }}" placeholder="Buscar nombre o código" class="rounded-md border-gray-300">
+                    <select name="type" class="rounded-md border-gray-300">
+                        <option value="">Todos los tipos</option>
+                        <option value="producto" @selected(request('type') === 'producto')>Productos</option>
+                        <option value="servicio" @selected(request('type') === 'servicio')>Servicios</option>
+                    </select>
+                    <label class="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" name="low_stock" value="1" @checked(request('low_stock'))> Solo bajo mínimo</label>
+                    <button class="rounded-md bg-pink-500 px-4 py-2 text-sm font-semibold text-white">Filtrar</button>
+                </form>
                 <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-pink-100">
                         <thead class="bg-pink-50">
@@ -23,7 +33,9 @@
                                 <th class="px-6 py-3 text-left text-xs font-medium text-pink-700 uppercase">Tipo</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-pink-700 uppercase">Nombre</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-pink-700 uppercase">P. Venta</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-pink-700 uppercase">P. Compra</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-pink-700 uppercase">Stock</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-pink-700 uppercase">Acciones</th>
                             </tr>
                         </thead>
                         <tbody class="bg-white divide-y divide-gray-100">
@@ -32,11 +44,31 @@
                                     <td class="px-6 py-4 text-sm font-semibold text-pink-600">{{ ucfirst($item->type) }}</td>
                                     <td class="px-6 py-4 text-sm text-gray-900">{{ $item->name }}</td>
                                     <td class="px-6 py-4 text-sm text-gray-900">${{ number_format($item->sale_price, 2) }}</td>
-                                    <td class="px-6 py-4 text-sm text-gray-900">{{ $item->type === 'producto' ? $item->stock : 'Servicio' }}</td>
+                                    <td class="px-6 py-4 text-sm text-gray-900">{{ $item->purchase_price !== null ? '$' . number_format($item->purchase_price, 2) : 'N/A' }}</td>
+                                    <td class="px-6 py-4 text-sm {{ $item->type === 'producto' && $item->stock <= $item->min_stock ? 'font-bold text-red-600' : 'text-gray-900' }}">{{ $item->type === 'producto' ? $item->stock . ' (mín. ' . $item->min_stock . ')' : 'Servicio' }}</td>
+                                    <td class="px-6 py-4 text-sm"><a href="{{ route('items.edit', $item) }}" class="text-pink-600 hover:underline">Editar</a>
+                                        @if ($item->type === 'producto')
+                                            <form action="{{ route('items.stock', $item) }}" method="POST" class="mt-2 flex flex-wrap items-center gap-1">
+                                                @csrf
+                                                <select name="movement_type" class="rounded border-gray-300 text-xs">
+                                                    <option value="entrada">Entrada</option>
+                                                    <option value="salida">Salida</option>
+                                                </select>
+                                                <input type="number" name="quantity" min="1" value="1" required class="w-16 rounded border-gray-300 text-xs">
+                                                <input type="text" name="reason" placeholder="Motivo" class="w-24 rounded border-gray-300 text-xs">
+                                                <button class="text-blue-600 hover:underline">Aplicar</button>
+                                            </form>
+                                        @endif
+                                        <form action="{{ route('items.destroy', $item) }}" method="POST" class="inline" onsubmit="return confirm('¿Eliminar este registro?')">
+                                            @csrf
+                                            @method('DELETE')
+                                            <button class="ml-3 text-red-600 hover:underline">Eliminar</button>
+                                        </form>
+                                    </td>
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="4" class="px-6 py-4 text-center text-sm text-gray-400">No hay registros aún.</td>
+                                    <td colspan="6" class="px-6 py-4 text-center text-sm text-gray-400">No hay registros aún.</td>
                                 </tr>
                             @endforelse
                         </tbody>

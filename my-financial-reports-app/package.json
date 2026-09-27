@@ -1,0 +1,30 @@
+{
+  "name": "my-financial-reports-app",
+  "version": "1.0.0",
+  "description": "A Laravel application for generating financial reports with PDF and Excel export capabilities.",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "watch": "vite build --watch"
+  },
+  "dependencies": {
+    "axios": "^0.21.1",
+    "laravel-vite-plugin": "^0.5.0",
+    "vue": "^3.2.0"
+  },
+  "devDependencies": {
+    "vite": "^2.6.0",
+    "sass": "^1.32.0",
+    "sass-loader": "^10.1.0"
+  },
+  "keywords": [
+    "laravel",
+    "financial",
+    "reports",
+    "pdf",
+    "excel"
+  ],
+  "author": "Your Name",
+  "license": "MIT"
+}

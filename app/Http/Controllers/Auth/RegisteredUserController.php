@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Models\Company;
 use App\Models\User;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\RedirectResponse;
@@ -41,6 +42,10 @@ class RegisteredUserController extends Controller
             'email' => $request->email,
             'password' => Hash::make($request->password),
         ]);
+
+        $company = Company::create(['name' => 'Empresa de '.$user->name]);
+        $user->companies()->attach($company, ['role' => 'admin']);
+        session(['company_id' => $company->id]);
 
         event(new Registered($user));
 

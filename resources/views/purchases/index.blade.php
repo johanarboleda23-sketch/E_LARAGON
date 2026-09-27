@@ -14,6 +14,17 @@
         .btn-white { background: white; border: 1px solid #d1d5db; padding: 5px 10px; border-radius: 6px; font-weight: 600; font-size: 11px; cursor: pointer; }
         .btn-pink-light { background: #fce7f3; border: 1px solid #fbcfe8; color: #be185d; padding: 5px 10px; border-radius: 6px; font-weight: bold; font-size: 11px; cursor: pointer; }
         .btn-pink-dark { background: #db2777; color: white; padding: 5px 14px; border-radius: 6px; font-weight: bold; font-size: 11px; border: none; cursor: pointer; }
+        .download-menu { position: relative; }
+        .download-menu > button { display: inline-flex; align-items: center; gap: 5px; }
+        .download-options { display: none; position: absolute; right: 0; top: calc(100% + 4px); z-index: 10; min-width: 130px; padding: 4px; background: white; border: 1px solid #fbcfe8; border-radius: 6px; box-shadow: 0 8px 18px rgba(190,24,93,0.15); }
+        .download-menu.open .download-options { display: grid; }
+        .download-options button { border: 0; background: white; padding: 7px 9px; text-align: left; color: #374151; cursor: pointer; font-size: 11px; }
+        .download-options button:hover { background: #fce7f3; color: #be185d; }
+        @media print {
+            body { background: white; padding: 0; }
+            .top-bar, .dian-box, .btn-pink-light, .download-menu, .btn-pink-dark, .remove-row, #payment-method, #credit-days { display: none !important; }
+            .form-container { border: 0; box-shadow: none; padding: 0; }
+        }
         .dian-box { background: linear-gradient(to right, rgba(219,39,119,0.1), rgba(147,51,234,0.05)); padding: 10px; border-radius: 10px; border: 1px solid #fbcfe8; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; }
         .grid-header { display: grid; grid-template-cols: repeat(5, 1fr); gap: 10px; background: rgba(252,231,243,0.3); padding: 10px; border-radius: 10px; border: 1px solid #fbcfe8; margin-bottom: 15px; }
         .grid-header label { display: block; font-weight: bold; color: #be185d; text-transform: uppercase; font-size: 10px; margin-bottom: 2px; }
@@ -39,30 +50,40 @@
             <div class="top-bar">
                 <div><h2 class="title-pink">🛒 Módulo de Gestión de Compras Avanzado</h2></div>
                 <div class="btn-group">
-                    <button type="button" onclick="handleTopButton('Editar')" class="btn-white">Editar</button>
-                    <button type="button" onclick="handleTopButton('Eliminar')" class="btn-white">Eliminar</button>
-                    <button type="button" onclick="handleTopButton('Notas')" class="btn-pink-light">Notas Crédito / Débito</button>
-                    <button type="button" onclick="handleTopButton('Cartera')" class="btn-white" style="border-color:#bfdbfe; color:#1d4ed8;">Estado Cartera (C x P)</button>
-                    <button type="button" onclick="handleTopButton('PUC')" class="btn-white" style="border-color:#e9d5ff; color:#6b21a8;">Ver Asiento Contable</button>
+                    <button type="button" onclick="editInvoice()" class="btn-white">Editar</button>
+                    <button type="button" onclick="clearInvoice()" class="btn-white">Eliminar</button>
+                    <button type="button" onclick="showCreditNote()" class="btn-pink-light">Notas Crédito / Débito</button>
+                    <button type="button" onclick="focusReceivable()" class="btn-white" style="border-color:#bfdbfe; color:#1d4ed8;">Estado Cartera (C x P)</button>
+                    <button type="button" onclick="showAccountingEntry()" class="btn-white" style="border-color:#e9d5ff; color:#6b21a8;">Ver Asiento Contable</button>
                     <a href="/items" class="btn-pink-light" style="text-decoration:none; display:inline-block; line-height:14px;">📦 Almacén / Inventario</a>
+                    <div class="download-menu" id="download-menu">
+                        <button type="button" class="btn-white" onclick="toggleDownloadMenu(event)" aria-expanded="false" title="Imprimir o descargar">⇩ <span>Salida</span></button>
+                        <div class="download-options" role="menu">
+                            <button type="button" onclick="printInvoice()" role="menuitem">🖨 Imprimir</button>
+                            <button type="button" onclick="downloadInvoice()" role="menuitem">⇩ Descargar</button>
+                        </div>
+                    </div>
                     <button type="submit" class="btn-pink-dark">💾 Guardar Factura</button>
                 </div>
             </div>
 
             <!-- CARGADOR ROBÓTICO XML DIAN -->
-            <div class="dian-box">
+            <div class="dian-box" id="dian">
                 <div>
                     <h4 style="color:#9d174d; font-weight:bold; margin:0 0 2px 0; text-transform: uppercase; font-size:11px;">⚡ Causación Automática IA + DIAN</h4>
                     <p style="color:#6b7280; font-size:10px; margin:0;">Sube el archivo XML de tu proveedor para rellenar NIT, Factura y Totales mediante el código CUFE.</p>
                 </div>
                 <div>
                     <input type="file" id="xml_file" accept=".xml" onchange="processDIANXml()" style="display:none;">
+                    <button type="button" onclick="openDianPortal()" class="btn-white" style="border-color:#059669; color:#047857; padding:4px 10px;">↗ Ir a DIAN</button>
                     <button type="button" onclick="document.getElementById('xml_file').click()" class="btn-pink-dark" style="background:#059669; padding:4px 10px;">⚡ Cargar XML DIAN</button>
                     <span id="upload-status" style="margin-left:10px; font-style:italic; font-weight:bold;"></span>
                 </div>
             </div>
 
             <input type="hidden" name="cufe_dian" id="hidden-cufe">
+            <input type="hidden" name="provider_prefix" id="provider-prefix">
+            <input type="hidden" name="provider_consecutive" id="provider-consecutive">
 
             <!-- ENCABEZADO FISCAL ESTILO FACTURA REAL -->
             <div class="grid-header">
@@ -70,12 +91,20 @@
                     <label>Tipo Documento</label>
                     <select name="document_type_id" class="input-style"><option value="contado">Factura Contado (FCC)</option><option value="credito">Factura Crédito (FCR)</option></select>
                 </div>
-                <div><label>Consecutivo Interno</label><input type="text" name="consecutivo" value="COM-001" class="input-style" style="background:#f3f4f6; font-weight:bold;" readonly></div>
+                <div><label>Consecutivo Interno</label><input type="text" name="consecutivo" id="consecutivo" value="COM-001" class="input-style" style="background:#f3f4f6; font-weight:bold;" maxlength="50"></div>
                 <div><label>N° Factura Proveedor</label><input type="text" id="invoice_number" name="invoice_number" required class="input-style"></div>
-                <div><label>Proveedor / NIT</label><input type="text" id="provider" name="provider" required class="input-style"></div>
+                <div><label>Proveedor / NIT</label><select id="provider" name="provider" required class="input-style"><option value="">Seleccione proveedor</option>@foreach($suppliers as $supplier)<option value="{{ $supplier->name }}">{{ $supplier->name }}{{ $supplier->document ? ' - ' . $supplier->document : '' }}</option>@endforeach</select></div>
                 <div>
                     <label>Responsabilidad Fiscal</label>
-                    <select name="provider_regimen" id="provider-regimen" onchange="calculateTotals()" required class="input-style"><option value="comun">Régimen Común</option><option value="simplificado">Régimen Simplificado</option><option value="gran_contribuyente">Gran Contribuyente</option></select>
+                    <select name="provider_regimen" id="provider-regimen" onchange="calculateTotals()" required class="input-style"><option value="comun">Régimen Común</option><option value="simplificado">Régimen Simplificado</option><option value="gran_contribuyente">Gran Contribuyente</option><option value="sin_responsabilidad">SIN RESPONSABILIDAD</option></select>
+                </div>
+                <div>
+                    <label>Concepto de retención</label>
+                    <select name="withholding_concept" id="withholding-concept" onchange="calculateTotals()" class="input-style">
+                        @foreach($withholdings['concepts'] as $conceptKey => $concept)
+                            <option value="{{ $conceptKey }}" data-rate="{{ $concept['rate'] }}" data-base-uvt="{{ $concept['base_uvt'] }}" data-base-on="{{ $concept['base_on'] }}">{{ $concept['label'] }}</option>
+                        @endforeach
+                    </select>
                 </div>
             </div>
 
@@ -134,14 +163,59 @@
                 <div class="totals-box">
                     <div class="flex-box"><span>Subtotal</span><strong id="subtotal-total">$0.00</strong></div>
                     <div class="flex-box"><span>IVA</span><strong id="iva-total">$0.00</strong></div>
+                    <div class="flex-box"><span id="retention-label">Retención</span><strong id="retention-total">$0.00</strong></div>
                     <div class="total-row-pink"><span>Total</span><strong id="grand-total">$0.00</strong></div>
                 </div>
             </div>
 
             <input type="hidden" name="subtotal" id="subtotal-value" value="0">
             <input type="hidden" name="iva_total" id="iva-value" value="0">
+            <input type="hidden" name="retefuente" id="retention-value" value="0">
+            <input type="hidden" name="retention_base" id="retention-base-value" value="0">
             <input type="hidden" name="total_pagar" id="total-value" value="0">
         </form>
+    </div>
+
+    <div class="form-container" style="margin-top:15px;">
+        <h3 class="title-pink" style="margin-bottom:10px;">Historial de facturas y responsables</h3>
+        <div class="table-box">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Factura</th>
+                        <th>Proveedor</th>
+                        <th>Creada por</th>
+                        <th>Fecha creación</th>
+                        <th>Eliminada por</th>
+                        <th>Estado</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @forelse($recentPurchases as $purchase)
+                        <tr>
+                            <td>{{ $purchase->invoice_number }}</td>
+                            <td>{{ $purchase->provider }}</td>
+                            <td>{{ $purchase->creator?->name ?? 'Sistema / invitado' }}</td>
+                            <td>{{ $purchase->created_at?->format('Y-m-d H:i') }}</td>
+                            <td>{{ $purchase->deleter?->name ?? 'N/A' }}</td>
+                            <td>{{ $purchase->trashed() ? 'Eliminada' : 'Activa' }}</td>
+                            <td>
+                                @if(!$purchase->trashed())
+                                    <form action="{{ route('purchases.destroy', $purchase) }}" method="POST" onsubmit="return confirm('¿Eliminar esta factura? Quedará en el historial.')">
+                                        @csrf
+                                        @method('DELETE')
+                                        <button type="submit" class="btn-white">Eliminar</button>
+                                    </form>
+                                @endif
+                            </td>
+                        </tr>
+                    @empty
+                        <tr><td colspan="7">Aún no hay facturas registradas.</td></tr>
+                    @endforelse
+                </tbody>
+            </table>
+        </div>
     </div>
 
     <script>
@@ -174,6 +248,15 @@
         function calculateTotals() {
             let subtotal = 0;
             let ivaTotal = 0;
+            const providerRegimen = document.getElementById('provider-regimen').value;
+            const withholdingSelect = document.getElementById('withholding-concept');
+            if (providerRegimen === 'sin_responsabilidad' && withholdingSelect.value === 'none') {
+                withholdingSelect.value = 'purchase_no_declarante';
+            }
+            const selectedConcept = withholdingSelect.options[withholdingSelect.selectedIndex];
+            const retentionRate = Number(selectedConcept?.dataset.rate || 0);
+            const baseUvt = Number(selectedConcept?.dataset.baseUvt || 0);
+            const baseOn = selectedConcept?.dataset.baseOn || 'subtotal';
 
             document.querySelectorAll('.item-row').forEach((row) => {
                 const quantity = Number(row.querySelector('.qty-input')?.value || 0);
@@ -187,12 +270,20 @@
                 row.querySelector('.row-total').textContent = formatCurrency(lineSubtotal + lineIva);
             });
 
-            const total = subtotal + ivaTotal;
+            const retentionBase = baseOn === 'iva' ? ivaTotal : subtotal;
+            const minimumBase = baseUvt * {{ $withholdings['uvt'] }};
+            const taxableBase = retentionBase >= minimumBase ? retentionBase : 0;
+            const retention = taxableBase * retentionRate;
+            const total = subtotal + ivaTotal - retention;
             document.getElementById('subtotal-total').textContent = formatCurrency(subtotal);
             document.getElementById('iva-total').textContent = formatCurrency(ivaTotal);
+            document.getElementById('retention-label').textContent = selectedConcept?.textContent || 'Retención';
+            document.getElementById('retention-total').textContent = formatCurrency(retention);
             document.getElementById('grand-total').textContent = formatCurrency(total);
             document.getElementById('subtotal-value').value = subtotal.toFixed(2);
             document.getElementById('iva-value').value = ivaTotal.toFixed(2);
+            document.getElementById('retention-value').value = retention.toFixed(2);
+            document.getElementById('retention-base-value').value = taxableBase.toFixed(2);
             document.getElementById('total-value').value = total.toFixed(2);
         }
 
@@ -200,8 +291,78 @@
             return '$' + value.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         }
 
-        function handleTopButton(action) {
-            window.alert('La opción "' + action + '" estará disponible desde el listado de compras.');
+        function openDianPortal() {
+            window.open('https://www.dian.gov.co/', '_blank', 'noopener,noreferrer');
+        }
+
+        function editInvoice() {
+            document.querySelectorAll('#purchase-form input, #purchase-form select').forEach((field) => {
+                if (field.type !== 'hidden') field.disabled = false;
+            });
+            document.getElementById('invoice_number').focus();
+        }
+
+        function clearInvoice() {
+            if (!window.confirm('¿Deseas limpiar los datos de esta factura?')) return;
+            document.getElementById('purchase-form').reset();
+            document.querySelectorAll('.item-row:not(:first-child)').forEach((row) => row.remove());
+            rowIndex = 1;
+            calculateTotals();
+        }
+
+        function showCreditNote() {
+            window.alert('Las notas crédito y débito se gestionarán desde el documento guardado.');
+        }
+
+        function focusReceivable() {
+            const paymentMethod = document.getElementById('payment-method');
+            paymentMethod.value = 'credit';
+            document.getElementById('credit-days').focus();
+        }
+
+        function showAccountingEntry() {
+            const total = document.getElementById('total-value').value;
+            window.alert('Asiento contable preliminar\n\nDébito: Inventario\nCrédito: Proveedores\nTotal: ' + formatCurrency(Number(total)));
+        }
+
+        function toggleDownloadMenu(event) {
+            event.stopPropagation();
+            const menu = document.getElementById('download-menu');
+            menu.classList.toggle('open');
+            menu.querySelector('button').setAttribute('aria-expanded', menu.classList.contains('open'));
+        }
+
+        function printInvoice() {
+            document.getElementById('download-menu').classList.remove('open');
+            window.print();
+        }
+
+        function downloadInvoice() {
+            const rows = Array.from(document.querySelectorAll('.item-row')).map((row) => {
+                const product = row.querySelector('.product-search').value;
+                const quantity = row.querySelector('.qty-input').value;
+                const price = row.querySelector('.price-input').value;
+                const iva = row.querySelector('.iva-input').value;
+                return [product, quantity, price, iva, row.querySelector('.row-total').textContent];
+            });
+            const csv = [
+                ['Factura', document.getElementById('invoice_number').value],
+                ['Proveedor', document.getElementById('provider').value],
+                [],
+                ['Producto', 'Cantidad', 'Costo', 'IVA %', 'Total'],
+                ...rows,
+                [],
+                ['Subtotal', document.getElementById('subtotal-total').textContent],
+                ['IVA', document.getElementById('iva-total').textContent],
+                ['Total', document.getElementById('grand-total').textContent]
+            ].map((line) => line.map((value) => `"${String(value ?? '').replaceAll('"', '""')}"`).join(';')).join('\n');
+            const blob = new Blob(["\ufeff" + csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = (document.getElementById('invoice_number').value || 'factura-compra') + '.csv';
+            link.click();
+            URL.revokeObjectURL(link.href);
+            document.getElementById('download-menu').classList.remove('open');
         }
 
         function processDIANXml() {
@@ -224,7 +385,9 @@
                     document.getElementById('invoice_number').value = data.invoice_number;
                     document.getElementById('provider').value = data.provider;
                     document.getElementById('hidden-cufe').value = data.cufe;
-                    status.textContent = data.message;
+                    document.getElementById('provider-prefix').value = data.prefix || '';
+                    document.getElementById('provider-consecutive').value = data.consecutive || '';
+                    status.textContent = data.message + ' Prefijo: ' + (data.prefix || 'N/A') + ' | Consecutivo: ' + (data.consecutive || 'N/A');
                 })
                 .catch((error) => { status.textContent = error.message; });
         }
@@ -239,6 +402,10 @@
                 event.target.closest('.item-row').querySelector('.product-id').value = option?.dataset.id || '';
             }
             if (event.target.closest('.item-row')) calculateTotals();
+        });
+
+        document.addEventListener('click', (event) => {
+            if (!event.target.closest('#download-menu')) document.getElementById('download-menu').classList.remove('open');
         });
 
         calculateTotals();

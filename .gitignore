@@ -20,6 +20,7 @@
 /public/storage
 /storage/*.key
 /storage/pail
+/mysql-8.4
 /vendor
 _ide_helper.php
 Homestead.json

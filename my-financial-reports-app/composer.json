@@ -1,0 +1,36 @@
+{
+    "name": "my-financial-reports-app",
+    "description": "A Laravel application for generating financial reports with PDF and Excel export functionality.",
+    "type": "project",
+    "require": {
+        "php": "^8.0",
+        "laravel/framework": "^9.0",
+        "laravel/tinker": "^2.0",
+        "maatwebsite/excel": "^3.1",
+        "dompdf/dompdf": "^1.0"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^9.0",
+        "fakerphp/faker": "^1.9",
+        "mockery/mockery": "^1.4"
+    },
+    "autoload": {
+        "psr-4": {
+            "App\\": "app/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "post-autoload-dump": [
+            "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
+            "php artisan package:discover --ansi"
+        ],
+        "test": "phpunit"
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

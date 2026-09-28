@@ -7,9 +7,11 @@ use RuntimeException;
 
 class MapboxService
 {
-    public function __construct(private readonly ?string $token = null)
+    private readonly ?string $token;
+
+    public function __construct(?string $token = null)
     {
-        $this->token ??= config('services.mapbox.token');
+        $this->token = $token ?? config('services.mapbox.token');
     }
 
     public function isConfigured(): bool

@@ -67,6 +67,7 @@ class MapboxService
         $response = Http::get('https://api.mapbox.com/optimized-trips/v1/mapbox/driving/'.$coordinatesParam, [
             'access_token' => $this->token,
             'source' => 'first',
+            'destination' => 'last',
             'roundtrip' => 'false',
         ]);
 

@@ -2,10 +2,12 @@
 
 use App\Http\Controllers\AccountingVoucherController;
 use App\Http\Controllers\AdminController;
+use App\Http\Controllers\BulkOperationController;
 use App\Http\Controllers\ChartOfAccountController;
 use App\Http\Controllers\CommercialDocumentController;
 use App\Http\Controllers\CompanyController;
 use App\Http\Controllers\ItemController;
+use App\Http\Controllers\LogisticsController;
 use App\Http\Controllers\PayrollController;
 use App\Http\Controllers\PurchaseController;
 use App\Http\Controllers\ReportController;
@@ -85,10 +87,23 @@ Route::middleware(['auth', 'company'])->group(function () {
     Route::get('/nomina', [PayrollController::class, 'index'])->name('payroll.index');
     Route::post('/nomina/calcular', [PayrollController::class, 'calculate'])->name('payroll.calculate');
     Route::post('/nomina/lineas/{line}/correo', [PayrollController::class, 'email'])->name('payroll.email');
+    Route::get('/operaciones-masivas', [BulkOperationController::class, 'index'])->name('bulk-operations.index');
+    Route::post('/operaciones-masivas/imprimir', [BulkOperationController::class, 'print'])->name('bulk-operations.print');
+    Route::post('/operaciones-masivas/descargar', [BulkOperationController::class, 'download'])->name('bulk-operations.download');
+    Route::post('/operaciones-masivas/correo', [BulkOperationController::class, 'email'])->name('bulk-operations.email');
     Route::get('/administracion', [AdminController::class, 'index'])->name('admin.index');
     Route::post('/administracion/empresas', [AdminController::class, 'storeCompany'])->name('admin.companies.store');
     Route::post('/administracion/miembros', [AdminController::class, 'addMember'])->name('admin.members.store');
     Route::put('/administracion/miembros/{user}/rol', [AdminController::class, 'updateRole'])->name('admin.members.role');
+    Route::get('/logistica', [LogisticsController::class, 'index'])->name('logistics.index');
+    Route::post('/logistica', [LogisticsController::class, 'store'])->name('logistics.store');
+    Route::get('/logistica/{route}', [LogisticsController::class, 'show'])->name('logistics.show');
+    Route::get('/logistica/{route}/manifiesto', [LogisticsController::class, 'manifest'])->name('logistics.manifest');
+    Route::post('/logistica/{route}/planificar', [LogisticsController::class, 'plan'])->name('logistics.plan');
+    Route::post('/logistica/{route}/paradas/importar', [LogisticsController::class, 'importStops'])->name('logistics.stops.import');
+    Route::post('/logistica/{route}/paradas', [LogisticsController::class, 'storeStop'])->name('logistics.stops.store');
+    Route::post('/logistica/paradas/{stop}/entrega', [LogisticsController::class, 'deliverStop'])->name('logistics.stops.deliver');
+    Route::get('/logistica/paradas/{stop}/evidencia', [LogisticsController::class, 'evidence'])->name('logistics.stops.evidence');
 });
 
 require __DIR__.'/auth.php';

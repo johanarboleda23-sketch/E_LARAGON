@@ -105,6 +105,12 @@
                 <a href="{{ route('purchases.index') }}#dian" class="inline-flex items-center gap-1 rounded-md px-2 py-2 text-xs font-bold text-white shadow-sm transition hover:opacity-90" style="background:#ea580c;">
                     <span>⚡</span> DIAN / XML
                 </a>
+                <a href="{{ route('bulk-operations.index') }}" class="inline-flex items-center gap-1 rounded-md px-2 py-2 text-xs font-bold text-white shadow-sm transition hover:opacity-90" style="background:#334155;">
+                    <span>⇪</span> Operaciones masivas
+                </a>
+                <a href="{{ route('logistics.index') }}" class="inline-flex items-center gap-1 rounded-md px-2 py-2 text-xs font-bold text-white shadow-sm transition hover:opacity-90" style="background:#166534;">
+                    <span>🚚</span> Logística
+                </a>
             </div>
 
             <div class="mt-8 flex flex-wrap gap-3 text-sm text-gray-500">

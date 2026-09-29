@@ -9,6 +9,7 @@ use App\Http\Controllers\CompanyController;
 use App\Http\Controllers\ItemController;
 use App\Http\Controllers\LogisticsController;
 use App\Http\Controllers\PayrollController;
+use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PurchaseController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\SaleController;
@@ -29,6 +30,12 @@ Route::get('/dashboard', function () {
 })->name('dashboard');
 
 Route::post('/empresa/cambiar', [CompanyController::class, 'switch'])->middleware('auth')->name('company.switch');
+
+Route::middleware('auth')->group(function () {
+    Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
+    Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
+    Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+});
 
 Route::middleware(['auth', 'company'])->group(function () {
     Route::get('/cotizaciones', [CommercialDocumentController::class, 'index'])->defaults('documentType', 'quotation')->name('commercial-documents.quotations');

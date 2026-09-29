@@ -60,13 +60,18 @@
                     </div>
 
                     <div class="mt-6 overflow-x-auto">
+                        <datalist id="chart-account-options">
+                            @foreach($accounts as $account)
+                                <option value="{{ $account->code }} - {{ $account->name }}"></option>
+                            @endforeach
+                        </datalist>
                         <table class="w-full text-left text-sm">
                             <thead class="border-b bg-gray-50 text-xs uppercase text-gray-500">
                                 <tr><th class="p-2">Cuenta PUC</th><th class="p-2">Detalle</th><th class="p-2">Débito</th><th class="p-2">Crédito</th><th></th></tr>
                             </thead>
                             <tbody id="voucher-lines">
                                 <tr class="voucher-line border-b">
-                                    <td class="p-2"><select name="lines[0][chart_of_account_id]" required class="w-56 rounded border-gray-300 text-xs"><option value="">Seleccione cuenta</option>@foreach($accounts as $account)<option value="{{ $account->id }}">{{ $account->code }} - {{ $account->name }}</option>@endforeach</select></td>
+                                    <td class="p-2"><input type="text" list="chart-account-options" aria-label="Cuenta PUC, escribe código o nombre" placeholder="Escribe código o nombre" required class="account-search w-56 rounded border-gray-300 text-xs"><input type="hidden" name="lines[0][chart_of_account_id]" class="account-id"></td>
                                     <td class="p-2"><input name="lines[0][detail]" class="w-36 rounded border-gray-300 text-xs"></td>
                                     <td class="p-2"><input type="number" step="0.01" min="0" name="lines[0][debit]" value="{{ old('lines.0.debit', $commercialDocument?->total) }}" class="debit w-28 rounded border-gray-300 text-xs"></td>
                                     <td class="p-2"><input type="number" step="0.01" min="0" name="lines[0][credit]" value="{{ old('lines.0.credit') }}" class="credit w-28 rounded border-gray-300 text-xs"></td>
@@ -74,7 +79,7 @@
                                 </tr>
                                 @if($commercialDocument)
                                     <tr class="voucher-line border-b">
-                                        <td class="p-2"><select name="lines[1][chart_of_account_id]" required class="w-56 rounded border-gray-300 text-xs"><option value="">Seleccione cuenta</option>@foreach($accounts as $account)<option value="{{ $account->id }}">{{ $account->code }} - {{ $account->name }}</option>@endforeach</select></td>
+                                        <td class="p-2"><input type="text" list="chart-account-options" aria-label="Cuenta PUC, escribe código o nombre" placeholder="Escribe código o nombre" required class="account-search w-56 rounded border-gray-300 text-xs"><input type="hidden" name="lines[1][chart_of_account_id]" class="account-id"></td>
                                         <td class="p-2"><input name="lines[1][detail]" value="Contrapartida {{ $commercialDocument->consecutive }}" class="w-36 rounded border-gray-300 text-xs"></td>
                                         <td class="p-2"><input type="number" step="0.01" min="0" name="lines[1][debit]" value="{{ old('lines.1.debit') }}" class="debit w-28 rounded border-gray-300 text-xs"></td>
                                         <td class="p-2"><input type="number" step="0.01" min="0" name="lines[1][credit]" value="{{ old('lines.1.credit', $commercialDocument->total) }}" class="credit w-28 rounded border-gray-300 text-xs"></td>
@@ -122,10 +127,21 @@
     <script>
         let lineIndex = {{ $commercialDocument ? 2 : 1 }};
         const accountOptions = @json($accounts->map(fn ($account) => ['id' => $account->id, 'label' => $account->code . ' - ' . $account->name]));
+        function syncAccountSelection(input) {
+            const account = accountOptions.find((option) => option.label === input.value);
+            input.closest('.voucher-line').querySelector('.account-id').value = account?.id ?? '';
+            input.setCustomValidity(input.value && !account ? 'Selecciona una cuenta de la lista del PUC.' : '');
+        }
+        document.addEventListener('input', (event) => {
+            if (event.target.matches('.account-search')) syncAccountSelection(event.target);
+        });
+        document.addEventListener('change', (event) => {
+            if (event.target.matches('.account-search')) syncAccountSelection(event.target);
+        });
         function addLine() {
             const row = document.createElement('tr');
             row.className = 'voucher-line border-b';
-            row.innerHTML = `<td class="p-2"><select name="lines[${lineIndex}][chart_of_account_id]" required class="w-56 rounded border-gray-300 text-xs"><option value="">Seleccione cuenta</option>${accountOptions.map((account) => `<option value="${account.id}">${account.label}</option>`).join('')}</select></td><td class="p-2"><input name="lines[${lineIndex}][detail]" class="w-36 rounded border-gray-300 text-xs"></td><td class="p-2"><input type="number" step="0.01" min="0" name="lines[${lineIndex}][debit]" class="debit w-28 rounded border-gray-300 text-xs"></td><td class="p-2"><input type="number" step="0.01" min="0" name="lines[${lineIndex}][credit]" class="credit w-28 rounded border-gray-300 text-xs"></td><td class="p-2"><button type="button" onclick="removeLine(this)" class="text-red-500">×</button></td>`;
+            row.innerHTML = `<td class="p-2"><input type="text" list="chart-account-options" aria-label="Cuenta PUC, escribe código o nombre" placeholder="Escribe código o nombre" required class="account-search w-56 rounded border-gray-300 text-xs"><input type="hidden" name="lines[${lineIndex}][chart_of_account_id]" class="account-id"></td><td class="p-2"><input name="lines[${lineIndex}][detail]" class="w-36 rounded border-gray-300 text-xs"></td><td class="p-2"><input type="number" step="0.01" min="0" name="lines[${lineIndex}][debit]" class="debit w-28 rounded border-gray-300 text-xs"></td><td class="p-2"><input type="number" step="0.01" min="0" name="lines[${lineIndex}][credit]" class="credit w-28 rounded border-gray-300 text-xs"></td><td class="p-2"><button type="button" onclick="removeLine(this)" class="text-red-500">×</button></td>`;
             document.getElementById('voucher-lines').appendChild(row);
             lineIndex++;
         }

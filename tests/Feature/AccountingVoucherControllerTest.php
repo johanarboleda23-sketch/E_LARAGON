@@ -30,6 +30,18 @@ class AccountingVoucherControllerTest extends TestCase
             ->assertViewHas('voucherPrefill', fn (array $prefill): bool => $prefill['third_party'] === $note->third_party_name && $prefill['amount'] === '119.00');
     }
 
+    public function test_accounting_lines_render_searchable_posting_accounts(): void
+    {
+        $this->authenticateWithCompany();
+        [$account] = $this->createAccounts();
+
+        $this->get(route('accounting.vouchers.index'))
+            ->assertSee('list="chart-account-options"', false)
+            ->assertSee('name="lines[0][chart_of_account_id]"', false)
+            ->assertSee($account->code.' - '.$account->name)
+            ->assertSee('Escribe código o nombre');
+    }
+
     public function test_balanced_voucher_for_the_exact_note_total_links_and_accounts_once(): void
     {
         $this->authenticateWithCompany();

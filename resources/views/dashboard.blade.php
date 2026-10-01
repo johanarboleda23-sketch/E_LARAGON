@@ -111,6 +111,9 @@
                 <a href="{{ route('logistics.index') }}" class="inline-flex items-center gap-1 rounded-md px-2 py-2 text-xs font-bold text-white shadow-sm transition hover:opacity-90" style="background:#166534;">
                     <span>🚚</span> Logística
                 </a>
+                <a href="{{ route('bank-reconciliation.index') }}" class="inline-flex items-center gap-1 rounded-md px-2 py-2 text-xs font-bold text-white shadow-sm transition hover:opacity-90" style="background:#0369a1;">
+                    <span>▣</span> Conciliación bancaria
+                </a>
             </div>
 
             <div class="mt-8 flex flex-wrap gap-3 text-sm text-gray-500">

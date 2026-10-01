@@ -7,11 +7,9 @@ use RuntimeException;
 
 class MapboxService
 {
-    private readonly ?string $token;
-
-    public function __construct(?string $token = null)
+    public function __construct(private readonly ?string $token = null)
     {
-        $this->token = $token ?? config('services.mapbox.token');
+        $this->token ??= config('services.mapbox.token');
     }
 
     public function isConfigured(): bool
@@ -67,7 +65,6 @@ class MapboxService
         $response = Http::get('https://api.mapbox.com/optimized-trips/v1/mapbox/driving/'.$coordinatesParam, [
             'access_token' => $this->token,
             'source' => 'first',
-            'destination' => 'last',
             'roundtrip' => 'false',
         ]);
 

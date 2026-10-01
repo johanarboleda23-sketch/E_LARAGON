@@ -1,0 +1,212 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\ChartOfAccount;
+use App\Models\Company;
+use App\Models\Item;
+use App\Models\Purchase;
+use App\Models\PurchaseDetail;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
+
+class PurchaseControllerTest extends TestCase
+{
+    use RefreshDatabase;
+
+    public function test_purchase_withholding_is_recalculated_and_subtracted_server_side(): void
+    {
+        $this->authenticateWithCompany();
+        $item = $this->createProduct();
+
+        $this->post(route('purchases.store'), $this->purchasePayload($item, 2_000_000))
+            ->assertRedirect(route('purchases.index'));
+
+        $purchase = Purchase::query()->where('invoice_number', 'DAV-RET-001')->firstOrFail();
+        $this->assertSame(2_000_000.0, (float) $purchase->subtotal);
+        $this->assertSame(70_000.0, (float) $purchase->retefuente);
+        $this->assertSame(1_930_000.0, (float) $purchase->total_pagar);
+        $this->assertSame(11, $item->fresh()->stock);
+    }
+
+    public function test_purchase_does_not_withhold_below_the_configured_uvt_threshold(): void
+    {
+        $this->authenticateWithCompany();
+        $item = $this->createProduct();
+        $payload = $this->purchasePayload($item, 1_000_000);
+        $payload['invoice_number'] = 'DAV-RET-002';
+
+        $this->post(route('purchases.store'), $payload)
+            ->assertRedirect(route('purchases.index'));
+
+        $purchase = Purchase::query()->where('invoice_number', 'DAV-RET-002')->firstOrFail();
+        $this->assertSame(0.0, (float) $purchase->retefuente);
+        $this->assertSame(1_000_000.0, (float) $purchase->total_pagar);
+    }
+
+    public function test_purchase_withholds_from_iva_and_subtracts_it_from_the_total(): void
+    {
+        $this->authenticateWithCompany();
+        $item = $this->createProduct();
+        $payload = $this->purchasePayload($item, 100_000);
+        $payload['invoice_number'] = 'DAV-RET-003';
+        $payload['withholding_concept'] = 'vat';
+        $payload['items'][0]['iva_percentage'] = 19;
+
+        $this->post(route('purchases.store'), $payload)
+            ->assertRedirect(route('purchases.index'));
+
+        $purchase = Purchase::query()->where('invoice_number', 'DAV-RET-003')->firstOrFail();
+        $this->assertSame(19_000.0, (float) $purchase->iva_total);
+        $this->assertSame(2_850.0, (float) $purchase->retefuente);
+        $this->assertSame(116_150.0, (float) $purchase->total_pagar);
+    }
+
+    public function test_no_responsibility_supplier_cannot_skip_purchase_withholding(): void
+    {
+        $this->authenticateWithCompany();
+        $item = $this->createProduct();
+        $payload = $this->purchasePayload($item, 2_000_000);
+        $payload['invoice_number'] = 'DAV-RET-004';
+        $payload['provider_regimen'] = 'sin_responsabilidad';
+        $payload['withholding_concept'] = 'none';
+
+        $this->post(route('purchases.store'), $payload)
+            ->assertRedirect(route('purchases.index'));
+
+        $purchase = Purchase::query()->where('invoice_number', 'DAV-RET-004')->firstOrFail();
+        $this->assertSame(70_000.0, (float) $purchase->retefuente);
+        $this->assertSame(1_930_000.0, (float) $purchase->total_pagar);
+    }
+
+    public function test_expense_line_uses_a_puc_account_without_changing_inventory(): void
+    {
+        $this->authenticateWithCompany();
+        $item = $this->createProduct();
+        $account = ChartOfAccount::create([
+            'code' => '5135-TEST',
+            'name' => 'Servicios de prueba',
+            'class' => 5,
+            'nature' => 'debit',
+            'allows_posting' => true,
+            'active' => true,
+        ]);
+        $payload = $this->purchasePayload($item, 200_000);
+        $payload['invoice_number'] = 'DAV-GASTO-001';
+        $payload['items'] = [[
+            'purchase_line_type' => 'gasto',
+            'chart_of_account_id' => $account->id,
+            'line_description' => 'Servicio de prueba',
+            'quantity' => 1,
+            'cost_price' => 200_000,
+            'iva_percentage' => 0,
+            'utility_percentage' => 0,
+        ]];
+
+        $this->post(route('purchases.store'), $payload)
+            ->assertRedirect(route('purchases.index'));
+
+        $purchase = Purchase::query()->where('invoice_number', 'DAV-GASTO-001')->firstOrFail();
+        $detail = PurchaseDetail::query()->where('purchase_id', $purchase->id)->firstOrFail();
+
+        $this->assertSame('gasto', $detail->purchase_line_type);
+        $this->assertSame($account->id, $detail->chart_of_account_id);
+        $this->assertNull($detail->item_id);
+        $this->assertSame(10, $item->fresh()->stock);
+    }
+
+    public function test_fixed_asset_line_requires_depreciation_data_without_changing_inventory(): void
+    {
+        $this->authenticateWithCompany();
+        $item = $this->createProduct();
+        $assetAccount = $this->createAccount('1520-TEST', 'Maquinaria de prueba', 1);
+        $expenseAccount = $this->createAccount('5160-TEST', 'Depreciación de prueba', 5);
+        $accumulatedAccount = $this->createAccount('1592-TEST', 'Depreciación acumulada de prueba', 1, 'credit');
+        $payload = $this->purchasePayload($item, 5_000_000);
+        $payload['invoice_number'] = 'DAV-ACTIVO-001';
+        $payload['items'] = [[
+            'purchase_line_type' => 'activo_fijo',
+            'chart_of_account_id' => $assetAccount->id,
+            'line_description' => 'Máquina de prueba',
+            'quantity' => 1,
+            'cost_price' => 5_000_000,
+            'iva_percentage' => 0,
+            'utility_percentage' => 0,
+            'useful_life_months' => 60,
+            'depreciation_method' => 'straight_line',
+            'residual_value' => 500_000,
+            'depreciation_expense_account_id' => $expenseAccount->id,
+            'accumulated_depreciation_account_id' => $accumulatedAccount->id,
+        ]];
+
+        $this->post(route('purchases.store'), $payload)
+            ->assertRedirect(route('purchases.index'));
+
+        $purchase = Purchase::query()->where('invoice_number', 'DAV-ACTIVO-001')->firstOrFail();
+        $detail = PurchaseDetail::query()->where('purchase_id', $purchase->id)->firstOrFail();
+
+        $this->assertSame('activo_fijo', $detail->purchase_line_type);
+        $this->assertSame(60, $detail->useful_life_months);
+        $this->assertSame(500_000.0, (float) $detail->residual_value);
+        $this->assertSame(10, $item->fresh()->stock);
+    }
+
+    private function authenticateWithCompany(): Company
+    {
+        $company = Company::factory()->create();
+        $user = User::factory()->create();
+        $user->companies()->attach($company->id, ['role' => 'admin']);
+        $this->actingAs($user)->withSession(['company_id' => $company->id]);
+
+        return $company;
+    }
+
+    private function createProduct(): Item
+    {
+        return Item::create([
+            'type' => 'producto',
+            'name' => 'Producto de prueba',
+            'code' => 'SKU-RET-001',
+            'sale_price' => 100,
+            'purchase_price' => 50,
+            'stock' => 10,
+            'min_stock' => 1,
+        ]);
+    }
+
+    private function purchasePayload(Item $item, int $costPrice): array
+    {
+        return [
+            'invoice_number' => 'DAV-RET-001',
+            'provider' => 'Proveedor de prueba',
+            'provider_regimen' => 'gran_contribuyente',
+            'withholding_concept' => 'purchase_no_declarante',
+            'subtotal' => 1,
+            'iva_total' => 0,
+            'retefuente' => 0,
+            'retention_base' => 0,
+            'total_pagar' => 1,
+            'items' => [[
+                'purchase_line_type' => 'producto',
+                'item_id' => $item->id,
+                'quantity' => 1,
+                'cost_price' => $costPrice,
+                'iva_percentage' => 0,
+                'utility_percentage' => 0,
+            ]],
+        ];
+    }
+
+    private function createAccount(string $code, string $name, int $class, string $nature = 'debit'): ChartOfAccount
+    {
+        return ChartOfAccount::create([
+            'code' => $code,
+            'name' => $name,
+            'class' => $class,
+            'nature' => $nature,
+            'allows_posting' => true,
+            'active' => true,
+        ]);
+    }
+}

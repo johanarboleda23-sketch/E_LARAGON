@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ChartOfAccount;
 use App\Models\InventoryMovement;
 use App\Models\Item;
 use App\Models\PaymentMethod;
@@ -10,6 +11,8 @@ use App\Models\PurchaseDetail;
 use App\Models\ThirdParty;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class PurchaseController extends Controller
 {
@@ -28,6 +31,15 @@ class PurchaseController extends Controller
             ->orderBy('name')
             ->get();
         $suppliers = ThirdParty::where('is_supplier', true)->where('active', true)->orderBy('name')->get();
+        $products = Item::query()
+            ->where('type', 'producto')
+            ->orderBy('name')
+            ->get(['id', 'name', 'code', 'stock']);
+        $postingAccounts = ChartOfAccount::query()
+            ->where('active', true)
+            ->where('allows_posting', true)
+            ->orderBy('code')
+            ->get(['id', 'code', 'name', 'class']);
 
         if ($paymentMethods->isEmpty()) {
             $paymentMethods = collect([
@@ -38,7 +50,7 @@ class PurchaseController extends Controller
             ]);
         }
 
-        return view('purchases.index', compact('paymentMethods', 'withholdings', 'recentPurchases', 'suppliers'));
+        return view('purchases.index', compact('paymentMethods', 'postingAccounts', 'withholdings', 'recentPurchases', 'suppliers'));
     }
 
     /**
@@ -49,17 +61,83 @@ class PurchaseController extends Controller
         $data = $request->validate([
             'invoice_number' => 'required|string|max:255',
             'provider' => 'required|string|max:255',
-            'subtotal' => 'required|numeric|min:0',
-            'iva_total' => 'required|numeric|min:0',
-            'retefuente' => 'nullable|numeric|min:0',
-            'total_pagar' => 'required|numeric|min:0',
+            'provider_regimen' => ['required', Rule::in(['comun', 'simplificado', 'gran_contribuyente', 'sin_responsabilidad'])],
+            'withholding_concept' => ['required', Rule::in(array_keys(config('colombia_withholdings.concepts')))],
             'items' => 'required|array|min:1',
-            'items.*.item_id' => 'required|exists:items,id',
+            'items.*.purchase_line_type' => ['required', Rule::in(['producto', 'gasto', 'activo_fijo'])],
+            'items.*.item_id' => ['nullable', 'integer', 'exists:items,id'],
+            'items.*.chart_of_account_id' => ['nullable', 'integer', 'exists:chart_of_accounts,id'],
+            'items.*.line_description' => ['nullable', 'string', 'max:255'],
             'items.*.quantity' => 'required|integer|min:1',
             'items.*.cost_price' => 'required|numeric|min:0',
             'items.*.iva_percentage' => 'required|numeric|min:0',
             'items.*.utility_percentage' => 'nullable|numeric|min:0',
+            'items.*.useful_life_months' => ['nullable', 'integer', 'min:1', 'max:1200'],
+            'items.*.depreciation_method' => ['nullable', Rule::in(['straight_line'])],
+            'items.*.residual_value' => ['nullable', 'numeric', 'min:0'],
+            'items.*.depreciation_expense_account_id' => ['nullable', 'integer', 'exists:chart_of_accounts,id'],
+            'items.*.accumulated_depreciation_account_id' => ['nullable', 'integer', 'exists:chart_of_accounts,id'],
         ]);
+
+        foreach ($data['items'] as $index => $itemData) {
+            $lineType = $itemData['purchase_line_type'];
+            $accountId = $itemData['chart_of_account_id'] ?? null;
+
+            if ($lineType === 'producto' && ! $itemData['item_id']) {
+                throw ValidationException::withMessages([
+                    "items.{$index}.item_id" => 'Los productos requieren una referencia del inventario.',
+                ]);
+            }
+
+            if ($lineType !== 'producto' && ! $accountId) {
+                throw ValidationException::withMessages([
+                    "items.{$index}.chart_of_account_id" => 'Los gastos y activos fijos requieren una cuenta auxiliar del PUC.',
+                ]);
+            }
+
+            if ($accountId && ! ChartOfAccount::query()->whereKey($accountId)->where('active', true)->where('allows_posting', true)->exists()) {
+                throw ValidationException::withMessages([
+                    "items.{$index}.chart_of_account_id" => 'Selecciona una cuenta auxiliar activa del PUC.',
+                ]);
+            }
+
+            if ($lineType === 'producto' && ! Item::query()->whereKey($itemData['item_id'] ?? null)->where('type', 'producto')->exists()) {
+                throw ValidationException::withMessages([
+                    "items.{$index}.item_id" => 'Solo puedes seleccionar productos del inventario en esta sección.',
+                ]);
+            }
+
+            if ($lineType === 'activo_fijo' && (! $itemData['useful_life_months'] || ! $itemData['depreciation_expense_account_id'] || ! $itemData['accumulated_depreciation_account_id'])) {
+                throw ValidationException::withMessages([
+                    "items.{$index}.useful_life_months" => 'El activo fijo requiere vida útil y las cuentas de gasto y depreciación acumulada.',
+                ]);
+            }
+        }
+
+        $subtotal = 0.0;
+        $ivaTotal = 0.0;
+        foreach ($data['items'] as $itemData) {
+            $lineSubtotal = round((int) $itemData['quantity'] * (float) $itemData['cost_price'], 2);
+            $subtotal += $lineSubtotal;
+            $ivaTotal += round($lineSubtotal * (float) $itemData['iva_percentage'] / 100, 2);
+        }
+
+        $withholdingConcept = $data['withholding_concept'];
+        if ($data['provider_regimen'] === 'sin_responsabilidad' && $withholdingConcept === 'none') {
+            $withholdingConcept = 'purchase_no_declarante';
+        }
+
+        $concept = config('colombia_withholdings.concepts.'.$withholdingConcept);
+        $retentionBase = $concept['base_on'] === 'iva' ? $ivaTotal : $subtotal;
+        $minimumBase = (float) $concept['base_uvt'] * (float) config('colombia_withholdings.uvt');
+        $taxableBase = $retentionBase >= $minimumBase ? $retentionBase : 0;
+        $retention = round($taxableBase * (float) $concept['rate'], 2);
+
+        $data['subtotal'] = round($subtotal, 2);
+        $data['iva_total'] = round($ivaTotal, 2);
+        $data['retefuente'] = $retention;
+        $data['retention_base'] = $taxableBase;
+        $data['total_pagar'] = round($subtotal + $ivaTotal - $retention, 2);
 
         DB::transaction(function () use ($data) {
             $purchase = Purchase::create([
@@ -74,26 +152,35 @@ class PurchaseController extends Controller
             ]);
 
             foreach ($data['items'] as $itemData) {
-                $item = Item::lockForUpdate()->findOrFail($itemData['item_id']);
+                $lineType = $itemData['purchase_line_type'];
+                $item = $lineType === 'producto' ? Item::lockForUpdate()->findOrFail($itemData['item_id']) : null;
                 $quantity = (int) $itemData['quantity'];
                 $costPrice = (float) $itemData['cost_price'];
                 $ivaPercentage = (float) $itemData['iva_percentage'];
                 $utilityPercentage = (float) ($itemData['utility_percentage'] ?? 0);
-                $ivaValue = $costPrice * $ivaPercentage / 100;
+                $ivaValue = $quantity * $costPrice * $ivaPercentage / 100;
                 $salePrice = $costPrice * (1 + $utilityPercentage / 100);
 
                 PurchaseDetail::create([
                     'purchase_id' => $purchase->id,
-                    'item_id' => $item->id,
+                    'purchase_line_type' => $lineType,
+                    'item_id' => $item?->id,
+                    'chart_of_account_id' => $itemData['chart_of_account_id'] ?? null,
+                    'line_description' => $itemData['line_description'] ?? $item?->name,
                     'quantity' => $quantity,
                     'cost_price' => $costPrice,
                     'iva_percentage' => $ivaPercentage,
                     'iva_value' => $ivaValue,
                     'utility_percentage' => $utilityPercentage,
                     'calculated_sale_price' => $salePrice,
+                    'useful_life_months' => $itemData['useful_life_months'] ?? null,
+                    'depreciation_method' => $itemData['depreciation_method'] ?? null,
+                    'residual_value' => $itemData['residual_value'] ?? null,
+                    'depreciation_expense_account_id' => $itemData['depreciation_expense_account_id'] ?? null,
+                    'accumulated_depreciation_account_id' => $itemData['accumulated_depreciation_account_id'] ?? null,
                 ]);
 
-                if ($item->type === 'producto') {
+                if ($lineType === 'producto') {
                     $stockBefore = $item->stock;
                     $item->increment('stock', $quantity);
                     $item->refresh();

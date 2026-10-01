@@ -37,6 +37,8 @@
         .totals-box { background: rgba(252,231,243,0.2); padding: 15px; border-radius: 10px; border: 1px solid #fbcfe8; font-weight: 500; box-sizing: border-box; margin-top: 15px; }
         .total-row-pink { border-top: 1px solid #fbcfe8; padding-top: 8px; margin-top: 8px; font-size: 14px; font-weight: 900; color: #be185d; display: flex; justify-content: space-between; }
         .flex-box { display: flex; justify-content: space-between; margin-bottom: 6px; }
+        .account-select, .line-description, .asset-fields { display: none; }
+        .asset-fields { gap: 3px; }
     </style>
 </head>
 <body>
@@ -108,32 +110,67 @@
                 </div>
             </div>
 
-            <!-- ENLACE MAESTRO CON TU ALMACÉN -->
-            <datalist id="products-list">
-                @foreach(app('App\Models\Item')->all() as $p)<option value="{{ $p->name }}" data-id="{{ $p->id }}"></option>@endforeach
-            </datalist>
-
             <!-- TABLA MULTI-RENGLÓN COMPACTA -->
             <div class="table-box">
                 <table id="items-table">
                     <thead>
                         <tr>
-                            <th style="width:38%;">Producto o Referencia ( predictor Almacén )</th>
+                            <th style="width:13%;">Sección</th>
+                            <th style="width:25%;">Producto o cuenta PUC</th>
                             <th style="text-align:center; width:10%;">Cant.</th>
                             <th style="text-align:right; width:15%;">Costo ($)</th>
                             <th style="text-align:center; width:12%;">IVA</th>
                             <th style="text-align:center; width:12%;">Ganancia (%)</th>
+                            <th style="width:20%;">Datos de activo fijo</th>
                             <th style="text-align:right; width:10%;">Total ($)</th>
                             <th style="width:3%;"></th>
                         </tr>
                     </thead>
                     <tbody id="table-body">
                         <tr class="item-row">
-                            <td><input type="text" list="products-list" name="items[0][product_name]" placeholder="🔍 Escriba artículo..." required class="input-style product-search"><input type="hidden" name="items[0][item_id]" class="product-id"></td>
+                            <td>
+                                <select name="items[0][purchase_line_type]" class="input-style line-type" required>
+                                    <option value="producto">Producto</option>
+                                    <option value="gasto">Gasto</option>
+                                    <option value="activo_fijo">Activo fijo</option>
+                                </select>
+                            </td>
+                            <td class="line-target">
+                                <select name="items[0][item_id]" class="input-style product-select" required>
+                                    <option value="">Seleccione producto</option>
+                                    @foreach($products as $product)
+                                        <option value="{{ $product->id }}">{{ $product->name }}{{ $product->code ? ' - '.$product->code : '' }}</option>
+                                    @endforeach
+                                </select>
+                                <select name="items[0][chart_of_account_id]" class="input-style account-select" disabled>
+                                    <option value="">Seleccione cuenta PUC</option>
+                                    @foreach($postingAccounts as $account)
+                                        <option value="{{ $account->id }}">{{ $account->code }} - {{ $account->name }}</option>
+                                    @endforeach
+                                </select>
+                                <input type="text" name="items[0][line_description]" class="input-style line-description" placeholder="Descripción del gasto" disabled>
+                            </td>
                             <td><input type="number" name="items[0][quantity]" class="qty-input input-style" style="text-align:center;" value="1" min="1" required></td>
                             <td><input type="number" step="0.01" name="items[0][cost_price]" class="price-input input-style" style="text-align:right;" placeholder="0.00" required></td>
                             <td><select name="items[0][iva_percentage]" class="iva-input input-style" style="text-align:center;"><option value="19">19%</option><option value="5">5%</option><option value="0">0%</option></select></td>
-                                <td><input type="number" name="items[0][utility_percentage]" class="utility-input input-style" style="text-align:center;" min="0" step="0.01" value="0"></td>
+                            <td><input type="number" name="items[0][utility_percentage]" class="utility-input input-style" style="text-align:center;" min="0" step="0.01" value="0"></td>
+                            <td class="asset-fields">
+                                <input type="number" name="items[0][useful_life_months]" class="input-style useful-life" min="1" placeholder="Vida útil (meses)" disabled>
+                                <input type="number" name="items[0][residual_value]" class="input-style residual-value" min="0" step="0.01" placeholder="Valor residual" disabled>
+                                <select name="items[0][depreciation_expense_account_id]" class="input-style depreciation-expense-account" disabled>
+                                    <option value="">Gasto depreciación</option>
+                                    @foreach($postingAccounts as $account)
+                                        <option value="{{ $account->id }}">{{ $account->code }} - {{ $account->name }}</option>
+                                    @endforeach
+                                </select>
+                                <select name="items[0][accumulated_depreciation_account_id]" class="input-style accumulated-depreciation-account" disabled>
+                                    <option value="">Depreciación acumulada</option>
+                                    @foreach($postingAccounts as $account)
+                                        <option value="{{ $account->id }}">{{ $account->code }} - {{ $account->name }}</option>
+                                    @endforeach
+                                </select>
+                                <input type="hidden" name="items[0][depreciation_method]" value="straight_line" class="depreciation-method">
+                            </td>
                             <td class="row-total" style="text-align:right; font-weight:bold;">$0.00</td>
                             <td style="text-align:center;"><button type="button" onclick="removeRow(this)" style="color:#f87171; background:none; border:none; font-size:16px; font-weight:bold; cursor:pointer;">&times;</button></td>
                         </tr>
@@ -221,20 +258,46 @@
     <script>
         let rowIndex = 1;
 
+        function syncLineFields(row) {
+            const lineType = row.querySelector('.line-type').value;
+            const productSelect = row.querySelector('.product-select');
+            const accountSelect = row.querySelector('.account-select');
+            const description = row.querySelector('.line-description');
+            const utility = row.querySelector('.utility-input');
+            const assetFields = row.querySelector('.asset-fields');
+
+            productSelect.style.display = lineType === 'producto' ? 'block' : 'none';
+            productSelect.disabled = lineType !== 'producto';
+            productSelect.required = lineType === 'producto';
+            accountSelect.style.display = lineType === 'producto' ? 'none' : 'block';
+            accountSelect.disabled = lineType === 'producto';
+            accountSelect.required = lineType !== 'producto';
+            description.style.display = lineType === 'gasto' ? 'block' : 'none';
+            description.disabled = lineType !== 'gasto';
+            utility.disabled = lineType !== 'producto';
+            assetFields.style.display = lineType === 'activo_fijo' ? 'grid' : 'none';
+            assetFields.querySelectorAll('input, select').forEach((field) => {
+                if (!field.classList.contains('depreciation-method')) field.disabled = lineType !== 'activo_fijo';
+            });
+        }
+
         function addRow() {
             const tableBody = document.getElementById('table-body');
             const row = document.createElement('tr');
             row.className = 'item-row';
             row.innerHTML = `
-                <td><input type="text" list="products-list" name="items[${rowIndex}][product_name]" placeholder="Escriba artículo..." required class="input-style product-search"><input type="hidden" name="items[${rowIndex}][item_id]" class="product-id"></td>
+                <td><select name="items[${rowIndex}][purchase_line_type]" class="input-style line-type" required><option value="producto">Producto</option><option value="gasto">Gasto</option><option value="activo_fijo">Activo fijo</option></select></td>
+                <td class="line-target"><select name="items[${rowIndex}][item_id]" class="input-style product-select" required><option value="">Seleccione producto</option>@foreach($products as $product)<option value="{{ $product->id }}">{{ $product->name }}{{ $product->code ? ' - '.$product->code : '' }}</option>@endforeach</select><select name="items[${rowIndex}][chart_of_account_id]" class="input-style account-select" disabled><option value="">Seleccione cuenta PUC</option>@foreach($postingAccounts as $account)<option value="{{ $account->id }}">{{ $account->code }} - {{ $account->name }}</option>@endforeach</select><input type="text" name="items[${rowIndex}][line_description]" class="input-style line-description" placeholder="Descripción del gasto" disabled></td>
                 <td><input type="number" name="items[${rowIndex}][quantity]" class="qty-input input-style" style="text-align:center;" value="1" min="1" required></td>
                 <td><input type="number" step="0.01" name="items[${rowIndex}][cost_price]" class="price-input input-style" style="text-align:right;" placeholder="0.00" required></td>
                 <td><select name="items[${rowIndex}][iva_percentage]" class="iva-input input-style" style="text-align:center;"><option value="19">19%</option><option value="5">5%</option><option value="0">0%</option></select></td>
                 <td><input type="number" name="items[${rowIndex}][utility_percentage]" class="utility-input input-style" style="text-align:center;" min="0" step="0.01" value="0"></td>
+                <td class="asset-fields"><input type="number" name="items[${rowIndex}][useful_life_months]" class="input-style useful-life" min="1" placeholder="Vida útil (meses)" disabled><input type="number" name="items[${rowIndex}][residual_value]" class="input-style residual-value" min="0" step="0.01" placeholder="Valor residual" disabled><select name="items[${rowIndex}][depreciation_expense_account_id]" class="input-style depreciation-expense-account" disabled><option value="">Gasto depreciación</option>@foreach($postingAccounts as $account)<option value="{{ $account->id }}">{{ $account->code }} - {{ $account->name }}</option>@endforeach</select><select name="items[${rowIndex}][accumulated_depreciation_account_id]" class="input-style accumulated-depreciation-account" disabled><option value="">Depreciación acumulada</option>@foreach($postingAccounts as $account)<option value="{{ $account->id }}">{{ $account->code }} - {{ $account->name }}</option>@endforeach</select><input type="hidden" name="items[${rowIndex}][depreciation_method]" value="straight_line" class="depreciation-method"></td>
                 <td class="row-total" style="text-align:right; font-weight:bold;">$0.00</td>
                 <td style="text-align:center;"><button type="button" onclick="removeRow(this)" style="color:#f87171; background:none; border:none; font-size:16px; font-weight:bold; cursor:pointer;">&times;</button></td>
             `;
             tableBody.appendChild(row);
+            syncLineFields(row);
             rowIndex += 1;
             calculateTotals();
         }
@@ -397,17 +460,17 @@
         });
 
         document.addEventListener('change', (event) => {
-            if (event.target.matches('.product-search')) {
-                const option = Array.from(document.querySelectorAll('#products-list option')).find((item) => item.value === event.target.value);
-                event.target.closest('.item-row').querySelector('.product-id').value = option?.dataset.id || '';
-            }
-            if (event.target.closest('.item-row')) calculateTotals();
+            const row = event.target.closest('.item-row');
+            if (!row) return;
+            if (event.target.matches('.line-type')) syncLineFields(row);
+            calculateTotals();
         });
 
         document.addEventListener('click', (event) => {
             if (!event.target.closest('#download-menu')) document.getElementById('download-menu').classList.remove('open');
         });
 
+        document.querySelectorAll('.item-row').forEach(syncLineFields);
         calculateTotals();
     </script>
 </body>

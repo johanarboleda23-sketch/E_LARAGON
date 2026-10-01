@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AccountingVoucherController;
 use App\Http\Controllers\AdminController;
+use App\Http\Controllers\BankReconciliationController;
 use App\Http\Controllers\BulkOperationController;
 use App\Http\Controllers\ChartOfAccountController;
 use App\Http\Controllers\CommercialDocumentController;
@@ -9,7 +10,6 @@ use App\Http\Controllers\CompanyController;
 use App\Http\Controllers\ItemController;
 use App\Http\Controllers\LogisticsController;
 use App\Http\Controllers\PayrollController;
-use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PurchaseController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\SaleController;
@@ -30,12 +30,6 @@ Route::get('/dashboard', function () {
 })->name('dashboard');
 
 Route::post('/empresa/cambiar', [CompanyController::class, 'switch'])->middleware('auth')->name('company.switch');
-
-Route::middleware('auth')->group(function () {
-    Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
-    Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
-    Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
-});
 
 Route::middleware(['auth', 'company'])->group(function () {
     Route::get('/cotizaciones', [CommercialDocumentController::class, 'index'])->defaults('documentType', 'quotation')->name('commercial-documents.quotations');
@@ -98,6 +92,11 @@ Route::middleware(['auth', 'company'])->group(function () {
     Route::post('/operaciones-masivas/imprimir', [BulkOperationController::class, 'print'])->name('bulk-operations.print');
     Route::post('/operaciones-masivas/descargar', [BulkOperationController::class, 'download'])->name('bulk-operations.download');
     Route::post('/operaciones-masivas/correo', [BulkOperationController::class, 'email'])->name('bulk-operations.email');
+    Route::get('/conciliacion-bancaria', [BankReconciliationController::class, 'index'])->name('bank-reconciliation.index');
+    Route::post('/conciliacion-bancaria/importar', [BankReconciliationController::class, 'import'])->name('bank-reconciliation.import');
+    Route::post('/conciliacion-bancaria/{statement}/conciliar', [BankReconciliationController::class, 'reconcile'])->name('bank-reconciliation.reconcile');
+    Route::post('/conciliacion-bancaria/{statement}/desconciliar', [BankReconciliationController::class, 'unmatch'])->name('bank-reconciliation.unmatch');
+    Route::get('/conciliacion-bancaria/{statement}/sugerencias', [BankReconciliationController::class, 'suggestions'])->name('bank-reconciliation.suggestions');
     Route::get('/administracion', [AdminController::class, 'index'])->name('admin.index');
     Route::post('/administracion/empresas', [AdminController::class, 'storeCompany'])->name('admin.companies.store');
     Route::post('/administracion/miembros', [AdminController::class, 'addMember'])->name('admin.members.store');

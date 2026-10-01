@@ -50,7 +50,7 @@ class PurchaseController extends Controller
             ]);
         }
 
-        return view('purchases.index', compact('paymentMethods', 'postingAccounts', 'withholdings', 'recentPurchases', 'suppliers'));
+        return view('purchases.index', compact('paymentMethods', 'postingAccounts', 'products', 'withholdings', 'recentPurchases', 'suppliers'));
     }
 
     /**

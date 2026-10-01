@@ -15,6 +15,17 @@ class PurchaseControllerTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_purchase_page_loads_with_product_and_puc_options(): void
+    {
+        $this->authenticateWithCompany();
+        $this->createProduct();
+
+        $this->get(route('purchases.index'))
+            ->assertOk()
+            ->assertSee('Seleccione producto')
+            ->assertSee('Seleccione cuenta PUC');
+    }
+
     public function test_purchase_withholding_is_recalculated_and_subtracted_server_side(): void
     {
         $this->authenticateWithCompany();

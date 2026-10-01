@@ -50,7 +50,7 @@
 
             <!-- BARRA SUPERIOR PROFESIONAL -->
             <div class="top-bar">
-                <div><h2 class="title-pink">🛒 Módulo de Gestión de Compras Avanzado</h2></div>
+                <div class="flex items-center gap-3"><a href="{{ route('dashboard') }}" class="btn-white" style="text-decoration:none;">⌂ Tablero</a><h2 class="title-pink">🛒 Módulo de Gestión de Compras Avanzado</h2></div>
                 <div class="btn-group">
                     <button type="button" onclick="editInvoice()" class="btn-white">Editar</button>
                     <button type="button" onclick="clearInvoice()" class="btn-white">Eliminar</button>

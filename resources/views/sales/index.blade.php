@@ -13,7 +13,7 @@
     <form method="POST" action="{{ route('sales.store') }}" id="sale-form">
         @csrf
         <div class="top-bar">
-            <div class="title">🧾 Factura de venta</div>
+            <div class="flex items-center gap-3"><a href="{{ route('dashboard') }}" class="btn" style="text-decoration:none;">⌂ Tablero</a><div class="title">🧾 Factura de venta</div></div>
             <div class="btn-group">
                 <button type="button" class="btn" onclick="editSale()">Editar</button>
                 <button type="button" class="btn" onclick="clearSale()">Eliminar</button>

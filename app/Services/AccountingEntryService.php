@@ -12,12 +12,24 @@ use Illuminate\Validation\ValidationException;
 
 class AccountingEntryService
 {
-    public function postPurchase(Purchase $purchase): ?AccountingVoucher
+    /**
+     * Causa automáticamente una compra. Devuelve el comprobante generado, o null junto con
+     * un motivo legible (vía $skipReason) cuando falta alguna cuenta PUC o forma de pago.
+     */
+    public function postPurchase(Purchase $purchase, ?string &$skipReason = null): ?AccountingVoucher
     {
         $purchase->load(['details.item', 'paymentMethod.account']);
         $paymentAccountId = $purchase->paymentMethod?->chart_of_account_id;
 
+        if (! $purchase->paymentMethod) {
+            $skipReason = 'Selecciona una forma de pago en la factura para poder contabilizarla.';
+
+            return null;
+        }
+
         if (! $paymentAccountId) {
+            $skipReason = "La forma de pago '{$purchase->paymentMethod->name}' no tiene una cuenta PUC asociada. Configúrala en Administración.";
+
             return null;
         }
 
@@ -29,6 +41,8 @@ class AccountingEntryService
             };
 
             if (! $debitAccountId) {
+                $skipReason = 'Falta la cuenta PUC 1435 (Mercancías no fabricadas por la empresa) para contabilizar el inventario comprado.';
+
                 return null;
             }
 
@@ -43,6 +57,8 @@ class AccountingEntryService
         if ((float) $purchase->iva_total > 0) {
             $ivaAccountId = ChartOfAccount::query()->where('code', '2408')->value('id');
             if (! $ivaAccountId) {
+                $skipReason = 'Falta la cuenta PUC 2408 (Impuesto sobre las ventas por pagar) para contabilizar el IVA descontable.';
+
                 return null;
             }
             $lines->push(['chart_of_account_id' => $ivaAccountId, 'detail' => 'IVA descontable', 'debit' => (float) $purchase->iva_total, 'credit' => 0]);
@@ -52,6 +68,8 @@ class AccountingEntryService
         if ((float) $purchase->retefuente > 0) {
             $retentionAccountId = ChartOfAccount::query()->where('code', '2365')->value('id');
             if (! $retentionAccountId) {
+                $skipReason = 'Falta la cuenta PUC 2365 (Retención en la fuente) para contabilizar la retención calculada en esta compra.';
+
                 return null;
             }
             $lines->push(['chart_of_account_id' => $retentionAccountId, 'detail' => 'Retención en la fuente', 'debit' => 0, 'credit' => (float) $purchase->retefuente]);

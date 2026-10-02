@@ -6,6 +6,7 @@ use App\Models\ChartOfAccount;
 use App\Models\Company;
 use App\Models\PaymentMethod;
 use App\Models\User;
+use App\Support\DefaultChartOfAccounts;
 use Illuminate\Http\Request;
 
 class AdminController extends Controller
@@ -40,8 +41,9 @@ class AdminController extends Controller
         $data = $request->validate(['name' => 'required|string|max:255', 'tax_id' => 'nullable|string|max:100', 'email' => 'nullable|email|max:255']);
         $company = Company::create($data + ['active' => true]);
         $company->users()->attach($request->user(), ['role' => 'owner']);
+        DefaultChartOfAccounts::seedFor($company->id);
 
-        return back()->with('success', 'Empresa creada y vinculada al administrador.');
+        return back()->with('success', 'Empresa creada, vinculada al administrador y con su catálogo PUC inicial.');
     }
 
     public function addMember(Request $request)
@@ -76,5 +78,13 @@ class AdminController extends Controller
         $paymentMethod->update($data);
 
         return back()->with('success', 'Cuenta PUC de la forma de pago actualizada.');
+    }
+
+    public function seedChartOfAccounts(Request $request)
+    {
+        $this->authorizeAdmin($request);
+        DefaultChartOfAccounts::seedFor((int) session('company_id'));
+
+        return back()->with('success', 'Catálogo PUC estándar restaurado: se crearon las cuentas que faltaban (sin duplicar ni modificar las existentes).');
     }
 }

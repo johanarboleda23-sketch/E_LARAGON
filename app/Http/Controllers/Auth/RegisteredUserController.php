@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Models\Company;
 use App\Models\User;
+use App\Support\DefaultChartOfAccounts;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -45,6 +46,7 @@ class RegisteredUserController extends Controller
 
         $company = Company::create(['name' => 'Empresa de '.$user->name]);
         $user->companies()->attach($company, ['role' => 'admin']);
+        DefaultChartOfAccounts::seedFor($company->id);
         session(['company_id' => $company->id]);
 
         event(new Registered($user));

@@ -215,11 +215,11 @@ class PurchaseController extends Controller
             return $purchase;
         });
 
-        $accountingVoucher = $this->accountingEntryService->postPurchase($purchase);
+        $accountingVoucher = $this->accountingEntryService->postPurchase($purchase, $skipReason);
 
         return redirect()->route('purchases.index')->with('success', $accountingVoucher
             ? '¡Factura guardada, stock actualizado y contabilizada!'
-            : '¡Factura guardada y stock actualizado! Configura las cuentas PUC para contabilizarla automáticamente.');
+            : '¡Factura guardada y stock actualizado! No se contabilizó automáticamente: '.($skipReason ?? 'configura las cuentas PUC necesarias.'));
     }
 
     public function destroy(Purchase $purchase)

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\ChartOfAccount;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class ChartOfAccountController extends Controller
 {
@@ -18,7 +19,7 @@ class ChartOfAccountController extends Controller
     public function store(Request $request)
     {
         $data = $request->validate([
-            'code' => 'required|string|max:20|unique:chart_of_accounts,code',
+            'code' => ['required', 'string', 'max:20', Rule::unique('chart_of_accounts', 'code')->where('company_id', session('company_id'))],
             'name' => 'required|string|max:255',
             'class' => 'required|integer|between:1,9',
             'nature' => 'required|in:debit,credit',

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Auth;
 
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -27,5 +28,22 @@ class RegistrationTest extends TestCase
 
         $this->assertAuthenticated();
         $response->assertRedirect(route('dashboard', absolute: false));
+    }
+
+    public function test_new_company_is_seeded_with_the_standard_chart_of_accounts(): void
+    {
+        $this->post('/register', [
+            'name' => 'Test User',
+            'email' => 'test@example.com',
+            'password' => 'password',
+            'password_confirmation' => 'password',
+        ]);
+
+        $user = User::where('email', 'test@example.com')->firstOrFail();
+        $company = $user->companies()->firstOrFail();
+
+        $this->assertDatabaseHas('chart_of_accounts', ['company_id' => $company->id, 'code' => '2365']);
+        $this->assertDatabaseHas('chart_of_accounts', ['company_id' => $company->id, 'code' => '2408']);
+        $this->assertDatabaseHas('chart_of_accounts', ['company_id' => $company->id, 'code' => '1435']);
     }
 }

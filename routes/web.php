@@ -156,6 +156,7 @@ Route::middleware(['auth', 'company'])->group(function () {
     Route::post('/administracion/miembros', [AdminController::class, 'addMember'])->name('admin.members.store');
     Route::put('/administracion/miembros/{user}/rol', [AdminController::class, 'updateRole'])->name('admin.members.role');
     Route::put('/administracion/formas-pago/{paymentMethod}/puc', [AdminController::class, 'updatePaymentMethod'])->name('admin.payment-methods.puc');
+    Route::post('/administracion/puc/restaurar', [AdminController::class, 'seedChartOfAccounts'])->name('admin.puc.seed');
 
     Route::middleware('module:logistics')->group(function () {
         Route::get('/logistica', [LogisticsController::class, 'index'])->name('logistics.index');

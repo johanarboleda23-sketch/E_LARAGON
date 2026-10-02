@@ -115,6 +115,26 @@ class PurchaseControllerTest extends TestCase
         $this->assertSame(1_930_000.0, (float) $purchase->total_pagar);
     }
 
+    public function test_purchase_explains_which_account_is_missing_when_it_cannot_be_accounted(): void
+    {
+        $this->authenticateWithCompany();
+        $item = $this->createProduct();
+        $this->createAccount('1435', 'Mercancías de prueba', 1);
+        $bankAccount = $this->createAccount('1110-TEST', 'Bancos de prueba', 1);
+        $paymentMethod = PaymentMethod::create(['name' => 'Banco prueba', 'is_editable' => true, 'chart_of_account_id' => $bankAccount->id]);
+        $payload = $this->purchasePayload($item, 2_000_000);
+        $payload['invoice_number'] = 'DAV-RET-005';
+        $payload['payment_method_id'] = $paymentMethod->id;
+
+        $response = $this->post(route('purchases.store'), $payload)
+            ->assertRedirect(route('purchases.index'));
+
+        $purchase = Purchase::query()->where('invoice_number', 'DAV-RET-005')->firstOrFail();
+        $this->assertSame(70_000.0, (float) $purchase->retefuente);
+        $this->assertNull($purchase->accounting_voucher_id);
+        $response->assertSessionHas('success', fn (string $message) => str_contains($message, 'Falta la cuenta PUC 2365'));
+    }
+
     public function test_expense_line_uses_a_puc_account_without_changing_inventory(): void
     {
         $this->authenticateWithCompany();

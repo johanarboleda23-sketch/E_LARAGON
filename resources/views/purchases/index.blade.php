@@ -6,14 +6,14 @@
     <title>Módulo de Gestión de Compras Avanzado</title>
     <!-- ESTILOS COMPACTOS LOCALES BLINDADOS PARA MONITORES HP -->
     <style>
-        body { background-color: #fdf2f8; font-family: sans-serif; padding: 10px; font-size: 12px; color: #374151; }
-        .form-container { background: white; padding: 20px; border-radius: 12px; border: 1px solid #fbcfe8; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.05); max-w: 100%; box-sizing: border-box; }
-        .top-bar { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #fbcfe8; padding-bottom: 10px; margin-bottom: 15px; flex-wrap: wrap; gap: 8px; }
-        .title-pink { color: #be185d; font-weight: bold; font-size: 16px; margin: 0; }
-        .btn-group { display: flex; gap: 4px; background: #f9fafb; padding: 6px; border-radius: 8px; border: 1px solid #e5e7eb; flex-wrap: wrap; }
-        .btn-white { background: white; border: 1px solid #d1d5db; padding: 5px 10px; border-radius: 6px; font-weight: 600; font-size: 11px; cursor: pointer; }
-        .btn-pink-light { background: #fce7f3; border: 1px solid #fbcfe8; color: #be185d; padding: 5px 10px; border-radius: 6px; font-weight: bold; font-size: 11px; cursor: pointer; }
-        .btn-pink-dark { background: #db2777; color: white; padding: 5px 14px; border-radius: 6px; font-weight: bold; font-size: 11px; border: none; cursor: pointer; }
+        body { background: #f3f5f1; font-family: sans-serif; padding: 18px; font-size: 12px; color: #364640; }
+        .form-container { background: white; padding: 22px; border-radius: 18px; border: 1px solid #d7dfd8; box-shadow: 0 14px 30px rgba(25,37,34,0.07); max-width: 1280px; margin: 0 auto; box-sizing: border-box; }
+        .top-bar { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #d7dfd8; padding-bottom: 16px; margin-bottom: 18px; flex-wrap: wrap; gap: 12px; }
+        .title-pink { color: #192522; font-weight: 900; font-size: 19px; margin: 0; letter-spacing: -0.02em; }
+        .btn-group { display: flex; gap: 6px; background: #f3f5f1; padding: 6px; border-radius: 12px; border: 1px solid #d7dfd8; flex-wrap: wrap; }
+        .btn-white { background: white; border: 1px solid #cbd6cf; color: #364640; padding: 7px 11px; border-radius: 8px; font-weight: 700; font-size: 11px; cursor: pointer; }
+        .btn-pink-light { background: #fff0e8; border: 1px solid #f1c2ae; color: #b65338; padding: 7px 11px; border-radius: 8px; font-weight: 800; font-size: 11px; cursor: pointer; }
+        .btn-pink-dark { background: #227c70; color: white; padding: 8px 15px; border-radius: 8px; font-weight: 800; font-size: 11px; border: none; cursor: pointer; }
         .download-menu { position: relative; }
         .download-menu > button { display: inline-flex; align-items: center; gap: 5px; }
         .download-options { display: none; position: absolute; right: 0; top: calc(100% + 4px); z-index: 10; min-width: 130px; padding: 4px; background: white; border: 1px solid #fbcfe8; border-radius: 6px; box-shadow: 0 8px 18px rgba(190,24,93,0.15); }
@@ -25,20 +25,28 @@
             .top-bar, .dian-box, .btn-pink-light, .download-menu, .btn-pink-dark, .remove-row, #payment-method, #credit-days { display: none !important; }
             .form-container { border: 0; box-shadow: none; padding: 0; }
         }
-        .dian-box { background: linear-gradient(to right, rgba(219,39,119,0.1), rgba(147,51,234,0.05)); padding: 10px; border-radius: 10px; border: 1px solid #fbcfe8; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; }
-        .grid-header { display: grid; grid-template-cols: repeat(5, 1fr); gap: 10px; background: rgba(252,231,243,0.3); padding: 10px; border-radius: 10px; border: 1px solid #fbcfe8; margin-bottom: 15px; }
-        .grid-header label { display: block; font-weight: bold; color: #be185d; text-transform: uppercase; font-size: 10px; margin-bottom: 2px; }
-        .input-style { width: 100%; padding: 6px; border-radius: 6px; border: 1px solid #fbcfe8; box-sizing: border-box; font-size: 12px; }
-        .table-box { border: 1px solid #db2777; border-radius: 10px; overflow-x: auto; margin-bottom: 15px; }
+        .dian-box { background: #edf7f4; padding: 14px; border-radius: 12px; border: 1px solid #b9ddd3; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: center; }
+        .grid-header { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; background: #f8faf8; padding: 14px; border-radius: 12px; border: 1px solid #d7dfd8; margin-bottom: 18px; }
+        .grid-header label { display: block; font-weight: 800; color: #227c70; text-transform: uppercase; font-size: 10px; margin-bottom: 4px; }
+        .input-style { width: 100%; padding: 8px; border-radius: 8px; border: 1px solid #cbd6cf; box-sizing: border-box; font-size: 12px; }
+        .table-box { border: 1px solid #b9ddd3; border-radius: 12px; overflow-x: auto; margin-bottom: 15px; }
         table { width: 100%; border-collapse: collapse; }
-        th { background: #db2777; color: white; padding: 8px; font-size: 11px; text-transform: uppercase; text-align: left; }
-        td { padding: 8px; background: white; border-bottom: 1px solid #fce7f3; }
-        .payment-box { background: #f9fafb; padding: 15px; border-radius: 10px; border: 1px solid #e5e7eb; box-sizing: border-box; margin-top: 15px; }
-        .totals-box { background: rgba(252,231,243,0.2); padding: 15px; border-radius: 10px; border: 1px solid #fbcfe8; font-weight: 500; box-sizing: border-box; margin-top: 15px; }
-        .total-row-pink { border-top: 1px solid #fbcfe8; padding-top: 8px; margin-top: 8px; font-size: 14px; font-weight: 900; color: #be185d; display: flex; justify-content: space-between; }
+        th { background: #192522; color: white; padding: 9px; font-size: 11px; text-transform: uppercase; text-align: left; }
+        td { padding: 8px; background: white; border-bottom: 1px solid #e6ede8; }
+        .payment-box { background: #f8faf8; padding: 15px; border-radius: 12px; border: 1px solid #d7dfd8; box-sizing: border-box; margin-top: 15px; }
+        .totals-box { background: #fff8df; padding: 15px; border-radius: 12px; border: 1px solid #f0d98b; font-weight: 500; box-sizing: border-box; margin-top: 15px; }
+        .total-row-pink { border-top: 1px solid #e7c96b; padding-top: 8px; margin-top: 8px; font-size: 14px; font-weight: 900; color: #8b6811; display: flex; justify-content: space-between; }
         .flex-box { display: flex; justify-content: space-between; margin-bottom: 6px; }
         .account-select, .line-description, .asset-fields { display: none; }
         .asset-fields { gap: 3px; }
+        .workflow-strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0 0 18px; }
+        .workflow-step { display: flex; align-items: center; gap: 9px; padding: 10px 12px; border: 1px solid #d7dfd8; border-radius: 10px; background: #f8faf8; }
+        .workflow-step strong { display: block; color: #192522; font-size: 11px; }
+        .workflow-step small { display: block; color: #71807a; font-size: 10px; }
+        .workflow-number { display: grid; width: 25px; height: 25px; place-items: center; flex: 0 0 auto; border-radius: 8px; background: #227c70; color: white; font-weight: 900; font-size: 11px; }
+        .section-label { margin: 0 0 8px; color: #71807a; font-size: 10px; font-weight: 900; letter-spacing: .14em; text-transform: uppercase; }
+        @media (max-width: 800px) { .grid-header { grid-template-columns: repeat(2, 1fr); } .workflow-strip { grid-template-columns: 1fr; } .top-bar > div { width: 100%; } .btn-group { justify-content: flex-start; } }
+        @media (max-width: 520px) { body { padding: 8px; } .form-container { padding: 14px; border-radius: 14px; } .grid-header { grid-template-columns: 1fr; } .dian-box { align-items: flex-start; flex-direction: column; gap: 10px; } }
     </style>
 </head>
 <body>
@@ -69,6 +77,12 @@
                 </div>
             </div>
 
+            <div class="workflow-strip" aria-label="Flujo de compra">
+                <div class="workflow-step"><span class="workflow-number">01</span><span><strong>Encabezado</strong><small>Proveedor y condiciones</small></span></div>
+                <div class="workflow-step"><span class="workflow-number">02</span><span><strong>Clasificación</strong><small>Producto, gasto o activo fijo</small></span></div>
+                <div class="workflow-step"><span class="workflow-number">03</span><span><strong>Revisión</strong><small>Impuestos, pago y total</small></span></div>
+            </div>
+
             <!-- CARGADOR ROBÓTICO XML DIAN -->
             <div class="dian-box" id="dian">
                 <div>
@@ -87,6 +101,7 @@
             <input type="hidden" name="provider_prefix" id="provider-prefix">
             <input type="hidden" name="provider_consecutive" id="provider-consecutive">
 
+            <p class="section-label">01 / Datos de la factura</p>
             <!-- ENCABEZADO FISCAL ESTILO FACTURA REAL -->
             <div class="grid-header">
                 <div>
@@ -110,6 +125,7 @@
                 </div>
             </div>
 
+            <p class="section-label">02 / Detalle y clasificación</p>
             <!-- TABLA MULTI-RENGLÓN COMPACTA -->
             <div class="table-box">
                 <table id="items-table">
@@ -180,6 +196,7 @@
 
             <button type="button" onclick="addRow()" class="btn-pink-light" style="margin-bottom:15px;">➕ Agregar Renglón</button>
 
+            <p class="section-label">03 / Pago y revisión final</p>
             <!-- SECCIÓN INFERIOR COMPACTADA AL 100% -->
             <div style="display: grid; grid-template-cols: 1.8fr 1fr; gap: 15px; align-items: start;">
                 

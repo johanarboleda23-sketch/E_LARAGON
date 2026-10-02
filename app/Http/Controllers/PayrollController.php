@@ -4,8 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Models\PayrollLine;
 use App\Models\PayrollRun;
+use App\Models\PayrollSocialSecurityError;
 use App\Models\ThirdParty;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 
@@ -89,5 +91,90 @@ class PayrollController extends Controller
         });
 
         return back()->with('success', 'Nómina enviada a '.$line->employee->email.'.');
+    }
+
+    public function socialSecurityFile(PayrollRun $run): Response
+    {
+        $run->load('lines.employee');
+        $rows = [[
+            'Tipo documento', 'Documento', 'Empleado', 'Periodo', 'Tipo cotizante',
+            'Salario básico', 'IBC salud', 'IBC pensión', 'IBC ARL', 'Salud empleado',
+            'Pensión empleado', 'Salud empleador', 'Pensión empleador', 'ARL',
+            'Parafiscales', 'Observación',
+        ]];
+
+        foreach ($run->lines as $line) {
+            $rows[] = [
+                $line->employee?->type === 'juridica' ? 'NI' : 'CC',
+                $line->employee?->document,
+                $line->employee?->name,
+                $run->period,
+                'Dependiente',
+                $line->salary,
+                $line->salary,
+                $line->salary,
+                $line->salary,
+                $line->health_employee,
+                $line->pension_employee,
+                $line->health_employer,
+                $line->pension_employer,
+                0,
+                $line->parafiscals,
+                'Completar EPS, AFP, ARL, caja y novedades antes de cargar en Enlace.',
+            ];
+        }
+
+        $content = collect($rows)
+            ->map(fn (array $row): string => collect($row)->map(fn (mixed $value): string => $this->csvCell($value))->implode(';'))
+            ->implode("\r\n");
+
+        return response("\xEF\xBB\xBF".$content, 200, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="preparacion-ss-{$run->period}.csv"',
+        ]);
+    }
+
+    public function importSocialSecurityErrors(Request $request, PayrollRun $run)
+    {
+        $data = $request->validate([
+            'file' => ['required', 'file', 'mimes:csv,txt', 'max:5120'],
+        ]);
+
+        $handle = fopen($data['file']->getRealPath(), 'r');
+        $delimiter = str_contains((string) fgets($handle), ';') ? ';' : ',';
+        rewind($handle);
+        $created = 0;
+        fgetcsv($handle, escape: '\\');
+
+        while (($row = fgetcsv($handle, escape: '\\')) !== false) {
+            if (count(array_filter($row)) < 2) {
+                continue;
+            }
+            if (count($row) === 1) {
+                $row = str_getcsv($row[0], $delimiter);
+            }
+
+            PayrollSocialSecurityError::create([
+                'company_id' => (int) session('company_id'),
+                'payroll_run_id' => $run->id,
+                'line_number' => is_numeric($row[0] ?? null) ? (int) $row[0] : null,
+                'field' => trim($row[1] ?? '') ?: null,
+                'message' => trim($row[2] ?? $row[1] ?? 'Inconsistencia importada'),
+            ]);
+            $created++;
+        }
+
+        fclose($handle);
+
+        return back()->with('success', "Se importaron {$created} inconsistencias de seguridad social.");
+    }
+
+    private function csvCell(mixed $value): string
+    {
+        $value = (string) $value;
+
+        return str_contains($value, ';') || str_contains($value, '"') || str_contains($value, "\n")
+            ? '"'.str_replace('"', '""', $value).'"'
+            : $value;
     }
 }

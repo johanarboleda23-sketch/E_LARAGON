@@ -88,6 +88,8 @@ Route::middleware(['auth', 'company'])->group(function () {
     Route::get('/nomina', [PayrollController::class, 'index'])->name('payroll.index');
     Route::post('/nomina/calcular', [PayrollController::class, 'calculate'])->name('payroll.calculate');
     Route::post('/nomina/lineas/{line}/correo', [PayrollController::class, 'email'])->name('payroll.email');
+    Route::get('/nomina/{run}/seguridad-social/archivo', [PayrollController::class, 'socialSecurityFile'])->name('payroll.social-security.file');
+    Route::post('/nomina/{run}/seguridad-social/errores', [PayrollController::class, 'importSocialSecurityErrors'])->name('payroll.social-security.errors.import');
     Route::get('/operaciones-masivas', [BulkOperationController::class, 'index'])->name('bulk-operations.index');
     Route::post('/operaciones-masivas/imprimir', [BulkOperationController::class, 'print'])->name('bulk-operations.print');
     Route::post('/operaciones-masivas/descargar', [BulkOperationController::class, 'download'])->name('bulk-operations.download');

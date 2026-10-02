@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\EnsureCompanyContext;
+use App\Http\Middleware\EnsureModuleWriteAccess;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -13,7 +14,10 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        $middleware->alias(['company' => EnsureCompanyContext::class]);
+        $middleware->alias([
+            'company' => EnsureCompanyContext::class,
+            'module' => EnsureModuleWriteAccess::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

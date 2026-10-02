@@ -12,6 +12,7 @@ use App\Http\Controllers\LogisticsController;
 use App\Http\Controllers\PayrollController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PurchaseController;
+use App\Http\Controllers\RegulationController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\SaleController;
 use App\Http\Controllers\SupportDocumentController;
@@ -64,6 +65,7 @@ Route::middleware(['auth', 'company'])->group(function () {
     Route::get('/reportes', [ReportController::class, 'index'])->name('reports.index');
     Route::get('/reportes/excel', [ReportController::class, 'excel'])->name('reports.excel');
     Route::get('/reportes/pdf', [ReportController::class, 'pdf'])->name('reports.pdf');
+    Route::get('/normativa', [RegulationController::class, 'index'])->name('regulations.index');
 
     Route::middleware('module:purchases')->group(function () {
         // Cable 1: El cargador robotizado del XML de la DIAN (En singular impecable)

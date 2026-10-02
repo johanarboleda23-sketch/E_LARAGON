@@ -2,9 +2,11 @@
 
 namespace Tests\Feature;
 
+use App\Models\AccountingVoucher;
 use App\Models\ChartOfAccount;
 use App\Models\Company;
 use App\Models\Item;
+use App\Models\PaymentMethod;
 use App\Models\Purchase;
 use App\Models\PurchaseDetail;
 use App\Models\User;
@@ -39,6 +41,28 @@ class PurchaseControllerTest extends TestCase
         $this->assertSame(70_000.0, (float) $purchase->retefuente);
         $this->assertSame(1_930_000.0, (float) $purchase->total_pagar);
         $this->assertSame(11, $item->fresh()->stock);
+    }
+
+    public function test_purchase_is_accounted_when_payment_method_has_a_puc_account(): void
+    {
+        $this->authenticateWithCompany();
+        $item = $this->createProduct();
+        $expenseAccount = $this->createAccount('5105-TEST', 'Gasto de prueba', 5);
+        $bankAccount = $this->createAccount('1110-TEST', 'Bancos de prueba', 1);
+        $paymentMethod = PaymentMethod::create(['name' => 'Banco prueba', 'is_editable' => true, 'chart_of_account_id' => $bankAccount->id]);
+        $payload = $this->purchasePayload($item, 100_000);
+        $payload['invoice_number'] = 'DAV-CONT-001';
+        $payload['payment_method_id'] = $paymentMethod->id;
+        $payload['items'][0]['purchase_line_type'] = 'gasto';
+        $payload['items'][0]['chart_of_account_id'] = $expenseAccount->id;
+        unset($payload['items'][0]['item_id']);
+
+        $this->post(route('purchases.store'), $payload)->assertRedirect(route('purchases.index'));
+
+        $voucher = AccountingVoucher::query()->where('consecutive', 'COMP-DAV-CONT-001')->with('lines')->firstOrFail();
+        $this->assertSame(100_000.0, (float) $voucher->total_debit);
+        $this->assertSame(100_000.0, (float) $voucher->total_credit);
+        $this->assertTrue($voucher->lines->contains('chart_of_account_id', $bankAccount->id));
     }
 
     public function test_purchase_does_not_withhold_below_the_configured_uvt_threshold(): void

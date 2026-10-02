@@ -3,17 +3,18 @@
 namespace App\Http\Controllers;
 
 use App\Models\AccountingVoucher;
-use App\Models\AccountingVoucherLine;
 use App\Models\ChartOfAccount;
 use App\Models\CommercialDocument;
 use App\Models\ThirdParty;
+use App\Services\AccountingEntryService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rule;
 
 class AccountingVoucherController extends Controller
 {
+    public function __construct(private readonly AccountingEntryService $accountingEntryService) {}
+
     public function index(Request $request)
     {
         $commercialDocument = null;
@@ -78,18 +79,10 @@ class AccountingVoucherController extends Controller
             'lines.*.credit' => 'nullable|numeric|min:0',
         ]);
 
-        $lines = collect($data['lines'])->map(function (array $line) {
-            $debit = (float) ($line['debit'] ?? 0);
-            $credit = (float) ($line['credit'] ?? 0);
-            if (($debit > 0 && $credit > 0) || ($debit == 0 && $credit == 0)) {
-                abort(422, 'Cada línea debe tener solo un valor débito o crédito.');
-            }
+        $lines = collect($data['lines']);
 
-            return [...$line, 'debit' => $debit, 'credit' => $credit];
-        });
-
-        $totalDebit = round($lines->sum('debit'), 2);
-        $totalCredit = round($lines->sum('credit'), 2);
+        $totalDebit = round($lines->sum(fn (array $line): float => (float) ($line['debit'] ?? 0)), 2);
+        $totalCredit = round($lines->sum(fn (array $line): float => (float) ($line['credit'] ?? 0)), 2);
         if ($totalDebit <= 0 || $totalDebit !== $totalCredit) {
             return back()->withInput()->withErrors(['lines' => 'El comprobante debe cuadrar: débito y crédito deben ser iguales y mayores que cero.']);
         }
@@ -109,51 +102,9 @@ class AccountingVoucherController extends Controller
                 return back()->withInput()->withErrors(['lines' => 'El débito y el crédito deben coincidir con el total de la nota.']);
             }
 
-            foreach ($lines as $line) {
-                if (! ChartOfAccount::query()->whereKey($line['chart_of_account_id'])->exists()) {
-                    return back()->withInput()->withErrors(['lines' => 'Selecciona cuentas PUC activas de la empresa actual.']);
-                }
-            }
         }
 
-        $voucher = DB::transaction(function () use ($data, $lines, $totalDebit, $totalCredit, $commercialDocument): AccountingVoucher {
-            if ($commercialDocument) {
-                $commercialDocument = CommercialDocument::query()->lockForUpdate()->findOrFail($commercialDocument->id);
-                abort_if($commercialDocument->status !== 'draft' || $commercialDocument->accountingVoucher()->exists(), 409);
-                abort_unless(round($totalDebit, 2) === round((float) $commercialDocument->total, 2), 409);
-            }
-
-            $voucher = AccountingVoucher::create([
-                'voucher_type' => $data['voucher_type'],
-                'consecutive' => $data['consecutive'],
-                'voucher_date' => $data['voucher_date'],
-                'third_party' => $commercialDocument?->third_party_name ?? ($data['third_party'] ?? null),
-                'description' => $data['description'] ?? null,
-                'total_debit' => $totalDebit,
-                'total_credit' => $totalCredit,
-                'commercial_document_id' => $commercialDocument?->id,
-                'created_by' => auth()->id(),
-            ]);
-
-            foreach ($lines as $line) {
-                AccountingVoucherLine::create([
-                    'accounting_voucher_id' => $voucher->id,
-                    'chart_of_account_id' => $line['chart_of_account_id'],
-                    'detail' => $line['detail'] ?? null,
-                    'debit' => $line['debit'],
-                    'credit' => $line['credit'],
-                ]);
-            }
-
-            if ($commercialDocument) {
-                $commercialDocument->update([
-                    'status' => 'accounted',
-                    'accounted_at' => now(),
-                ]);
-            }
-
-            return $voucher;
-        });
+        $voucher = $this->accountingEntryService->post($data, $lines, $commercialDocument);
 
         return $commercialDocument
             ? redirect()->route('accounting.vouchers.accounting', $voucher)->with('success', 'Nota contabilizada correctamente.')

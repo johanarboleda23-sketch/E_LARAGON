@@ -73,6 +73,16 @@
                             <button class="rounded-lg border border-white/20 px-4 py-2 text-xs font-bold text-white">Importar errores de Enlace</button>
                         </form>
                     @endif
+                    @if($socialSecurityErrors->isNotEmpty())
+                        <div class="mt-5 max-h-48 overflow-y-auto rounded-lg border border-white/10 text-xs">
+                            @foreach($socialSecurityErrors as $error)
+                                <div class="border-b border-white/10 p-2 last:border-0">
+                                    <p class="font-bold text-[#f5c96a]">{{ $error->employee?->name ?? 'Sin identificar' }}@if($error->line_number) · Línea {{ $error->line_number }}@endif</p>
+                                    <p class="mt-0.5 text-[#b9c9c1]">{{ $error->message }}</p>
+                                </div>
+                            @endforeach
+                        </div>
+                    @endif
                 </aside>
             </div>
 

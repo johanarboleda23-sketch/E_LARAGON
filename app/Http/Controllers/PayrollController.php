@@ -23,8 +23,13 @@ class PayrollController extends Controller
             ->orderBy('name')
             ->get();
         $runs = PayrollRun::with('lines.employee')->latest()->take(12)->get();
+        $socialSecurityErrors = PayrollSocialSecurityError::with('employee')
+            ->where('resolved', false)
+            ->latest()
+            ->take(20)
+            ->get();
 
-        return view('payroll.main', compact('employees', 'runs'));
+        return view('payroll.index', compact('employees', 'runs', 'socialSecurityErrors'));
     }
 
     public function calculate(Request $request)
@@ -130,7 +135,7 @@ class PayrollController extends Controller
 
         return response("\xEF\xBB\xBF".$content, 200, [
             'Content-Type' => 'text/csv; charset=UTF-8',
-            'Content-Disposition' => 'attachment; filename="preparacion-ss-{$run->period}.csv"',
+            'Content-Disposition' => "attachment; filename=\"preparacion-ss-{$run->period}.csv\"",
         ]);
     }
 

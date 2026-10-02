@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ChartOfAccount;
 use App\Models\Company;
+use App\Models\PaymentMethod;
 use App\Models\User;
 use Illuminate\Http\Request;
 
@@ -20,8 +22,16 @@ class AdminController extends Controller
         $company = $request->user()->companies()->where('companies.id', session('company_id'))->firstOrFail();
         $companies = $request->user()->companies()->withCount('users')->orderBy('name')->get();
         $members = $company->users()->orderBy('name')->get();
+        $paymentMethods = PaymentMethod::query()->with('account')->orderBy('name')->get();
+        if ($paymentMethods->isEmpty()) {
+            foreach (['Efectivo', 'Bancos', 'Anticipo', 'Crédito'] as $name) {
+                PaymentMethod::create(['name' => $name, 'is_editable' => true]);
+            }
+            $paymentMethods = PaymentMethod::query()->with('account')->orderBy('name')->get();
+        }
+        $postingAccounts = ChartOfAccount::query()->where('active', true)->where('allows_posting', true)->orderBy('code')->get(['id', 'code', 'name']);
 
-        return view('admin.index', compact('company', 'companies', 'members'));
+        return view('admin.index', compact('company', 'companies', 'members', 'paymentMethods', 'postingAccounts'));
     }
 
     public function storeCompany(Request $request)
@@ -54,5 +64,17 @@ class AdminController extends Controller
         $company->users()->updateExistingPivot($user->id, ['role' => $data['role']]);
 
         return back()->with('success', 'Rol actualizado.');
+    }
+
+    public function updatePaymentMethod(Request $request, PaymentMethod $paymentMethod)
+    {
+        $this->authorizeAdmin($request);
+        $data = $request->validate([
+            'chart_of_account_id' => ['nullable', 'integer', 'exists:chart_of_accounts,id'],
+        ]);
+
+        $paymentMethod->update($data);
+
+        return back()->with('success', 'Cuenta PUC de la forma de pago actualizada.');
     }
 }

@@ -48,6 +48,8 @@
                     ['name' => 'Contabilidad', 'hint' => 'Comprobantes', 'route' => 'accounting.vouchers.index', 'icon' => '◇', 'tone' => 'bg-[#f1f4f2] text-[#354d45]'],
                     ['name' => 'PUC', 'hint' => 'Cuentas auxiliares', 'route' => 'accounting.puc.index', 'icon' => '⊙', 'tone' => 'bg-[#edf7f4] text-[#227c70]'],
                     ['name' => 'Terceros', 'hint' => 'Clientes y proveedores', 'route' => 'third-parties.index', 'icon' => '♙', 'tone' => 'bg-[#fff0e8] text-[#b65338]'],
+                    ['name' => 'Nota crédito clientes', 'hint' => 'Devoluciones y ajustes', 'route' => 'commercial-documents.customer-credit-notes', 'icon' => '⤷', 'tone' => 'bg-[#edf7f4] text-[#227c70]'],
+                    ['name' => 'Nota débito proveedores', 'hint' => 'Ajustes a proveedores', 'route' => 'commercial-documents.supplier-debit-notes', 'icon' => '⤶', 'tone' => 'bg-[#fff0e8] text-[#b65338]'],
                     ['name' => 'Reportes', 'hint' => 'Indicadores', 'route' => 'reports.index', 'icon' => '▥', 'tone' => 'bg-[#eef1fb] text-[#5064a4]'],
                     ['name' => 'Operaciones masivas', 'hint' => 'Imprimir y enviar', 'route' => 'bulk-operations.index', 'icon' => '⇪', 'tone' => 'bg-[#f4f1fb] text-[#73559e]'],
                     ['name' => 'Administración', 'hint' => 'Empresa y usuarios', 'route' => 'admin.index', 'icon' => '⚙', 'tone' => 'bg-[#f1f4f2] text-[#354d45]'],

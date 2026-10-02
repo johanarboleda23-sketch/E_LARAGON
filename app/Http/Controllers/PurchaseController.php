@@ -9,6 +9,7 @@ use App\Models\PaymentMethod;
 use App\Models\Purchase;
 use App\Models\PurchaseDetail;
 use App\Models\ThirdParty;
+use App\Services\AccountingEntryService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -16,6 +17,8 @@ use Illuminate\Validation\ValidationException;
 
 class PurchaseController extends Controller
 {
+    public function __construct(private readonly AccountingEntryService $accountingEntryService) {}
+
     /**
      * Muestra la pantalla principal rosa de compras avanzada con botones arriba.
      */
@@ -42,12 +45,10 @@ class PurchaseController extends Controller
             ->get(['id', 'code', 'name', 'class']);
 
         if ($paymentMethods->isEmpty()) {
-            $paymentMethods = collect([
-                (object) ['id' => 'cash', 'name' => 'Efectivo'],
-                (object) ['id' => 'bank', 'name' => 'Bancos'],
-                (object) ['id' => 'advance', 'name' => 'Cruzar con Anticipo'],
-                (object) ['id' => 'credit', 'name' => 'Crédito'],
-            ]);
+            foreach (['Efectivo', 'Bancos', 'Anticipo', 'Crédito'] as $name) {
+                PaymentMethod::create(['name' => $name, 'is_editable' => true]);
+            }
+            $paymentMethods = PaymentMethod::query()->orderBy('name')->get();
         }
 
         return view('purchases.index', compact('paymentMethods', 'postingAccounts', 'products', 'withholdings', 'recentPurchases', 'suppliers'));
@@ -61,6 +62,7 @@ class PurchaseController extends Controller
         $data = $request->validate([
             'invoice_number' => 'required|string|max:255',
             'provider' => 'required|string|max:255',
+            'payment_method_id' => ['nullable', 'integer', 'exists:payment_methods,id'],
             'provider_regimen' => ['required', Rule::in(['comun', 'simplificado', 'gran_contribuyente', 'sin_responsabilidad'])],
             'withholding_concept' => ['required', Rule::in(array_keys(config('colombia_withholdings.concepts')))],
             'items' => 'required|array|min:1',
@@ -139,10 +141,11 @@ class PurchaseController extends Controller
         $data['retention_base'] = $taxableBase;
         $data['total_pagar'] = round($subtotal + $ivaTotal - $retention, 2);
 
-        DB::transaction(function () use ($data) {
+        $purchase = DB::transaction(function () use ($data): Purchase {
             $purchase = Purchase::create([
                 'invoice_number' => $data['invoice_number'],
                 'provider' => $data['provider'],
+                'payment_method_id' => $data['payment_method_id'] ?? null,
                 'created_by' => auth()->id(),
                 'purchase_date' => now()->toDateString(),
                 'subtotal' => $data['subtotal'],
@@ -199,9 +202,15 @@ class PurchaseController extends Controller
                     ]);
                 }
             }
+
+            return $purchase;
         });
 
-        return redirect()->route('purchases.index')->with('success', '¡Factura guardada y stock actualizado!');
+        $accountingVoucher = $this->accountingEntryService->postPurchase($purchase);
+
+        return redirect()->route('purchases.index')->with('success', $accountingVoucher
+            ? '¡Factura guardada, stock actualizado y contabilizada!'
+            : '¡Factura guardada y stock actualizado! Configura las cuentas PUC para contabilizarla automáticamente.');
     }
 
     public function destroy(Purchase $purchase)

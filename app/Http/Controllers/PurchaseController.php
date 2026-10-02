@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\ChartOfAccount;
 use App\Models\InventoryMovement;
 use App\Models\Item;
+use App\Models\NumberingResolution;
 use App\Models\PaymentMethod;
 use App\Models\Purchase;
 use App\Models\PurchaseDetail;
@@ -59,8 +60,10 @@ class PurchaseController extends Controller
      */
     public function store(Request $request)
     {
+        $hasActiveResolution = NumberingResolution::query()->where('document_type', 'purchase')->where('active', true)->exists();
+
         $data = $request->validate([
-            'invoice_number' => 'required|string|max:255',
+            'invoice_number' => [$hasActiveResolution ? 'nullable' : 'required', 'string', 'max:255'],
             'provider' => 'required|string|max:255',
             'payment_method_id' => ['nullable', 'integer', 'exists:payment_methods,id'],
             'provider_regimen' => ['required', Rule::in(['comun', 'simplificado', 'gran_contribuyente', 'sin_responsabilidad'])],
@@ -141,9 +144,15 @@ class PurchaseController extends Controller
         $data['retention_base'] = $taxableBase;
         $data['total_pagar'] = round($subtotal + $ivaTotal - $retention, 2);
 
-        $purchase = DB::transaction(function () use ($data): Purchase {
+        try {
+            $invoiceNumber = NumberingResolution::allocateNext('purchase') ?? $data['invoice_number'];
+        } catch (\RuntimeException $e) {
+            return back()->withErrors(['invoice_number' => $e->getMessage()])->withInput();
+        }
+
+        $purchase = DB::transaction(function () use ($data, $invoiceNumber): Purchase {
             $purchase = Purchase::create([
-                'invoice_number' => $data['invoice_number'],
+                'invoice_number' => $invoiceNumber,
                 'provider' => $data['provider'],
                 'payment_method_id' => $data['payment_method_id'] ?? null,
                 'created_by' => auth()->id(),

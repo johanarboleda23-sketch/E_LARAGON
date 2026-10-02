@@ -9,6 +9,7 @@ use App\Http\Controllers\CommercialDocumentController;
 use App\Http\Controllers\CompanyController;
 use App\Http\Controllers\ItemController;
 use App\Http\Controllers\LogisticsController;
+use App\Http\Controllers\NumberingResolutionController;
 use App\Http\Controllers\PayrollController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PurchaseController;
@@ -100,6 +101,13 @@ Route::middleware(['auth', 'company'])->group(function () {
         Route::get('/puc', [ChartOfAccountController::class, 'index'])->name('accounting.puc.index');
         Route::post('/puc', [ChartOfAccountController::class, 'store'])->name('accounting.puc.store');
         Route::put('/puc/{account}', [ChartOfAccountController::class, 'update'])->name('accounting.puc.update');
+    });
+
+    Route::middleware('module:numbering-resolutions')->group(function () {
+        Route::get('/resoluciones-numeracion', [NumberingResolutionController::class, 'index'])->name('numbering-resolutions.index');
+        Route::post('/resoluciones-numeracion', [NumberingResolutionController::class, 'store'])->name('numbering-resolutions.store');
+        Route::put('/resoluciones-numeracion/{numberingResolution}', [NumberingResolutionController::class, 'update'])->name('numbering-resolutions.update');
+        Route::delete('/resoluciones-numeracion/{numberingResolution}', [NumberingResolutionController::class, 'destroy'])->name('numbering-resolutions.destroy');
     });
 
     Route::get('/compras-rosa', fn () => redirect()->route('purchases.index'));

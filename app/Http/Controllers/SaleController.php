@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\InventoryMovement;
 use App\Models\Item;
+use App\Models\NumberingResolution;
 use App\Models\Sale;
 use App\Models\SaleDetail;
 use App\Models\ThirdParty;
@@ -33,8 +34,10 @@ class SaleController extends Controller
 
     public function store(Request $request)
     {
+        $hasActiveResolution = NumberingResolution::query()->where('document_type', 'sale')->where('active', true)->exists();
+
         $data = $request->validate([
-            'invoice_number' => 'required|string|max:255|unique:sales,invoice_number',
+            'invoice_number' => [$hasActiveResolution ? 'nullable' : 'required', 'string', 'max:255', 'unique:sales,invoice_number'],
             'customer_name' => 'required|string|max:255',
             'customer_document' => 'nullable|string|max:100',
             'customer_email' => 'nullable|email|max:255',
@@ -63,9 +66,15 @@ class SaleController extends Controller
         $data['retention_total'] = $retentionTotal;
         $data['total'] = round((float) $data['subtotal'] - (float) $data['discount_total'] + (float) $data['iva_total'] - $retentionTotal, 2);
 
-        DB::transaction(function () use ($data) {
+        try {
+            $invoiceNumber = NumberingResolution::allocateNext('sale') ?? $data['invoice_number'];
+        } catch (\RuntimeException $e) {
+            return back()->withErrors(['invoice_number' => $e->getMessage()])->withInput();
+        }
+
+        DB::transaction(function () use ($data, $invoiceNumber) {
             $sale = Sale::create([
-                'invoice_number' => $data['invoice_number'],
+                'invoice_number' => $invoiceNumber,
                 'customer_name' => $data['customer_name'],
                 'customer_document' => $data['customer_document'] ?? null,
                 'customer_email' => $data['customer_email'] ?? null,

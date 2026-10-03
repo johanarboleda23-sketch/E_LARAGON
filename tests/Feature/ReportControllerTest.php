@@ -2,8 +2,12 @@
 
 namespace Tests\Feature;
 
+use App\Models\AccountingVoucher;
+use App\Models\AccountingVoucherLine;
+use App\Models\ChartOfAccount;
 use App\Models\Company;
 use App\Models\Purchase;
+use App\Models\Sale;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -55,6 +59,109 @@ class ReportControllerTest extends TestCase
         $response = $this->get(route('reports.pdf', $this->validFilters('purchases')));
 
         $response->assertOk()->assertSeeText('FAC-PROPIA')->assertDontSeeText('FAC-AJENA');
+    }
+
+    public function test_accounting_report_lists_only_movements_within_the_requested_account_range(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $this->createVoucherLine($company, '2365', 'Retención en la fuente', 50000);
+        $this->createVoucherLine($company, '1435', 'Inventario', 100000);
+
+        $response = $this->get(route('reports.index', [
+            'from' => '2026-09-01',
+            'to' => '2026-09-30',
+            'type' => 'accounting',
+            'account_from' => '2365',
+            'account_to' => '2365',
+        ]));
+
+        $response->assertOk()->assertSeeText('2365 - Retención en la fuente')->assertDontSeeText('1435 - Inventario');
+    }
+
+    public function test_accounting_report_does_not_show_movements_from_another_company(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $otherCompany = Company::create(['name' => 'Otra empresa', 'active' => true]);
+        $this->createVoucherLine($company, '2365', 'Retención propia', 50000);
+        $this->createVoucherLine($otherCompany, '2365', 'Retención ajena', 70000);
+
+        $response = $this->get(route('reports.index', [
+            'from' => '2026-09-01',
+            'to' => '2026-09-30',
+            'type' => 'accounting',
+            'account_from' => '2365',
+            'account_to' => '2365',
+        ]));
+
+        $response->assertOk()->assertSeeText('Retención propia')->assertDontSeeText('Retención ajena');
+    }
+
+    public function test_accounting_report_shows_every_auxiliary_movement_when_no_account_range_is_given(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $this->createVoucherLine($company, '2365', 'Retención en la fuente', 50000);
+        $this->createVoucherLine($company, '1435', 'Inventario', 100000);
+
+        $response = $this->get(route('reports.index', [
+            'from' => '2026-09-01',
+            'to' => '2026-09-30',
+            'type' => 'accounting',
+        ]));
+
+        $response->assertOk()->assertSeeText('2365 - Retención en la fuente')->assertSeeText('1435 - Inventario');
+    }
+
+    public function test_accounting_report_can_be_filtered_by_third_party(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $this->createVoucherLine($company, '2365', 'Retención proveedor A', 50000, 'Proveedor A S.A.S');
+        $this->createVoucherLine($company, '2365', 'Retención proveedor B', 30000, 'Proveedor B S.A.S');
+
+        $response = $this->get(route('reports.index', [
+            'from' => '2026-09-01',
+            'to' => '2026-09-30',
+            'type' => 'accounting',
+            'account_from' => '2365',
+            'account_to' => '2365',
+            'third_party' => 'Proveedor A',
+        ]));
+
+        $response->assertOk()->assertSeeText('Proveedor A S.A.S')->assertDontSeeText('Proveedor B S.A.S');
+    }
+
+    public function test_taxes_report_lists_iva_and_withholding_from_purchases_and_sales(): void
+    {
+        $company = $this->authenticateWithCompany();
+        Purchase::create([
+            'company_id' => $company->id,
+            'invoice_number' => 'FAC-COMPRA',
+            'provider' => 'Proveedor de prueba',
+            'purchase_date' => '2026-09-14',
+            'subtotal' => 1500000,
+            'iva_total' => 285000,
+            'retefuente' => 40000,
+            'total_pagar' => 1745000,
+        ]);
+        Sale::create([
+            'company_id' => $company->id,
+            'invoice_number' => 'FAC-VENTA',
+            'customer_name' => 'Cliente de prueba',
+            'sale_date' => '2026-09-20',
+            'subtotal' => 100,
+            'iva_total' => 19,
+            'total' => 119,
+        ]);
+
+        $response = $this->get(route('reports.index', [
+            'from' => '2026-09-01',
+            'to' => '2026-09-30',
+            'type' => 'taxes',
+        ]));
+
+        $response->assertOk()
+            ->assertSeeText('IVA descontable (compra)')
+            ->assertSeeText('Retención en la fuente practicada')
+            ->assertSeeText('IVA generado (venta)');
     }
 
     #[DataProvider('invalidReportFilters')]
@@ -109,5 +216,32 @@ class ReportControllerTest extends TestCase
             'to' => '2026-09-30',
             'type' => $type,
         ];
+    }
+
+    private function createVoucherLine(Company $company, string $accountCode, string $detail, float $amount, string $thirdParty = 'Tercero de prueba'): AccountingVoucherLine
+    {
+        $account = ChartOfAccount::firstOrCreate(
+            ['company_id' => $company->id, 'code' => $accountCode],
+            ['name' => $detail, 'class' => (int) $accountCode[0], 'nature' => 'credit', 'allows_posting' => true, 'active' => true]
+        );
+
+        $voucher = AccountingVoucher::create([
+            'company_id' => $company->id,
+            'voucher_type' => 'egreso',
+            'consecutive' => 'CE-'.$accountCode.'-'.$company->id.'-'.uniqid(),
+            'voucher_date' => '2026-09-14',
+            'third_party' => $thirdParty,
+            'total_debit' => $amount,
+            'total_credit' => $amount,
+        ]);
+
+        return AccountingVoucherLine::create([
+            'company_id' => $company->id,
+            'accounting_voucher_id' => $voucher->id,
+            'chart_of_account_id' => $account->id,
+            'detail' => $detail,
+            'debit' => $amount,
+            'credit' => 0,
+        ]);
     }
 }

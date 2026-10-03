@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AccountingVoucherLine;
 use App\Models\PayrollRun;
 use App\Models\Purchase;
 use App\Models\Sale;
@@ -16,10 +17,16 @@ class ReportController extends Controller
             'from' => $request->query('from', now()->startOfMonth()->toDateString()),
             'to' => $request->query('to', now()->toDateString()),
             'type' => $request->query('type', 'all'),
+            'account_from' => $request->query('account_from'),
+            'account_to' => $request->query('account_to'),
+            'third_party' => $request->query('third_party'),
         ], [
             'from' => ['required', 'date_format:Y-m-d'],
             'to' => ['required', 'date_format:Y-m-d', 'after_or_equal:from'],
-            'type' => ['required', 'in:all,purchases,sales,support,payroll'],
+            'type' => ['required', 'in:all,purchases,sales,support,payroll,accounting,taxes'],
+            'account_from' => ['nullable', 'string', 'max:20'],
+            'account_to' => ['nullable', 'string', 'max:20', 'required_with:account_from', 'gte:account_from'],
+            'third_party' => ['nullable', 'string', 'max:255'],
         ], [
             'from.required' => 'Indica la fecha inicial.',
             'from.date_format' => 'La fecha inicial debe tener el formato AAAA-MM-DD.',
@@ -28,11 +35,16 @@ class ReportController extends Controller
             'to.after_or_equal' => 'La fecha final debe ser igual o posterior a la fecha inicial.',
             'type.required' => 'Selecciona un módulo.',
             'type.in' => 'El módulo seleccionado no es válido.',
+            'account_to.required_with' => 'Indica la cuenta PUC final.',
+            'account_to.gte' => 'La cuenta PUC final debe ser igual o posterior a la inicial.',
         ])->validate();
 
         $from = $filters['from'];
         $to = $filters['to'];
         $type = $filters['type'];
+        $accountFrom = $filters['account_from'] ?? null;
+        $accountTo = $filters['account_to'] ?? null;
+        $thirdParty = $filters['third_party'] ?? null;
         $rows = collect();
 
         if (in_array($type, ['all', 'purchases'], true)) {
@@ -47,8 +59,41 @@ class ReportController extends Controller
         if (in_array($type, ['all', 'payroll'], true)) {
             PayrollRun::whereBetween('payment_date', [$from, $to])->get()->each(fn ($item) => $rows->push(['date' => $item->payment_date->toDateString(), 'type' => 'Nómina', 'document' => $item->period, 'third_party' => 'Empleados', 'total' => $item->total_net]));
         }
+        if ($type === 'accounting') {
+            AccountingVoucherLine::whereHas('voucher', function ($query) use ($from, $to, $thirdParty) {
+                $query->whereBetween('voucher_date', [$from, $to]);
+                if ($thirdParty) {
+                    $query->where('third_party', 'like', '%'.$thirdParty.'%');
+                }
+            })
+                ->when($accountFrom && $accountTo, fn ($query) => $query->whereHas('account', fn ($accountQuery) => $accountQuery->whereBetween('code', [$accountFrom, $accountTo])))
+                ->with(['voucher', 'account'])
+                ->get()
+                ->each(fn ($line) => $rows->push([
+                    'date' => $line->voucher->voucher_date->toDateString(),
+                    'type' => $line->account->code.' - '.$line->account->name,
+                    'document' => $line->voucher->consecutive,
+                    'third_party' => $line->voucher->third_party ?? $line->detail,
+                    'total' => $line->debit - $line->credit,
+                ]));
+        }
+        if ($type === 'taxes') {
+            Purchase::whereBetween('purchase_date', [$from, $to])->get()->each(function ($item) use (&$rows) {
+                if ($item->iva_total > 0) {
+                    $rows->push(['date' => $item->purchase_date->toDateString(), 'type' => 'IVA descontable (compra)', 'document' => $item->invoice_number, 'third_party' => $item->provider, 'total' => $item->iva_total]);
+                }
+                if ($item->retefuente > 0) {
+                    $rows->push(['date' => $item->purchase_date->toDateString(), 'type' => 'Retención en la fuente practicada', 'document' => $item->invoice_number, 'third_party' => $item->provider, 'total' => $item->retefuente]);
+                }
+            });
+            Sale::whereBetween('sale_date', [$from, $to])->get()->each(function ($item) use (&$rows) {
+                if ($item->iva_total > 0) {
+                    $rows->push(['date' => $item->sale_date->toDateString(), 'type' => 'IVA generado (venta)', 'document' => $item->invoice_number, 'third_party' => $item->customer_name, 'total' => $item->iva_total]);
+                }
+            });
+        }
 
-        return compact('from', 'to', 'type', 'rows');
+        return compact('from', 'to', 'type', 'rows', 'accountFrom', 'accountTo', 'thirdParty');
     }
 
     public function index(Request $request)

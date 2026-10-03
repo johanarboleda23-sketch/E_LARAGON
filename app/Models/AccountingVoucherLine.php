@@ -15,4 +15,9 @@ class AccountingVoucherLine extends Model
     {
         return $this->belongsTo(ChartOfAccount::class, 'chart_of_account_id');
     }
+
+    public function voucher()
+    {
+        return $this->belongsTo(AccountingVoucher::class, 'accounting_voucher_id');
+    }
 }

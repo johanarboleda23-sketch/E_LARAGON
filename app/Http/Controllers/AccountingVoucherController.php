@@ -125,6 +125,31 @@ class AccountingVoucherController extends Controller
         return view('accounting.vouchers.accounting', compact('voucher'));
     }
 
+    /**
+     * Devuelve el comprobante en JSON para mostrarlo en el modal de "asiento contable"
+     * reutilizado por los demás módulos (Compras, Ventas, Nómina, Documento soporte).
+     */
+    public function json(AccountingVoucher $voucher)
+    {
+        $voucher->load('lines.account');
+
+        return response()->json([
+            'consecutive' => $voucher->consecutive,
+            'voucher_type' => $voucher->voucher_type,
+            'voucher_date' => $voucher->voucher_date->toDateString(),
+            'third_party' => $voucher->third_party,
+            'description' => $voucher->description,
+            'total_debit' => (float) $voucher->total_debit,
+            'total_credit' => (float) $voucher->total_credit,
+            'lines' => $voucher->lines->map(fn ($line) => [
+                'account' => $line->account->code.' - '.$line->account->name,
+                'detail' => $line->detail,
+                'debit' => (float) $line->debit,
+                'credit' => (float) $line->credit,
+            ]),
+        ]);
+    }
+
     public function statement(AccountingVoucher $voucher)
     {
         return view('accounting.vouchers.statement', compact('voucher'));

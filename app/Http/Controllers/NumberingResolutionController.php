@@ -52,12 +52,22 @@ class NumberingResolutionController extends Controller
     public function update(Request $request, NumberingResolution $numberingResolution): RedirectResponse
     {
         $data = $request->validate([
-            'active' => ['required', 'boolean'],
+            'active' => ['sometimes', 'boolean'],
+            'prefix' => ['sometimes', 'nullable', 'string', 'max:20'],
+            'resolution_number' => ['sometimes', 'string', 'max:50'],
+            'resolution_date' => ['sometimes', 'nullable', 'date'],
+            'valid_from' => ['sometimes', 'nullable', 'date'],
+            'valid_until' => ['sometimes', 'nullable', 'date', 'after_or_equal:valid_from'],
+            'range_from' => ['sometimes', 'integer', 'min:1'],
+            'range_to' => ['sometimes', 'integer', 'gt:range_from'],
+            'next_number' => ['sometimes', 'integer', 'min:1'],
         ]);
 
         $numberingResolution->update($data);
 
-        return back()->with('success', $data['active'] ? 'Resolución activada.' : 'Resolución desactivada.');
+        return back()->with('success', array_key_exists('active', $data) && count($data) === 1
+            ? ($data['active'] ? 'Resolución activada.' : 'Resolución desactivada.')
+            : 'Resolución actualizada.');
     }
 
     public function destroy(NumberingResolution $numberingResolution): RedirectResponse

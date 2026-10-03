@@ -17,4 +17,9 @@ class PayrollRun extends Model
     {
         return $this->hasMany(PayrollLine::class);
     }
+
+    public function accountingVoucher()
+    {
+        return $this->belongsTo(AccountingVoucher::class);
+    }
 }

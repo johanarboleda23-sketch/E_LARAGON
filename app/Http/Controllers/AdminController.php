@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\ChartOfAccount;
 use App\Models\Company;
+use App\Models\FactusCredential;
 use App\Models\PaymentMethod;
 use App\Models\User;
 use App\Support\DefaultChartOfAccounts;
@@ -31,8 +32,9 @@ class AdminController extends Controller
             $paymentMethods = PaymentMethod::query()->with('account')->orderBy('name')->get();
         }
         $postingAccounts = ChartOfAccount::query()->where('active', true)->where('allows_posting', true)->orderBy('code')->get(['id', 'code', 'name']);
+        $factusCredential = $company->factusCredential;
 
-        return view('admin.index', compact('company', 'companies', 'members', 'paymentMethods', 'postingAccounts'));
+        return view('admin.index', compact('company', 'companies', 'members', 'paymentMethods', 'postingAccounts', 'factusCredential'));
     }
 
     public function storeCompany(Request $request)
@@ -86,5 +88,23 @@ class AdminController extends Controller
         DefaultChartOfAccounts::seedFor((int) session('company_id'));
 
         return back()->with('success', 'Catálogo PUC estándar restaurado: se crearon las cuentas que faltaban (sin duplicar ni modificar las existentes).');
+    }
+
+    public function updateFactusCredential(Request $request)
+    {
+        $this->authorizeAdmin($request);
+        $data = $request->validate([
+            'environment' => ['required', 'in:sandbox,production'],
+            'client_id' => ['required', 'string', 'max:255'],
+            'client_secret' => ['required', 'string', 'max:255'],
+            'username' => ['required', 'string', 'max:255'],
+            'password' => ['required', 'string', 'max:255'],
+            'invoice_numbering_range_id' => ['nullable', 'integer'],
+            'payroll_numbering_range_id' => ['nullable', 'integer'],
+        ]);
+        $company = $request->user()->companies()->where('companies.id', session('company_id'))->firstOrFail();
+        FactusCredential::updateOrCreate(['company_id' => $company->id], $data + ['active' => true]);
+
+        return back()->with('success', 'Credenciales de Factus guardadas.');
     }
 }

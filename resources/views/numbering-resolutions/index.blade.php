@@ -86,6 +86,7 @@
                                 </td>
                                 <td class="p-3">
                                     <div class="flex flex-wrap items-center gap-2">
+                                        <button type="button" onclick="document.getElementById('edit-row-{{ $resolution->id }}').classList.toggle('hidden')" class="text-xs font-bold text-[#192522] hover:underline">Editar</button>
                                         <form method="POST" action="{{ route('numbering-resolutions.update', $resolution) }}">
                                             @csrf
                                             @method('PUT')
@@ -98,6 +99,37 @@
                                             <button class="text-xs font-bold text-[#b91c1c] hover:underline">Eliminar</button>
                                         </form>
                                     </div>
+                                </td>
+                            </tr>
+                            <tr id="edit-row-{{ $resolution->id }}" class="hidden bg-[#f8faf8]">
+                                <td colspan="8" class="p-3">
+                                    <form method="POST" action="{{ route('numbering-resolutions.update', $resolution) }}" class="grid gap-2 sm:grid-cols-6">
+                                        @csrf
+                                        @method('PUT')
+                                        <input type="hidden" name="active" value="{{ $resolution->active ? 1 : 0 }}">
+                                        <label class="text-xs font-bold text-[#52635b]">Prefijo
+                                            <input type="text" name="prefix" value="{{ $resolution->prefix }}" maxlength="20" class="mt-1 w-full rounded-lg border-[#cbd6cf] text-sm">
+                                        </label>
+                                        <label class="text-xs font-bold text-[#52635b]">N° resolución
+                                            <input type="text" name="resolution_number" value="{{ $resolution->resolution_number }}" required maxlength="50" class="mt-1 w-full rounded-lg border-[#cbd6cf] text-sm">
+                                        </label>
+                                        <label class="text-xs font-bold text-[#52635b]">Vigente desde
+                                            <input type="date" name="valid_from" value="{{ $resolution->valid_from?->toDateString() }}" class="mt-1 w-full rounded-lg border-[#cbd6cf] text-sm">
+                                        </label>
+                                        <label class="text-xs font-bold text-[#52635b]">Vigente hasta
+                                            <input type="date" name="valid_until" value="{{ $resolution->valid_until?->toDateString() }}" class="mt-1 w-full rounded-lg border-[#cbd6cf] text-sm">
+                                        </label>
+                                        <label class="text-xs font-bold text-[#52635b]">Rango desde
+                                            <input type="number" name="range_from" value="{{ $resolution->range_from }}" required min="1" class="mt-1 w-full rounded-lg border-[#cbd6cf] text-sm">
+                                        </label>
+                                        <label class="text-xs font-bold text-[#52635b]">Rango hasta
+                                            <input type="number" name="range_to" value="{{ $resolution->range_to }}" required min="1" class="mt-1 w-full rounded-lg border-[#cbd6cf] text-sm">
+                                        </label>
+                                        <label class="text-xs font-bold text-[#52635b] sm:col-span-2">Siguiente consecutivo
+                                            <input type="number" name="next_number" value="{{ $resolution->next_number }}" required min="1" class="mt-1 w-full rounded-lg border-[#cbd6cf] text-sm">
+                                        </label>
+                                        <button class="self-end rounded-lg bg-[#192522] px-4 py-2 text-xs font-bold text-white sm:col-span-2">Guardar cambios</button>
+                                    </form>
                                 </td>
                             </tr>
                         @empty

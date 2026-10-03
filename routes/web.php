@@ -7,10 +7,12 @@ use App\Http\Controllers\BulkOperationController;
 use App\Http\Controllers\ChartOfAccountController;
 use App\Http\Controllers\CommercialDocumentController;
 use App\Http\Controllers\CompanyController;
+use App\Http\Controllers\DocumentLookupController;
 use App\Http\Controllers\ItemController;
 use App\Http\Controllers\LogisticsController;
 use App\Http\Controllers\NumberingResolutionController;
 use App\Http\Controllers\PayrollController;
+use App\Http\Controllers\PosController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PurchaseController;
 use App\Http\Controllers\RegulationController;
@@ -83,10 +85,18 @@ Route::middleware(['auth', 'company'])->group(function () {
         Route::get('/ventas/{sale}/xml', [SaleController::class, 'xml'])->name('sales.xml');
     });
 
+    Route::middleware('module:pos')->group(function () {
+        Route::get('/pos', [PosController::class, 'index'])->name('pos.index');
+        Route::post('/pos', [PosController::class, 'store'])->name('pos.store');
+    });
+
     Route::middleware('module:items')->group(function () {
         Route::resource('items', ItemController::class)->except('show');
         Route::post('/items/{item}/stock', [ItemController::class, 'adjustStock'])->name('items.stock');
     });
+
+    Route::get('/comprobantes/{voucher}/json', [AccountingVoucherController::class, 'json'])->name('accounting.vouchers.json');
+    Route::get('/buscar-comprobante', [DocumentLookupController::class, 'find'])->name('documents.lookup');
 
     Route::middleware('module:accounting-vouchers')->group(function () {
         Route::get('/comprobantes', [AccountingVoucherController::class, 'index'])->name('accounting.vouchers.index');
@@ -157,7 +167,7 @@ Route::middleware(['auth', 'company'])->group(function () {
     Route::put('/administracion/miembros/{user}/rol', [AdminController::class, 'updateRole'])->name('admin.members.role');
     Route::put('/administracion/formas-pago/{paymentMethod}/puc', [AdminController::class, 'updatePaymentMethod'])->name('admin.payment-methods.puc');
     Route::post('/administracion/puc/restaurar', [AdminController::class, 'seedChartOfAccounts'])->name('admin.puc.seed');
-
+    Route::post('/administracion/factus', [AdminController::class, 'updateFactusCredential'])->name('admin.factus.update');
     Route::middleware('module:logistics')->group(function () {
         Route::get('/logistica', [LogisticsController::class, 'index'])->name('logistics.index');
         Route::post('/logistica', [LogisticsController::class, 'store'])->name('logistics.store');

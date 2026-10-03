@@ -258,6 +258,9 @@
                             <td>{{ $purchase->deleter?->name ?? 'N/A' }}</td>
                             <td>{{ $purchase->trashed() ? 'Eliminada' : 'Activa' }}</td>
                             <td>
+                                @if($purchase->accounting_voucher_id)
+                                    <button type="button" class="btn-white" onclick="openVoucherModal({{ $purchase->accounting_voucher_id }})">Asiento contable</button>
+                                @endif
                                 @if(!$purchase->trashed())
                                     <form action="{{ route('purchases.destroy', $purchase) }}" method="POST" onsubmit="return confirm('¿Eliminar esta factura? Quedará en el historial.')">
                                         @csrf
@@ -516,5 +519,6 @@
         document.querySelectorAll('.item-row').forEach(syncLineFields);
         calculateTotals();
     </script>
+    <x-voucher-modal />
 </body>
 </html>

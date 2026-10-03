@@ -11,6 +11,7 @@
                     <span class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-[#71807a]">⌕</span>
                     <input id="module-search" type="search" placeholder="Buscar módulo o acción..." class="w-full rounded-xl border-[#d7dfd8] bg-[#f3f5f1] py-2.5 pl-9 pr-4 text-sm text-[#192522] placeholder:text-[#8b9992] focus:border-[#227c70] focus:ring-[#227c70]">
                 </label>
+                <button type="button" onclick="openDocumentLookup()" class="rounded-xl border border-[#d7dfd8] bg-white px-4 py-2.5 text-sm font-bold text-[#227c70]">Buscar comprobante</button>
                 @guest
                     <div class="flex gap-2 text-sm"><a href="{{ route('login') }}" class="rounded-lg bg-[#192522] px-4 py-2 font-bold text-white">Ingresar</a><a href="{{ route('register') }}" class="rounded-lg border border-[#d7dfd8] bg-white px-4 py-2 font-bold text-[#227c70]">Registrarse</a></div>
                 @else
@@ -41,6 +42,7 @@
                 $modules = [
                     ['name' => 'Compras', 'hint' => 'Facturas y XML', 'route' => 'purchases.index', 'icon' => '▣', 'tone' => 'bg-[#fff0e8] text-[#b65338]'],
                     ['name' => 'Ventas', 'hint' => 'Facturación', 'route' => 'sales.index', 'icon' => '↗', 'tone' => 'bg-[#edf7f4] text-[#227c70]'],
+                    ['name' => 'POS electrónico', 'hint' => 'Punto de venta rápido', 'route' => 'pos.index', 'icon' => '⊡', 'tone' => 'bg-[#edf7f4] text-[#227c70]'],
                     ['name' => 'Inventario', 'hint' => 'Productos y stock', 'route' => 'items.index', 'icon' => '□', 'tone' => 'bg-[#eef1fb] text-[#5064a4]'],
                     ['name' => 'Nómina', 'hint' => 'Liquidación', 'route' => 'payroll.index', 'icon' => '◎', 'tone' => 'bg-[#f4f1fb] text-[#73559e]'],
                     ['name' => 'Bancos', 'hint' => 'Conciliación', 'route' => 'bank-reconciliation.index', 'icon' => '⌁', 'tone' => 'bg-[#eaf5f8] text-[#14728a]'],
@@ -90,5 +92,54 @@
             });
             emptySearch?.classList.toggle('hidden', visible > 0);
         });
+
+        function openDocumentLookup() {
+            document.getElementById('document-lookup-modal').classList.remove('hidden');
+            document.getElementById('document-lookup-modal').classList.add('flex');
+        }
+
+        function closeDocumentLookup() {
+            document.getElementById('document-lookup-modal').classList.add('hidden');
+            document.getElementById('document-lookup-modal').classList.remove('flex');
+            document.getElementById('document-lookup-error').classList.add('hidden');
+        }
+
+        async function submitDocumentLookup(event) {
+            event.preventDefault();
+            const module = document.getElementById('document-lookup-module').value;
+            const consecutive = document.getElementById('document-lookup-consecutive').value.trim();
+            const errorBox = document.getElementById('document-lookup-error');
+            errorBox.classList.add('hidden');
+            if (!consecutive) {
+                return;
+            }
+            const response = await fetch(`{{ route('documents.lookup') }}?module=${encodeURIComponent(module)}&consecutive=${encodeURIComponent(consecutive)}`, {
+                headers: { Accept: 'application/json' },
+            });
+            const data = await response.json();
+            if (!response.ok || !data.found) {
+                errorBox.textContent = data.message || 'No se encontró el comprobante.';
+                errorBox.classList.remove('hidden');
+                return;
+            }
+            closeDocumentLookup();
+            openVoucherModal(data.voucher_id);
+        }
     </script>
+    <div id="document-lookup-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50" onclick="if(event.target === this) closeDocumentLookup()">
+        <div class="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <div class="flex items-center justify-between"><h3 class="text-lg font-black text-[#192522]">Buscar comprobante</h3><button type="button" onclick="closeDocumentLookup()" class="text-[#71807a]">✕</button></div>
+            <form onsubmit="submitDocumentLookup(event)" class="mt-4 space-y-3">
+                <select id="document-lookup-module" class="w-full rounded-xl border-[#d7dfd8] text-sm">
+                    @foreach(\App\Http\Controllers\DocumentLookupController::MODULES as $key => $module)
+                        <option value="{{ $key }}">{{ $module['label'] }}</option>
+                    @endforeach
+                </select>
+                <input id="document-lookup-consecutive" type="text" required placeholder="Consecutivo (ej. 1, FAC-001)" class="w-full rounded-xl border-[#d7dfd8] text-sm">
+                <p id="document-lookup-error" class="hidden rounded-lg bg-red-50 p-2 text-xs text-red-600"></p>
+                <button type="submit" class="w-full rounded-xl bg-[#227c70] px-4 py-2.5 text-sm font-bold text-white">Buscar</button>
+            </form>
+        </div>
+    </div>
+    <x-voucher-modal />
 </x-app-layout>

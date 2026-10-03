@@ -17,4 +17,9 @@ class Company extends Model
     {
         return $this->belongsToMany(User::class)->withPivot('role')->withTimestamps();
     }
+
+    public function factusCredential()
+    {
+        return $this->hasOne(FactusCredential::class);
+    }
 }

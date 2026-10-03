@@ -45,6 +45,25 @@ class AdminControllerTest extends TestCase
         $this->assertDatabaseHas('chart_of_accounts', ['company_id' => $company->id, 'code' => '2365', 'name' => 'Retención personalizada']);
     }
 
+    public function test_admin_can_store_factus_credentials_for_their_company(): void
+    {
+        $company = $this->authenticateWithCompany();
+
+        $this->post(route('admin.factus.update'), [
+            'environment' => 'sandbox',
+            'client_id' => 'client-123',
+            'client_secret' => 'secret-123',
+            'username' => 'empresa@example.com',
+            'password' => 'super-secret',
+            'invoice_numbering_range_id' => 4,
+        ])->assertRedirect();
+
+        $credential = $company->factusCredential()->firstOrFail();
+        $this->assertSame('client-123', $credential->client_id);
+        $this->assertSame('secret-123', $credential->client_secret);
+        $this->assertSame(4, $credential->invoice_numbering_range_id);
+    }
+
     private function authenticateWithCompany(): Company
     {
         $company = Company::factory()->create();

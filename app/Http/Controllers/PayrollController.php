@@ -7,6 +7,8 @@ use App\Models\PayrollLine;
 use App\Models\PayrollRun;
 use App\Models\PayrollSocialSecurityError;
 use App\Models\ThirdParty;
+use App\Services\AccountingEntryService;
+use App\Services\FactusService;
 use App\Support\ColombianPayrollRates;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -15,6 +17,11 @@ use Illuminate\Support\Facades\Mail;
 
 class PayrollController extends Controller
 {
+    public function __construct(
+        private readonly AccountingEntryService $accountingEntryService,
+        private readonly FactusService $factusService,
+    ) {}
+
     public function index()
     {
         $employees = ThirdParty::where('is_employee', true)
@@ -39,7 +46,7 @@ class PayrollController extends Controller
     {
         $data = $request->validate(['period' => 'required|date_format:Y-m', 'payment_date' => 'required|date', 'employees' => 'required|array|min:1', 'employees.*.third_party_id' => 'required|exists:third_parties,id', 'employees.*.salary' => 'required|numeric|min:0']);
         $totals = ['gross' => 0, 'deductions' => 0, 'net' => 0, 'cost' => 0];
-        DB::transaction(function () use ($data, &$totals) {
+        $run = DB::transaction(function () use ($data, &$totals) {
             $run = PayrollRun::create(['period' => $data['period'], 'payment_date' => $data['payment_date'], 'status' => 'calculated', 'created_by' => auth()->id()]);
             foreach ($data['employees'] as $employee) {
                 $salary = (float) $employee['salary'];
@@ -93,9 +100,30 @@ class PayrollController extends Controller
                 $totals['cost'] += $employerCost;
             }
             $run->update(['total_gross' => $totals['gross'], 'total_deductions' => $totals['deductions'], 'total_net' => $totals['net'], 'total_employer_cost' => $totals['cost']]);
+
+            return $run;
         });
 
-        return back()->with('success', 'Nómina calculada automáticamente. Revisa los valores antes de contabilizar.');
+        $skipReason = null;
+        $accountingVoucher = $this->accountingEntryService->postPayroll($run, $skipReason);
+
+        $run->loadMissing('lines.employee');
+        $factusSent = 0;
+        $factusSkipReason = null;
+        foreach ($run->lines as $line) {
+            if ($this->factusService->sendPayrollInvoice($line, session('company_id'), $factusSkipReason)) {
+                $factusSent++;
+            }
+        }
+
+        $message = $accountingVoucher
+            ? 'Nómina calculada y contabilizada automáticamente.'
+            : 'Nómina calculada automáticamente. No se contabilizó automáticamente: '.($skipReason ?? 'configura las cuentas PUC necesarias.');
+        $message .= $factusSent === $run->lines->count()
+            ? ' Enviada a la DIAN a través de Factus.'
+            : " No se envió a la DIAN ({$factusSent}/{$run->lines->count()} empleados enviados): ".($factusSkipReason ?? 'revisa la configuración de Factus.');
+
+        return back()->with('success', $message);
     }
 
     public function email(Request $request, PayrollLine $line)

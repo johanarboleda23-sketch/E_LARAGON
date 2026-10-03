@@ -62,7 +62,7 @@
         <input type="hidden" name="subtotal" id="subtotal-value"><input type="hidden" name="iva_total" id="iva-value"><input type="hidden" name="discount_total" id="discount-value"><input type="hidden" name="retention_base" id="retention-base-value"><input type="hidden" name="retention_total" id="retention-value"><input type="hidden" name="total" id="total-value">
     </form>
 
-    <div class="history"><h3 class="title">Facturas recientes</h3><div class="table-wrap"><table><thead><tr><th>Factura</th><th>Cliente</th><th>Total</th><th>Acciones</th></tr></thead><tbody>@forelse($sales as $sale)<tr><td>{{ $sale->invoice_number }}</td><td>{{ $sale->customer_name }}</td><td>${{ number_format($sale->total, 2) }}</td><td><a class="btn" href="{{ route('sales.xml', $sale) }}">XML</a><form method="POST" action="{{ route('sales.email', $sale) }}" style="display:inline-flex;gap:3px">@csrf<input name="email" type="email" value="{{ $sale->customer_email }}" placeholder="correo" required class="input" style="width:140px"><button class="btn btn-main">Enviar</button></form></td></tr>@empty<tr><td colspan="4">No hay facturas de venta registradas.</td></tr>@endforelse</tbody></table></div></div>
+    <div class="history"><h3 class="title">Facturas recientes</h3><div class="table-wrap"><table><thead><tr><th>Factura</th><th>Cliente</th><th>Total</th><th>Acciones</th></tr></thead><tbody>@forelse($sales as $sale)<tr><td>{{ $sale->invoice_number }}</td><td>{{ $sale->customer_name }}</td><td>${{ number_format($sale->total, 2) }}</td><td><a class="btn" href="{{ route('sales.xml', $sale) }}">XML</a>@if($sale->accounting_voucher_id)<button type="button" class="btn" onclick="openVoucherModal({{ $sale->accounting_voucher_id }})">Asiento contable</button>@endif<form method="POST" action="{{ route('sales.email', $sale) }}" style="display:inline-flex;gap:3px">@csrf<input name="email" type="email" value="{{ $sale->customer_email }}" placeholder="correo" required class="input" style="width:140px"><button class="btn btn-main">Enviar</button></form></td></tr>@empty<tr><td colspan="4">No hay facturas de venta registradas.</td></tr>@endforelse</tbody></table></div></div>
 </div>
 <script>
 let lineIndex=1;
@@ -81,5 +81,6 @@ function shareByEmail(){document.getElementById('customer-email').focus();showMe
 function sendToDian(){showMessage('La factura quedará lista para envío a la DIAN cuando se configuren las credenciales y el certificado digital.')}
 document.addEventListener('change',event=>{if(event.target.matches('.product')){const option=event.target.selectedOptions[0];event.target.closest('.sale-line').querySelector('.price').value=option?.dataset.price||0}calculate()});document.addEventListener('input',calculate);document.addEventListener('click',event=>{if(!event.target.closest('#more-menu'))document.getElementById('more-menu').classList.remove('open')});calculate()
 </script>
+<x-voucher-modal />
 </body>
 </html>

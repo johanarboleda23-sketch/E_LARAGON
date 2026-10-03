@@ -90,6 +90,37 @@ class NumberingResolutionTest extends TestCase
         $this->assertNull(NumberingResolution::allocateNext('sale'));
     }
 
+    public function test_contador_can_edit_a_numbering_resolution(): void
+    {
+        $company = $this->authenticateWithCompany('contador');
+
+        $resolution = NumberingResolution::factory()->create([
+            'company_id' => $company->id,
+            'document_type' => 'sale',
+            'prefix' => 'FV',
+            'range_from' => 1,
+            'range_to' => 100,
+            'next_number' => 5,
+        ]);
+
+        $response = $this->put(route('numbering-resolutions.update', $resolution), [
+            'active' => true,
+            'prefix' => 'FE',
+            'resolution_number' => $resolution->resolution_number,
+            'range_from' => 1,
+            'range_to' => 500,
+            'next_number' => 20,
+        ]);
+
+        $response->assertRedirect();
+        $this->assertDatabaseHas('numbering_resolutions', [
+            'id' => $resolution->id,
+            'prefix' => 'FE',
+            'range_to' => 500,
+            'next_number' => 20,
+        ]);
+    }
+
     private function authenticateWithCompany(string $role): Company
     {
         $company = Company::factory()->create();

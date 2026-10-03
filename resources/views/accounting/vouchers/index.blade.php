@@ -107,7 +107,7 @@
                             <p class="mt-2 text-sm font-semibold text-pink-700">${{ number_format($voucher->total_debit, 2) }}</p>
                             <div class="mt-2 flex flex-wrap gap-1 text-xs">
                                 <a href="{{ route('accounting.vouchers.statement', $voucher) }}" class="rounded border px-2 py-1">Imprimir</a>
-                                <a href="{{ route('accounting.vouchers.accounting', $voucher) }}" class="rounded border px-2 py-1">Contabilización</a>
+                                <button type="button" onclick="openVoucherModal({{ $voucher->id }})" class="rounded border px-2 py-1">Asiento contable</button>
                                 <a href="{{ route('accounting.vouchers.statement', $voucher) }}?download=1" class="rounded border px-2 py-1">Descargar</a>
                                 <a href="{{ route('accounting.vouchers.statement', $voucher) }}" class="rounded border px-2 py-1">Estado de cuenta</a>
                                 @if(in_array($voucher->voucher_type, ['egreso', 'recibo_caja'], true))
@@ -158,4 +158,5 @@
         });
         updateTotals();
     </script>
+    <x-voucher-modal />
 </x-app-layout>

@@ -2,14 +2,18 @@
 
 namespace Tests\Feature;
 
+use App\Models\AccountingVoucher;
+use App\Models\ChartOfAccount;
 use App\Models\Company;
 use App\Models\EmployeeContract;
+use App\Models\FactusCredential;
 use App\Models\PayrollLine;
 use App\Models\PayrollRun;
 use App\Models\ThirdParty;
 use App\Models\User;
 use App\Support\ColombianPayrollRates;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class PayrollControllerTest extends TestCase
@@ -100,6 +104,79 @@ class PayrollControllerTest extends TestCase
         $this->assertStringNotContainsString('Completar EPS, AFP, ARL, caja y novedades', $content);
     }
 
+    public function test_payroll_run_is_accounted_automatically_with_balanced_debits_and_credits(): void
+    {
+        $this->authenticateWithCompany();
+        $employee = $this->createEmployee();
+        $this->createContract($employee, riskClass: 1);
+        $this->createAccount('5105', 'Gastos de personal', 5);
+        $this->createAccount('5130', 'Prestaciones sociales gasto', 5);
+        $this->createAccount('5135', 'Aportes patronales gasto', 5);
+        $this->createAccount('2370', 'Retención por pagar', 2, 'credit');
+        $this->createAccount('2380', 'Aportes de seguridad social por pagar', 2, 'credit');
+        $this->createAccount('2610', 'Prestaciones sociales por pagar', 2, 'credit');
+        $this->createAccount('2505', 'Salarios por pagar', 2, 'credit');
+
+        $this->post(route('payroll.calculate'), [
+            'period' => '2026-10',
+            'payment_date' => '2026-10-31',
+            'employees' => [
+                ['third_party_id' => $employee->id, 'salary' => 1500000],
+            ],
+        ])->assertSessionHasNoErrors();
+
+        $run = PayrollRun::query()->firstOrFail();
+        $this->assertNotNull($run->accounting_voucher_id);
+
+        $voucher = AccountingVoucher::query()->with('lines')->findOrFail($run->accounting_voucher_id);
+        $this->assertSame((float) $voucher->total_debit, (float) $voucher->total_credit);
+    }
+
+    public function test_payroll_run_is_sent_to_factus_when_credentials_are_configured(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $employee = $this->createEmployee();
+        $this->createContract($employee, riskClass: 1);
+        $this->createFactusCredential($company);
+        Http::fake([
+            '*/oauth/token' => Http::response(['access_token' => 'token-123', 'expires_in' => 600]),
+            '*/v2/payrolls' => Http::response(['data' => ['bill' => ['number' => 'NO-1', 'cufe' => 'cune-abc']]]),
+        ]);
+
+        $this->post(route('payroll.calculate'), [
+            'period' => '2026-10',
+            'payment_date' => '2026-10-31',
+            'employees' => [
+                ['third_party_id' => $employee->id, 'salary' => 1500000],
+            ],
+        ])->assertSessionHasNoErrors();
+
+        $line = PayrollLine::query()->firstOrFail();
+        $this->assertSame('enviada', $line->factus_status);
+        $this->assertSame('cune-abc', $line->factus_cufe);
+    }
+
+    public function test_payroll_run_skips_factus_when_no_credentials_are_configured(): void
+    {
+        $this->authenticateWithCompany();
+        $employee = $this->createEmployee();
+        $this->createContract($employee, riskClass: 1);
+        Http::fake();
+
+        $response = $this->post(route('payroll.calculate'), [
+            'period' => '2026-10',
+            'payment_date' => '2026-10-31',
+            'employees' => [
+                ['third_party_id' => $employee->id, 'salary' => 1500000],
+            ],
+        ])->assertSessionHasNoErrors();
+
+        $line = PayrollLine::query()->firstOrFail();
+        $this->assertNull($line->factus_status);
+        $response->assertSessionHas('success', fn (string $message) => str_contains($message, 'No se envió a la DIAN'));
+        Http::assertNothingSent();
+    }
+
     private function authenticateWithCompany(): Company
     {
         $company = Company::factory()->create();
@@ -108,6 +185,32 @@ class PayrollControllerTest extends TestCase
         $this->actingAs($user)->withSession(['company_id' => $company->id]);
 
         return $company;
+    }
+
+    private function createFactusCredential(Company $company): FactusCredential
+    {
+        return FactusCredential::create([
+            'company_id' => $company->id,
+            'environment' => 'sandbox',
+            'client_id' => 'client-123',
+            'client_secret' => 'secret-123',
+            'username' => 'empresa@example.com',
+            'password' => 'super-secret',
+            'payroll_numbering_range_id' => 7,
+            'active' => true,
+        ]);
+    }
+
+    private function createAccount(string $code, string $name, int $class, string $nature = 'debit'): ChartOfAccount
+    {
+        return ChartOfAccount::create([
+            'code' => $code,
+            'name' => $name,
+            'class' => $class,
+            'nature' => $nature,
+            'allows_posting' => true,
+            'active' => true,
+        ]);
     }
 
     private function createEmployee(string $document = '900123456'): ThirdParty

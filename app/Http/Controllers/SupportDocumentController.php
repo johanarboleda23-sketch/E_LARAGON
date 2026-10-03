@@ -2,13 +2,21 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\NumberingResolution;
 use App\Models\SupportDocument;
 use App\Models\ThirdParty;
+use App\Services\AccountingEntryService;
+use App\Services\FactusService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
 
 class SupportDocumentController extends Controller
 {
+    public function __construct(
+        private readonly AccountingEntryService $accountingEntryService,
+        private readonly FactusService $factusService,
+    ) {}
+
     public function index()
     {
         $suppliers = ThirdParty::where('is_supplier', true)->where('active', true)->orderBy('name')->get();
@@ -20,8 +28,10 @@ class SupportDocumentController extends Controller
 
     public function store(Request $request)
     {
+        $hasActiveResolution = NumberingResolution::query()->where('document_type', 'support_document')->where('active', true)->exists();
+
         $data = $request->validate([
-            'consecutive' => 'required|string|max:60',
+            'consecutive' => [$hasActiveResolution ? 'nullable' : 'required', 'string', 'max:60', 'unique:support_documents,consecutive'],
             'document_date' => 'required|date',
             'third_party_id' => 'required|exists:third_parties,id',
             'concept' => 'required|string|max:255',
@@ -38,9 +48,29 @@ class SupportDocumentController extends Controller
         $data['company_id'] = session('company_id');
         $data['created_by'] = auth()->id();
         $data['status'] = 'draft';
-        SupportDocument::create($data);
 
-        return back()->with('success', 'Documento soporte guardado correctamente.');
+        try {
+            $data['consecutive'] = NumberingResolution::allocateNext('support_document') ?? $data['consecutive'];
+        } catch (\RuntimeException $e) {
+            return back()->withErrors(['consecutive' => $e->getMessage()])->withInput();
+        }
+
+        $document = SupportDocument::create($data);
+
+        $skipReason = null;
+        $accountingVoucher = $this->accountingEntryService->postSupportDocument($document, $skipReason);
+
+        $factusSkipReason = null;
+        $sentToDian = $this->factusService->sendSupportDocumentInvoice($document, session('company_id'), $factusSkipReason);
+
+        $message = $accountingVoucher
+            ? 'Documento soporte guardado y contabilizado correctamente.'
+            : 'Documento soporte guardado correctamente. No se contabilizó automáticamente: '.($skipReason ?? 'configura las cuentas PUC necesarias.');
+        $message .= $sentToDian
+            ? ' Enviado a la DIAN a través de Factus.'
+            : ' No se envió a la DIAN: '.($factusSkipReason ?? 'error desconocido.');
+
+        return back()->with('success', $message);
     }
 
     public function xml(SupportDocument $document)

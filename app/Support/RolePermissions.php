@@ -14,6 +14,7 @@ class RolePermissions
         'commercial-documents' => ['vendedor', 'auxiliar'],
         'purchases' => ['auxiliar'],
         'sales' => ['vendedor', 'auxiliar'],
+        'pos' => ['vendedor', 'auxiliar'],
         'items' => ['auxiliar'],
         'accounting-vouchers' => ['contador'],
         'puc' => ['contador'],

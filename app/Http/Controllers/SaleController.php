@@ -8,12 +8,19 @@ use App\Models\NumberingResolution;
 use App\Models\Sale;
 use App\Models\SaleDetail;
 use App\Models\ThirdParty;
+use App\Services\AccountingEntryService;
+use App\Services\FactusService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 
 class SaleController extends Controller
 {
+    public function __construct(
+        private readonly AccountingEntryService $accountingEntryService,
+        private readonly FactusService $factusService,
+    ) {}
+
     public function index()
     {
         $items = Item::where('type', 'producto')->orderBy('name')->get();
@@ -72,7 +79,7 @@ class SaleController extends Controller
             return back()->withErrors(['invoice_number' => $e->getMessage()])->withInput();
         }
 
-        DB::transaction(function () use ($data, $invoiceNumber) {
+        $sale = DB::transaction(function () use ($data, $invoiceNumber) {
             $sale = Sale::create([
                 'invoice_number' => $invoiceNumber,
                 'customer_name' => $data['customer_name'],
@@ -119,9 +126,24 @@ class SaleController extends Controller
                     'reason' => 'Venta '.$sale->invoice_number,
                 ]);
             }
+
+            return $sale;
         });
 
-        return redirect()->route('sales.index')->with('success', 'Factura de venta guardada y stock actualizado.');
+        $skipReason = null;
+        $accountingVoucher = $this->accountingEntryService->postSale($sale, $skipReason);
+
+        $factusSkipReason = null;
+        $sentToDian = $this->factusService->sendSaleInvoice($sale, session('company_id'), $factusSkipReason);
+
+        $message = $accountingVoucher
+            ? '¡Factura de venta guardada, stock actualizado y contabilizada!'
+            : '¡Factura de venta guardada y stock actualizado! No se contabilizó automáticamente: '.($skipReason ?? 'configura las cuentas PUC necesarias.');
+        $message .= $sentToDian
+            ? ' Enviada a la DIAN a través de Factus.'
+            : ' No se envió a la DIAN: '.($factusSkipReason ?? 'error desconocido.');
+
+        return redirect()->route('sales.index')->with('success', $message);
     }
 
     public function email(Request $request, Sale $sale)

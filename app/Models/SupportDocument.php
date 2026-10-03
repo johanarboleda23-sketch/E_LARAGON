@@ -22,4 +22,9 @@ class SupportDocument extends Model
     {
         return $this->belongsTo(User::class, 'created_by');
     }
+
+    public function accountingVoucher()
+    {
+        return $this->belongsTo(AccountingVoucher::class);
+    }
 }

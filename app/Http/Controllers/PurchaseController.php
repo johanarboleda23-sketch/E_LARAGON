@@ -65,6 +65,7 @@ class PurchaseController extends Controller
         $data = $request->validate([
             'invoice_number' => [$hasActiveResolution ? 'nullable' : 'required', 'string', 'max:255'],
             'provider' => 'required|string|max:255',
+            'provider_nit' => 'nullable|string|max:50',
             'payment_method_id' => ['nullable', 'integer', 'exists:payment_methods,id'],
             'provider_regimen' => ['required', Rule::in(['comun', 'simplificado', 'gran_contribuyente', 'sin_responsabilidad'])],
             'withholding_concept' => ['required', Rule::in(array_keys(config('colombia_withholdings.concepts')))],
@@ -154,6 +155,7 @@ class PurchaseController extends Controller
             $purchase = Purchase::create([
                 'invoice_number' => $invoiceNumber,
                 'provider' => $data['provider'],
+                'provider_nit' => $data['provider_nit'] ?? null,
                 'payment_method_id' => $data['payment_method_id'] ?? null,
                 'created_by' => auth()->id(),
                 'purchase_date' => now()->toDateString(),

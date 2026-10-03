@@ -69,7 +69,7 @@ class PurchaseControllerTest extends TestCase
     {
         $this->authenticateWithCompany();
         $item = $this->createProduct();
-        $payload = $this->purchasePayload($item, 1_000_000);
+        $payload = $this->purchasePayload($item, 400_000);
         $payload['invoice_number'] = 'DAV-RET-002';
 
         $this->post(route('purchases.store'), $payload)
@@ -77,7 +77,7 @@ class PurchaseControllerTest extends TestCase
 
         $purchase = Purchase::query()->where('invoice_number', 'DAV-RET-002')->firstOrFail();
         $this->assertSame(0.0, (float) $purchase->retefuente);
-        $this->assertSame(1_000_000.0, (float) $purchase->total_pagar);
+        $this->assertSame(400_000.0, (float) $purchase->total_pagar);
     }
 
     public function test_purchase_withholds_from_iva_and_subtracts_it_from_the_total(): void

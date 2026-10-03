@@ -110,7 +110,8 @@
                 </div>
                 <div><label>Consecutivo Interno</label><input type="text" name="consecutivo" id="consecutivo" value="COM-001" class="input-style" style="background:#f3f4f6; font-weight:bold;" maxlength="50"></div>
                 <div><label>N° Factura Proveedor</label><input type="text" id="invoice_number" name="invoice_number" required class="input-style"></div>
-                <div><label>Proveedor / NIT</label><select id="provider" name="provider" required class="input-style"><option value="">Seleccione proveedor</option>@foreach($suppliers as $supplier)<option value="{{ $supplier->name }}">{{ $supplier->name }}{{ $supplier->document ? ' - ' . $supplier->document : '' }}</option>@endforeach</select></div>
+                <div><label>Proveedor</label><select id="provider" name="provider" required class="input-style" onchange="syncProviderNit()"><option value="">Seleccione proveedor</option>@foreach($suppliers as $supplier)<option value="{{ $supplier->name }}" data-nit="{{ $supplier->document }}">{{ $supplier->name }}{{ $supplier->document ? ' - ' . $supplier->document : '' }}</option>@endforeach</select></div>
+                <div><label>NIT / Documento</label><input type="text" id="provider-nit" name="provider_nit" class="input-style" placeholder="900123456-7" onkeydown="fillProviderFromNit(event)"></div>
                 <div>
                     <label>Responsabilidad Fiscal</label>
                     <select name="provider_regimen" id="provider-regimen" onchange="calculateTotals()" required class="input-style"><option value="comun">Régimen Común</option><option value="simplificado">Régimen Simplificado</option><option value="gran_contribuyente">Gran Contribuyente</option><option value="sin_responsabilidad">SIN RESPONSABILIDAD</option></select>
@@ -238,6 +239,7 @@
                     <tr>
                         <th>Factura</th>
                         <th>Proveedor</th>
+                        <th>NIT</th>
                         <th>Creada por</th>
                         <th>Fecha creación</th>
                         <th>Eliminada por</th>
@@ -250,6 +252,7 @@
                         <tr>
                             <td>{{ $purchase->invoice_number }}</td>
                             <td>{{ $purchase->provider }}</td>
+                            <td>{{ $purchase->provider_nit ?? '—' }}</td>
                             <td>{{ $purchase->creator?->name ?? 'Sistema / invitado' }}</td>
                             <td>{{ $purchase->created_at?->format('Y-m-d H:i') }}</td>
                             <td>{{ $purchase->deleter?->name ?? 'N/A' }}</td>
@@ -265,7 +268,7 @@
                             </td>
                         </tr>
                     @empty
-                        <tr><td colspan="7">Aún no hay facturas registradas.</td></tr>
+                        <tr><td colspan="8">Aún no hay facturas registradas.</td></tr>
                     @endforelse
                 </tbody>
             </table>
@@ -443,6 +446,29 @@
             link.click();
             URL.revokeObjectURL(link.href);
             document.getElementById('download-menu').classList.remove('open');
+        }
+
+        function syncProviderNit() {
+            const select = document.getElementById('provider');
+            const option = select.options[select.selectedIndex];
+            document.getElementById('provider-nit').value = option?.dataset.nit || '';
+        }
+
+        function fillProviderFromNit(event) {
+            if (event.key !== 'Enter') return;
+            event.preventDefault();
+
+            const nit = event.target.value.trim();
+            const select = document.getElementById('provider');
+            const status = document.getElementById('upload-status');
+            const match = Array.from(select.options).find((option) => option.dataset.nit === nit);
+
+            if (match) {
+                select.value = match.value;
+                status.textContent = 'Proveedor encontrado: ' + match.value;
+            } else if (nit) {
+                status.textContent = 'No encontramos un proveedor con ese NIT. Selecciónalo manualmente o regístralo en Terceros.';
+            }
         }
 
         function processDIANXml() {

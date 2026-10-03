@@ -2,12 +2,12 @@
     <x-slot name="header">
         <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
-                <p class="text-[11px] font-bold uppercase tracking-[0.28em] text-[#d96b4c]">E-ERP / Centro de control</p>
+                <p class="text-[11px] font-bold uppercase tracking-[0.28em] text-[#d96b4c]">SU+ GESTION EMPRESARIA / Centro de control</p>
                 <h2 class="mt-1 text-2xl font-black tracking-tight text-[#192522]">Tablero principal</h2>
             </div>
             <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
                 <label class="relative block w-full sm:w-80">
-                    <span class="sr-only">Buscar en el ERP</span>
+                    <span class="sr-only">Buscar en SU+ GESTION EMPRESARIA</span>
                     <span class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-[#71807a]">⌕</span>
                     <input id="module-search" type="search" placeholder="Buscar módulo o acción..." class="w-full rounded-xl border-[#d7dfd8] bg-[#f3f5f1] py-2.5 pl-9 pr-4 text-sm text-[#192522] placeholder:text-[#8b9992] focus:border-[#227c70] focus:ring-[#227c70]">
                 </label>

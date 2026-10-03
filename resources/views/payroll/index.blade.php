@@ -59,8 +59,8 @@
                 <aside id="seguridad-social" class="rounded-2xl bg-[#192522] p-5 text-white sm:p-6">
                     <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-[#f5c96a]">02 / Seguridad social</p>
                     <h2 class="mt-2 text-xl font-black">Preparar la PILA</h2>
-                    <p class="mt-3 text-sm leading-6 text-[#b9c9c1]">Aquí se validarán afiliaciones, novedades, IBC, EPS, pensión, ARL y caja de compensación antes de enviar la planilla.</p>
-                    <div class="mt-6 grid gap-3 text-xs"><div class="flex justify-between border-b border-white/10 pb-3"><span class="text-[#b9c9c1]">Afiliaciones</span><span class="font-bold text-[#f5c96a]">Por configurar</span></div><div class="flex justify-between border-b border-white/10 pb-3"><span class="text-[#b9c9c1]">Archivo plano</span><span class="font-bold text-[#f5c96a]">API Enlace</span></div><div class="flex justify-between"><span class="text-[#b9c9c1]">Validación</span><span class="font-bold text-[#86c8bb]">Preparada</span></div></div>
+                    <p class="mt-3 text-sm leading-6 text-[#b9c9c1]">El archivo de preparación ya incluye EPS, AFP, ARL (por clase de riesgo) y caja de compensación de cada empleado, calculados automáticamente desde su contrato.</p>
+                    <div class="mt-6 grid gap-3 text-xs"><div class="flex justify-between border-b border-white/10 pb-3"><span class="text-[#b9c9c1]">Afiliaciones</span><span class="font-bold text-[#86c8bb]">Desde el contrato</span></div><div class="flex justify-between border-b border-white/10 pb-3"><span class="text-[#b9c9c1]">Archivo plano</span><span class="font-bold text-[#f5c96a]">Descarga manual</span></div><div class="flex justify-between"><span class="text-[#b9c9c1]">Validación</span><span class="font-bold text-[#86c8bb]">Preparada</span></div></div>
                     @if($runs->isNotEmpty())
                         <a href="{{ route('payroll.social-security.file', $runs->first()) }}" class="mt-7 block rounded-lg bg-[#f5c96a] px-4 py-2.5 text-center text-sm font-bold text-[#263b36]">Descargar preparación SS</a>
                     @else

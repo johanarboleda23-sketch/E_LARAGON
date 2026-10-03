@@ -11,7 +11,7 @@ class EmployeeContract extends Model
 
     protected $guarded = [];
 
-    protected $casts = ['start_date' => 'date', 'end_date' => 'date', 'active' => 'boolean'];
+    protected $casts = ['start_date' => 'date', 'end_date' => 'date', 'active' => 'boolean', 'arl_risk_class' => 'integer'];
 
     public function employee()
     {

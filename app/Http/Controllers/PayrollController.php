@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\EmployeeContract;
 use App\Models\PayrollLine;
 use App\Models\PayrollRun;
 use App\Models\PayrollSocialSecurityError;
 use App\Models\ThirdParty;
+use App\Support\ColombianPayrollRates;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
@@ -17,6 +19,7 @@ class PayrollController extends Controller
     {
         $employees = ThirdParty::where('is_employee', true)
             ->where('active', true)
+            ->with(['contracts' => fn ($query) => $query->where('active', true)->latest('start_date')])
             ->whereHas('contracts', fn ($query) => $query->where('active', true)->where(function ($query) {
                 $query->whereNull('end_date')->orWhereDate('end_date', '>=', now()->toDateString());
             }))
@@ -40,20 +43,50 @@ class PayrollController extends Controller
             $run = PayrollRun::create(['period' => $data['period'], 'payment_date' => $data['payment_date'], 'status' => 'calculated', 'created_by' => auth()->id()]);
             foreach ($data['employees'] as $employee) {
                 $salary = (float) $employee['salary'];
+                $contract = EmployeeContract::where('third_party_id', $employee['third_party_id'])->where('active', true)->latest('start_date')->first();
+                $riskClass = $contract?->arl_risk_class ?? 1;
                 $healthEmployee = round($salary * 0.04, 2);
                 $pensionEmployee = round($salary * 0.04, 2);
                 $solidarity = $salary >= 4 * 1300000 ? round($salary * 0.01, 2) : 0;
                 $withholding = 0;
                 $healthEmployer = round($salary * 0.085, 2);
                 $pensionEmployer = round($salary * 0.12, 2);
-                $parafiscals = round($salary * 0.09, 2);
+                $arlEmployer = round($salary * ColombianPayrollRates::arlRate($riskClass), 2);
+                $sena = round($salary * ColombianPayrollRates::SENA_RATE, 2);
+                $icbf = round($salary * ColombianPayrollRates::ICBF_RATE, 2);
+                $compensationFund = round($salary * ColombianPayrollRates::COMPENSATION_FUND_RATE, 2);
+                $parafiscals = $sena + $icbf + $compensationFund;
                 $severance = round($salary / 12, 2);
                 $bonus = round($salary / 12, 2);
                 $vacation = round($salary * 0.0417, 2);
                 $deductions = $healthEmployee + $pensionEmployee + $solidarity + $withholding;
                 $net = $salary - $deductions;
-                $employerCost = $salary + $healthEmployer + $pensionEmployer + $parafiscals + $severance + $bonus + $vacation;
-                PayrollLine::create(['payroll_run_id' => $run->id, 'third_party_id' => $employee['third_party_id'], 'salary' => $salary, 'health_employee' => $healthEmployee, 'pension_employee' => $pensionEmployee, 'solidarity_employee' => $solidarity, 'withholding' => $withholding, 'net_pay' => $net, 'health_employer' => $healthEmployer, 'pension_employer' => $pensionEmployer, 'parafiscals' => $parafiscals, 'severance_provision' => $severance, 'service_bonus_provision' => $bonus, 'vacation_provision' => $vacation, 'employer_cost' => $employerCost]);
+                $employerCost = $salary + $healthEmployer + $pensionEmployer + $arlEmployer + $parafiscals + $severance + $bonus + $vacation;
+                PayrollLine::create([
+                    'payroll_run_id' => $run->id,
+                    'third_party_id' => $employee['third_party_id'],
+                    'salary' => $salary,
+                    'health_employee' => $healthEmployee,
+                    'pension_employee' => $pensionEmployee,
+                    'solidarity_employee' => $solidarity,
+                    'withholding' => $withholding,
+                    'net_pay' => $net,
+                    'health_employer' => $healthEmployer,
+                    'pension_employer' => $pensionEmployer,
+                    'arl_employer' => $arlEmployer,
+                    'arl_risk_class' => $riskClass,
+                    'sena' => $sena,
+                    'icbf' => $icbf,
+                    'compensation_fund' => $compensationFund,
+                    'eps_name' => $contract?->eps_name,
+                    'afp_name' => $contract?->afp_name,
+                    'compensation_fund_name' => $contract?->compensation_fund_name,
+                    'parafiscals' => $parafiscals,
+                    'severance_provision' => $severance,
+                    'service_bonus_provision' => $bonus,
+                    'vacation_provision' => $vacation,
+                    'employer_cost' => $employerCost,
+                ]);
                 $totals['gross'] += $salary;
                 $totals['deductions'] += $deductions;
                 $totals['net'] += $net;
@@ -84,7 +117,10 @@ class PayrollController extends Controller
             ."Aportes empleador\n"
             ."Salud: {$line->health_employer}\n"
             ."Pensión: {$line->pension_employer}\n"
-            ."Parafiscales: {$line->parafiscals}\n"
+            ."ARL (clase {$line->arl_risk_class}): {$line->arl_employer}\n"
+            ."SENA: {$line->sena}\n"
+            ."ICBF: {$line->icbf}\n"
+            ."Caja de compensación: {$line->compensation_fund}\n"
             ."Provisión cesantías: {$line->severance_provision}\n"
             ."Provisión prima: {$line->service_bonus_provision}\n"
             ."Provisión vacaciones: {$line->vacation_provision}\n"
@@ -103,18 +139,29 @@ class PayrollController extends Controller
         $run->load('lines.employee');
         $rows = [[
             'Tipo documento', 'Documento', 'Empleado', 'Periodo', 'Tipo cotizante',
+            'EPS', 'AFP', 'Caja de compensación', 'Clase de riesgo ARL',
             'Salario básico', 'IBC salud', 'IBC pensión', 'IBC ARL', 'Salud empleado',
             'Pensión empleado', 'Salud empleador', 'Pensión empleador', 'ARL',
-            'Parafiscales', 'Observación',
+            'SENA', 'ICBF', 'Caja de compensación (aporte)', 'Observación',
         ]];
 
         foreach ($run->lines as $line) {
+            $missing = array_keys(array_filter([
+                'EPS' => ! $line->eps_name,
+                'AFP' => ! $line->afp_name,
+                'caja de compensación' => ! $line->compensation_fund_name,
+            ]));
+
             $rows[] = [
                 $line->employee?->type === 'juridica' ? 'NI' : 'CC',
                 $line->employee?->document,
                 $line->employee?->name,
                 $run->period,
                 'Dependiente',
+                $line->eps_name,
+                $line->afp_name,
+                $line->compensation_fund_name,
+                $line->arl_risk_class,
                 $line->salary,
                 $line->salary,
                 $line->salary,
@@ -123,9 +170,11 @@ class PayrollController extends Controller
                 $line->pension_employee,
                 $line->health_employer,
                 $line->pension_employer,
-                0,
-                $line->parafiscals,
-                'Completar EPS, AFP, ARL, caja y novedades antes de cargar en Enlace.',
+                $line->arl_employer,
+                $line->sena,
+                $line->icbf,
+                $line->compensation_fund,
+                $missing === [] ? 'Completa' : 'Falta registrar: '.implode(', ', $missing).' en el contrato del empleado.',
             ];
         }
 

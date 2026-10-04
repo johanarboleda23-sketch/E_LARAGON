@@ -13,16 +13,59 @@ use Illuminate\Validation\Rule;
 
 class AccountingVoucherController extends Controller
 {
+    public const VOUCHER_TYPES = [
+        'egreso' => 'Egreso / Gasto',
+        'recibo_caja' => 'Recibo de caja',
+        'ajuste_contable' => 'Ajuste contable',
+        'nomina' => 'Nómina',
+        'seguridad_social' => 'Pago de seguridad social',
+        'provision_empleados' => 'Provisión de empleados',
+        'nota_credito_cliente' => 'Nota crédito cliente',
+        'nota_credito_proveedor' => 'Nota crédito proveedor',
+        'nota_debito_cliente' => 'Nota débito cliente',
+        'nota_debito_proveedor' => 'Nota débito proveedor',
+    ];
+
+    /**
+     * Prefijos para el consecutivo interno de control (no son resoluciones DIAN).
+     *
+     * @var array<string, string>
+     */
+    private const CONSECUTIVE_PREFIXES = [
+        'egreso' => 'EG',
+        'recibo_caja' => 'RC',
+        'ajuste_contable' => 'AJ',
+        'nomina' => 'NOM',
+        'seguridad_social' => 'SS',
+        'provision_empleados' => 'PROV',
+        'nota_credito_cliente' => 'NCC',
+        'nota_credito_proveedor' => 'NCP',
+        'nota_debito_cliente' => 'NDC',
+        'nota_debito_proveedor' => 'NDP',
+    ];
+
     public function __construct(private readonly AccountingEntryService $accountingEntryService) {}
+
+    /**
+     * Genera el siguiente consecutivo interno (solo control, no requiere resolución DIAN).
+     */
+    public static function nextInternalConsecutive(string $voucherType): string
+    {
+        $prefix = self::CONSECUTIVE_PREFIXES[$voucherType] ?? strtoupper(substr($voucherType, 0, 3));
+        $count = AccountingVoucher::query()->where('voucher_type', $voucherType)->count();
+
+        return sprintf('%s-%05d', $prefix, $count + 1);
+    }
 
     public function index(Request $request)
     {
+        $fixedVoucherType = $request->route('voucherType');
         $commercialDocument = null;
         $voucherPrefill = [];
 
         if ($request->filled('commercial_document_id')) {
             $commercialDocument = CommercialDocument::query()->findOrFail($request->integer('commercial_document_id'));
-            $voucherType = match ($commercialDocument->document_type) {
+            $noteVoucherType = match ($commercialDocument->document_type) {
                 'customer_credit_note' => 'nota_credito_cliente',
                 'supplier_debit_note' => 'nota_debito_proveedor',
                 default => abort(404),
@@ -35,7 +78,7 @@ class AccountingVoucherController extends Controller
             abort_if($commercialDocument->status !== 'draft', 409);
 
             $voucherPrefill = [
-                'voucher_type' => $voucherType,
+                'voucher_type' => $noteVoucherType,
                 'voucher_date' => $commercialDocument->document_date->toDateString(),
                 'consecutive' => 'CONT-'.$commercialDocument->consecutive,
                 'third_party' => $commercialDocument->third_party_name,
@@ -49,26 +92,35 @@ class AccountingVoucherController extends Controller
             ->orderBy('code')
             ->get();
         $vouchers = AccountingVoucher::with(['creator', 'lines.account'])
+            ->when($fixedVoucherType, fn ($query) => $query->where('voucher_type', $fixedVoucherType))
             ->latest()
             ->take(20)
             ->get();
         $customers = ThirdParty::where('is_customer', true)->where('active', true)->orderBy('name')->get();
         $suppliers = ThirdParty::where('is_supplier', true)->where('active', true)->orderBy('name')->get();
+        $voucherType = $fixedVoucherType;
+        $voucherTypeLabel = $fixedVoucherType ? (self::VOUCHER_TYPES[$fixedVoucherType] ?? $fixedVoucherType) : null;
+        $nextConsecutive = $fixedVoucherType ? self::nextInternalConsecutive($fixedVoucherType) : null;
 
-        return view('accounting.vouchers.index', compact('accounts', 'vouchers', 'customers', 'suppliers', 'commercialDocument', 'voucherPrefill'));
+        return view('accounting.vouchers.index', compact('accounts', 'vouchers', 'customers', 'suppliers', 'commercialDocument', 'voucherPrefill', 'voucherType', 'voucherTypeLabel', 'nextConsecutive'));
     }
 
     public function store(Request $request)
     {
+        $fixedVoucherType = $request->route('voucherType');
+        if ($fixedVoucherType) {
+            $request->merge(['voucher_type' => $fixedVoucherType]);
+        }
+
         $commercialDocument = null;
         if ($request->filled('commercial_document_id') && filter_var($request->input('commercial_document_id'), FILTER_VALIDATE_INT) !== false) {
             $commercialDocument = CommercialDocument::query()->findOrFail($request->integer('commercial_document_id'));
         }
 
         $data = $request->validate([
-            'voucher_type' => ['required', Rule::in(['egreso', 'recibo_caja', 'ajuste_contable', 'nomina', 'seguridad_social', 'provision_empleados', 'nota_credito_cliente', 'nota_debito_proveedor'])],
+            'voucher_type' => ['required', Rule::in(array_keys(self::VOUCHER_TYPES))],
             'voucher_date' => 'required|date',
-            'consecutive' => 'required|string|max:50|unique:accounting_vouchers,consecutive',
+            'consecutive' => [$fixedVoucherType ? 'nullable' : 'required', 'string', 'max:50', Rule::unique('accounting_vouchers', 'consecutive')->where('company_id', session('company_id'))],
             'commercial_document_id' => ['nullable', 'integer', Rule::requiredIf(in_array($request->input('voucher_type'), ['nota_credito_cliente', 'nota_debito_proveedor'], true))],
             'third_party' => 'nullable|string|max:255',
             'description' => 'nullable|string|max:2000',
@@ -78,6 +130,10 @@ class AccountingVoucherController extends Controller
             'lines.*.debit' => 'nullable|numeric|min:0',
             'lines.*.credit' => 'nullable|numeric|min:0',
         ]);
+
+        if ($fixedVoucherType) {
+            $data['consecutive'] = self::nextInternalConsecutive($fixedVoucherType);
+        }
 
         $lines = collect($data['lines']);
 
@@ -108,7 +164,7 @@ class AccountingVoucherController extends Controller
 
         return $commercialDocument
             ? redirect()->route('accounting.vouchers.accounting', $voucher)->with('success', 'Nota contabilizada correctamente.')
-            : redirect()->route('accounting.vouchers.index')->with('success', 'Comprobante contable guardado correctamente.');
+            : back()->with('success', 'Comprobante contable guardado correctamente.');
     }
 
     public function destroy(AccountingVoucher $voucher)

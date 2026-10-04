@@ -22,8 +22,16 @@ class SupportDocumentController extends Controller
         $suppliers = ThirdParty::where('is_supplier', true)->where('active', true)->orderBy('name')->get();
         $documents = SupportDocument::with(['supplier', 'creator'])->latest()->take(20)->get();
         $withholdings = config('colombia_withholdings');
+        $nextConsecutive = NumberingResolution::peekNext('support_document');
 
-        return view('support-documents.index', compact('suppliers', 'documents', 'withholdings'));
+        return view('support-documents.index', compact('suppliers', 'documents', 'withholdings', 'nextConsecutive'));
+    }
+
+    public function show(SupportDocument $document)
+    {
+        $document->load('supplier');
+
+        return view('support-documents.show', compact('document'));
     }
 
     public function store(Request $request)

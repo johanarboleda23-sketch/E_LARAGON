@@ -20,7 +20,12 @@
                 <button type="button" class="btn" onclick="clearSale()">Eliminar</button>
                 <button type="button" class="btn btn-green" onclick="showMessage('Notas crédito y débito se gestionan desde la factura guardada.')">NC/NB</button>
                 <button type="button" class="btn" onclick="document.getElementById('customer-email').focus()">Estado de cuenta</button>
-                <button type="button" class="btn" onclick="showMessage('La contabilización se generará con el comprobante de venta.')">Ver contabilización</button>
+                @php($latestSaleVoucherId = optional($sales->first())->accounting_voucher_id)
+                @if($latestSaleVoucherId)
+                    <a target="_blank" href="{{ route('accounting.vouchers.accounting', $latestSaleVoucherId) }}" class="btn" style="text-decoration:none;">Ver contabilización</a>
+                @else
+                    <button type="button" class="btn" onclick="showMessage('Guarda la factura para generar su asiento contable; luego podrás verlo aquí o en Facturas recientes.')">Ver contabilización</button>
+                @endif
                 <button type="button" class="btn" style="background:#db2777;color:#fff;border-color:#db2777" onclick="sendToDian()">⚡ Enviar a la DIAN</button>
                 <a href="{{ route('items.index') }}" class="btn btn-green">📦 Inventario</a>
                 <div class="menu" id="more-menu">
@@ -46,7 +51,7 @@
 
         <p class="section-label">01 / Datos del cliente</p>
         <div class="grid">
-            <div><label>N° Factura</label><input class="input" id="invoice-number" name="invoice_number" value="FV-{{ now()->format('YmdHis') }}" required></div>
+            <div><label>N° Factura</label>@if($nextConsecutive)<input class="input" id="invoice-number" value="{{ $nextConsecutive }}" readonly title="Asignado automáticamente por la resolución DIAN activa"><input type="hidden" name="invoice_number" value="{{ $nextConsecutive }}">@else<input class="input" id="invoice-number" name="invoice_number" value="FV-{{ now()->format('YmdHis') }}" required>@endif</div>
             <div><label>Fecha</label><input class="input" name="sale_date" type="date" value="{{ now()->toDateString() }}" required></div>
             <div><label>Cliente</label><select class="input" id="customer-name" name="customer_name" required><option value="">Seleccione cliente</option>@foreach($customers as $customer)<option value="{{ $customer->name }}">{{ $customer->name }}{{ $customer->document ? ' - ' . $customer->document : '' }}</option>@endforeach</select></div>
             <div><label>Documento cliente</label><input class="input" name="customer_document"></div>
@@ -62,7 +67,7 @@
         <input type="hidden" name="subtotal" id="subtotal-value"><input type="hidden" name="iva_total" id="iva-value"><input type="hidden" name="discount_total" id="discount-value"><input type="hidden" name="retention_base" id="retention-base-value"><input type="hidden" name="retention_total" id="retention-value"><input type="hidden" name="total" id="total-value">
     </form>
 
-    <div class="history"><h3 class="title">Facturas recientes</h3><div class="table-wrap"><table><thead><tr><th>Factura</th><th>Cliente</th><th>Total</th><th>Acciones</th></tr></thead><tbody>@forelse($sales as $sale)<tr><td>{{ $sale->invoice_number }}</td><td>{{ $sale->customer_name }}</td><td>${{ number_format($sale->total, 2) }}</td><td><a class="btn" href="{{ route('sales.xml', $sale) }}">XML</a>@if($sale->accounting_voucher_id)<button type="button" class="btn" onclick="openVoucherModal({{ $sale->accounting_voucher_id }})">Asiento contable</button>@endif<form method="POST" action="{{ route('sales.email', $sale) }}" style="display:inline-flex;gap:3px">@csrf<input name="email" type="email" value="{{ $sale->customer_email }}" placeholder="correo" required class="input" style="width:140px"><button class="btn btn-main">Enviar</button></form></td></tr>@empty<tr><td colspan="4">No hay facturas de venta registradas.</td></tr>@endforelse</tbody></table></div></div>
+    <div class="history"><h3 class="title">Facturas recientes</h3><div class="table-wrap"><table><thead><tr><th>Factura</th><th>Cliente</th><th>Total</th><th>Acciones</th></tr></thead><tbody>@forelse($sales as $sale)<tr><td>{{ $sale->invoice_number }}</td><td>{{ $sale->customer_name }}</td><td>${{ number_format($sale->total, 2) }}</td><td><a class="btn" href="{{ route('sales.show', $sale) }}" target="_blank">Ver documento</a> <a class="btn" href="{{ route('sales.xml', $sale) }}">XML</a>@if($sale->accounting_voucher_id)<a class="btn" target="_blank" href="{{ route('accounting.vouchers.accounting', $sale->accounting_voucher_id) }}">Asiento contable</a>@endif<form method="POST" action="{{ route('sales.email', $sale) }}" style="display:inline-flex;gap:3px">@csrf<input name="email" type="email" value="{{ $sale->customer_email }}" placeholder="correo" required class="input" style="width:140px"><button class="btn btn-main">Enviar</button></form></td></tr>@empty<tr><td colspan="4">No hay facturas de venta registradas.</td></tr>@endforelse</tbody></table></div></div>
 </div>
 <script>
 let lineIndex=1;

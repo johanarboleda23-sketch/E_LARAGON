@@ -64,7 +64,12 @@
                     <button type="button" onclick="clearInvoice()" class="btn-white">Eliminar</button>
                     <button type="button" onclick="showCreditNote()" class="btn-pink-light">Notas Crédito / Débito</button>
                     <button type="button" onclick="focusReceivable()" class="btn-white" style="border-color:#bfdbfe; color:#1d4ed8;">Estado Cartera (C x P)</button>
-                    <button type="button" onclick="showAccountingEntry()" class="btn-white" style="border-color:#e9d5ff; color:#6b21a8;">Ver Asiento Contable</button>
+                    @php($latestPurchaseVoucherId = optional($recentPurchases->first())->accounting_voucher_id)
+                    @if($latestPurchaseVoucherId)
+                        <a href="{{ route('accounting.vouchers.accounting', $latestPurchaseVoucherId) }}" target="_blank" class="btn-white" style="border-color:#e9d5ff; color:#6b21a8; text-decoration:none; display:inline-block;">Ver Asiento Contable</a>
+                    @else
+                        <button type="button" onclick="showAccountingEntry()" class="btn-white" style="border-color:#e9d5ff; color:#6b21a8;">Ver Asiento Contable</button>
+                    @endif
                     <a href="/items" class="btn-pink-light" style="text-decoration:none; display:inline-block; line-height:14px;">📦 Almacén / Inventario</a>
                     <div class="download-menu" id="download-menu">
                         <button type="button" class="btn-white" onclick="toggleDownloadMenu(event)" aria-expanded="false" title="Imprimir o descargar">⇩ <span>Salida</span></button>
@@ -109,7 +114,7 @@
                     <select name="document_type_id" class="input-style"><option value="contado">Factura Contado (FCC)</option><option value="credito">Factura Crédito (FCR)</option></select>
                 </div>
                 <div><label>Consecutivo Interno</label><input type="text" name="consecutivo" id="consecutivo" value="COM-001" class="input-style" style="background:#f3f4f6; font-weight:bold;" maxlength="50"></div>
-                <div><label>N° Factura Proveedor</label><input type="text" id="invoice_number" name="invoice_number" required class="input-style"></div>
+                <div><label>N° Factura Proveedor</label>@if($nextConsecutive)<input type="text" id="invoice_number" readonly value="{{ $nextConsecutive }}" title="Asignado automáticamente por la resolución DIAN activa" class="input-style"><input type="hidden" name="invoice_number" value="{{ $nextConsecutive }}">@else<input type="text" id="invoice_number" name="invoice_number" required class="input-style">@endif</div>
                 <div><label>Proveedor</label><select id="provider" name="provider" required class="input-style" onchange="syncProviderNit()"><option value="">Seleccione proveedor</option>@foreach($suppliers as $supplier)<option value="{{ $supplier->name }}" data-nit="{{ $supplier->document }}">{{ $supplier->name }}{{ $supplier->document ? ' - ' . $supplier->document : '' }}</option>@endforeach</select></div>
                 <div><label>NIT / Documento</label><input type="text" id="provider-nit" name="provider_nit" class="input-style" placeholder="900123456-7" onkeydown="fillProviderFromNit(event)"></div>
                 <div>
@@ -258,8 +263,9 @@
                             <td>{{ $purchase->deleter?->name ?? 'N/A' }}</td>
                             <td>{{ $purchase->trashed() ? 'Eliminada' : 'Activa' }}</td>
                             <td>
+                                <a class="btn-white" style="text-decoration:none;display:inline-block" href="{{ route('purchases.show', $purchase) }}" target="_blank">Ver documento</a>
                                 @if($purchase->accounting_voucher_id)
-                                    <button type="button" class="btn-white" onclick="openVoucherModal({{ $purchase->accounting_voucher_id }})">Asiento contable</button>
+                                    <a class="btn-white" style="text-decoration:none;display:inline-block" target="_blank" href="{{ route('accounting.vouchers.accounting', $purchase->accounting_voucher_id) }}">Asiento contable</a>
                                 @endif
                                 @if(!$purchase->trashed())
                                     <form action="{{ route('purchases.destroy', $purchase) }}" method="POST" onsubmit="return confirm('¿Eliminar esta factura? Quedará en el historial.')">

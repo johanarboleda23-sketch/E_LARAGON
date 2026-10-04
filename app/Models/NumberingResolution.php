@@ -49,6 +49,21 @@ class NumberingResolution extends Model
             ?->consumeNext();
     }
 
+    /**
+     * Returns the next consecutive that would be assigned, without consuming it.
+     * Used to display the real number a document will receive before saving it.
+     */
+    public static function peekNext(string $documentType): ?string
+    {
+        $resolution = self::query()->where('document_type', $documentType)->where('active', true)->first();
+
+        if (! $resolution) {
+            return null;
+        }
+
+        return trim(($resolution->prefix ? $resolution->prefix.'-' : '').$resolution->next_number);
+    }
+
     private function consumeNext(): string
     {
         $today = now()->toDateString();

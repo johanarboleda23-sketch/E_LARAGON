@@ -97,6 +97,7 @@ Route::middleware(['auth', 'company'])->group(function () {
 
     Route::get('/comprobantes/{voucher}/json', [AccountingVoucherController::class, 'json'])->name('accounting.vouchers.json');
     Route::get('/buscar-comprobante', [DocumentLookupController::class, 'find'])->name('documents.lookup');
+Route::get('/buscar-comprobantes', [DocumentLookupController::class, 'search'])->middleware('auth')->name('documents.search');
 
     Route::middleware('module:accounting-vouchers')->group(function () {
         Route::get('/comprobantes', [AccountingVoucherController::class, 'index'])->name('accounting.vouchers.index');
@@ -182,3 +183,14 @@ Route::middleware(['auth', 'company'])->group(function () {
 });
 
 require __DIR__.'/auth.php';
+uuse App\Http\Controllers\BuscadorDirectoController;
+
+// Agrégale el ->middleware('auth') exactamente así:
+Route::get('/dashboard/buscar-comprobante-directo', [BuscadorDirectoController::class, 'redirigirComprobante'])
+    ->middleware('auth')
+    ->name('dashboard.buscar_comprobante_directo');
+se App\Http\Controllers\BuscadorDirectoController;
+
+
+Route::get('/dashboard/buscar-comprobante-directo', [BuscadorDirectoController::class, 'redirigirComprobante'])
+    ->name('dashboard.buscar_comprobante_directo');

@@ -27,6 +27,7 @@ class SaleController extends Controller
         $sales = Sale::with(['details.item', 'creator'])->latest()->take(20)->get();
         $customers = ThirdParty::where('is_customer', true)->where('active', true)->orderBy('name')->get();
         $withholdings = config('colombia_withholdings');
+        $nextConsecutive = NumberingResolution::peekNext('sale');
         $productOptions = $items->map(function (Item $item) {
             return [
                 'id' => $item->id,
@@ -36,7 +37,7 @@ class SaleController extends Controller
             ];
         })->values();
 
-        return view('sales.index', compact('items', 'sales', 'productOptions', 'withholdings', 'customers'));
+        return view('sales.index', compact('items', 'sales', 'productOptions', 'withholdings', 'customers', 'nextConsecutive'));
     }
 
     public function store(Request $request)
@@ -157,6 +158,13 @@ class SaleController extends Controller
         Mail::raw($body, fn ($message) => $message->to($data['email'])->subject('Factura de venta '.$sale->invoice_number));
 
         return back()->with('success', 'Factura enviada por correo.');
+    }
+
+    public function show(Sale $sale)
+    {
+        $sale->load('details.item');
+
+        return view('sales.show', compact('sale'));
     }
 
     public function xml(Sale $sale)

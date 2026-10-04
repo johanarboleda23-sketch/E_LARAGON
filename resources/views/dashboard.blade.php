@@ -2,18 +2,44 @@
     <x-slot name="header">
         <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
-                <p class="text-[11px] font-bold uppercase tracking-[0.28em] text-[#d96b4c]">SU+ GESTION EMPRESARIA / Centro de control</p>
+                <p class="text-[11px] font-bold uppercase tracking-[0.28em] text-[#d96b4c]">SU+ GESTION EMPRESARIAL / Centro de control</p>
                 <h2 class="mt-1 text-2xl font-black tracking-tight text-[#192522]">Tablero principal</h2>
             </div>
             <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
                 <label class="relative block w-full sm:w-80">
-                    <span class="sr-only">Buscar en SU+ GESTION EMPRESARIA</span>
+                    <span class="sr-only">Buscar en SU+ GESTION EMPRESARIAL</span>
                     <span class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-[#71807a]">⌕</span>
                     <input id="module-search" type="search" placeholder="Buscar módulo o acción..." class="w-full rounded-xl border-[#d7dfd8] bg-[#f3f5f1] py-2.5 pl-9 pr-4 text-sm text-[#192522] placeholder:text-[#8b9992] focus:border-[#227c70] focus:ring-[#227c70]">
                 </label>
-                <button type="button" onclick="openDocumentLookup()" class="rounded-xl border border-[#d7dfd8] bg-white px-4 py-2.5 text-sm font-bold text-[#227c70]">Buscar comprobante</button>
+                <!-- Document search by consecutive -->
+                <div class="flex items-center gap-2 mt-2">
+                    <input id="document-search-input" type="search" placeholder="Consecutivo del documento..."
+                        class="w-full rounded-xl border-[#d7dfd8] bg-[#f3f5f1] py-2.5 pl-9 pr-4 text-sm text-[#192522] placeholder:text-[#8b9992] focus:border-[#227c70] focus:ring-[#227c70]" />
+                    <button type="button" id="document-search-button" class="rounded-xl border border-[#d7dfd8] bg-white px-4 py-2.5 text-sm font-bold text-[#227c70]">
+                        Buscar documentos
+                    </button>
+                </div>
+                <div id="document-search-results" class="mt-2"></div>
                 @guest
-                    <div class="flex gap-2 text-sm"><a href="{{ route('login') }}" class="rounded-lg bg-[#192522] px-4 py-2 font-bold text-white">Ingresar</a><a href="{{ route('register') }}" class="rounded-lg border border-[#d7dfd8] bg-white px-4 py-2 font-bold text-[#227c70]">Registrarse</a></div>
+                    <!-- Bloque de búsqueda directa de comprobantes -->
+<div class="flex flex-col gap-2 sm:flex-row sm:items-center bg-[#f3f5f1] p-1.5 rounded-xl border border-[#d7dfd8]">
+    <!-- Input para pegar el consecutivo -->
+    <input id="consecutivo_directo" type="text" placeholder="Pegar consecutivo aquí..." class="w-full sm:w-48 rounded-lg border-0 bg-white py-1.5 px-3 text-sm text-[#192522] placeholder:text-[#8b9992] focus:ring-2 focus:ring-[#227c70]">
+
+    <!-- Desplegable de tipos de comprobante -->
+    <select id="tipo_comprobante_directo" class="rounded-lg border-0 bg-white py-1.5 pl-3 pr-8 text-sm font-bold text-[#227c70] focus:ring-2 focus:ring-[#227c70]">
+        <option value="">Seleccione tipo...</option>
+        <option value="venta_factura">Venta (Factura)</option>
+        <option value="compra_factura">Compra (Factura)</option>
+        <option value="documento_soporte">Documento soporte</option>
+        <option value="nomina_periodo">Nómina (Periodo)</option>
+        <option value="comprobante_contable">Comprobante contable</option>
+    </select>
+
+    <!-- Botón de ejecución -->
+    <button type="button" id="btn_buscar_comprobante_directo" class="rounded-lg bg-[#227c70] px-4 py-1.5 text-sm font-bold text-white hover:bg-[#1a5f55] transition">Buscar</button>
+</div>
+
                 @else
                     <form method="POST" action="{{ route('company.switch') }}" class="flex items-center gap-2 rounded-xl border border-[#d7dfd8] bg-white px-3 py-2">
                         @csrf
@@ -79,7 +105,36 @@
     </div>
 
     <script>
-        const searchInput = document.getElementById('module-search');
+        const docSearchInput = document.getElementById('document-search-input');
+        const docSearchButton = document.getElementById('document-search-button');
+        const docSearchResults = document.getElementById('document-search-results');
+
+        docSearchButton?.addEventListener('click', () => {
+            const consecutive = docSearchInput?.value.trim();
+            if (!consecutive) {
+                alert('Ingrese un consecutivo para buscar.');
+                return;
+            }
+            fetch(`/buscar-comprobantes?consecutive=${encodeURIComponent(consecutive)}`, {
+                headers: { Accept: 'application/json' },
+            })
+                .then(res => res.json())
+                .then(data => {
+                    if (!data.found) {
+                        docSearchResults.innerHTML = `<p class="text-sm text-red-600">${data.message}</p>`;
+                        return;
+                    }
+                    const list = data.results.map(r => {
+                        const url = `/comprobantes/${r.voucher_id}/contabilizacion`;
+                        return `<li><a href="${url}" class="text-blue-600 underline">${r.label} - Voucher #${r.voucher_id}</a></li>`;
+                    }).join('');
+                    docSearchResults.innerHTML = `<ul class="list-disc pl-5">${list}</ul>`;
+                })
+                .catch(err => {
+                    console.error(err);
+                    alert('Error al buscar documentos.');
+                });
+        });
         const moduleCards = [...document.querySelectorAll('[data-module-card]')];
         const emptySearch = document.getElementById('empty-search');
         searchInput?.addEventListener('input', (event) => {
@@ -123,7 +178,7 @@
                 return;
             }
             closeDocumentLookup();
-            openVoucherModal(data.voucher_id);
+            window.open(`/comprobantes/${data.voucher_id}/contabilizacion`, '_blank');
         }
     </script>
     <div id="document-lookup-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50" onclick="if(event.target === this) closeDocumentLookup()">
@@ -143,3 +198,52 @@
     </div>
     <x-voucher-modal />
 </x-app-layout>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const btnBuscarDirecto = document.getElementById('btn_buscar_comprobante_directo');
+    const inputConsecutivo = document.getElementById('consecutivo_directo');
+    const selectTipo = document.getElementById('tipo_comprobante_directo');
+
+    if (btnBuscarDirecto) {
+        btnBuscarDirecto.addEventListener('click', function (e) {
+            e.preventDefault();
+
+            const consecutivoValue = inputConsecutivo.value.trim();
+            const tipoValue = selectTipo.value;
+
+            if (!consecutivoValue) {
+                alert('Por favor, pegue o digite el número de consecutivo.');
+                return;
+            }
+            if (!tipoValue) {
+                alert('Debe seleccionar el tipo de comprobante en la lista.');
+                return;
+            }
+
+            // Petición al controlador de Laravel para traer la ruta exacta
+            const urlConsulta = `/dashboard/buscar-comprobante-directo?consecutivo=${encodeURIComponent(consecutivoValue)}&tipo=${encodeURIComponent(tipoValue)}`;
+
+            fetch(urlConsulta, {
+                method: 'GET',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success && data.url) {
+                    // Redirección inmediata al documento coincidente
+                    window.location.href = data.url;
+                } else {
+                    alert(data.message || 'No se encontró el documento solicitado.');
+                }
+            })
+            .catch(error => {
+                console.error('Error de comunicación con Laravel:', error);
+                alert('Ocurrió un error en el servidor al intentar buscar.');
+            });
+        });
+    }
+});
+</script>

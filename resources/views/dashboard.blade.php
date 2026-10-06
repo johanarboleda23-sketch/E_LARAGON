@@ -286,51 +286,43 @@ document.addEventListener('DOMContentLoaded', function () {
 </script>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-    const btnBuscarComercial = document.getElementById('btn_buscar_comercial_dashboard');
-    const inputConsecutivo = document.getElementById('consecutivo_directo_dashboard');
-    const selectTipo = document.getElementById('tipo_comprobante_directo_dashboard');
+    // Usamos 'true' al final del addEventListener para activar la fase de captura.
+    // Esto hace que nuestro código se ejecute PRIMERO, antes de que el script nativo del ERP salte con la alerta contable.
+    document.addEventListener('click', function (e) {
+        // Detectamos si hicieron clic en el botón nativo de buscar comprobantes
+        if (e.target && (e.target.textContent.trim() === 'Buscar' || e.target.id === 'document-search-button' || e.target.id === 'btn_buscar_comprobante_directo')) {
+            
+            // Localizamos el campo de texto y el selector desplegable activos en tu barra superior
+            const inputConsecutivo = document.getElementById('consecutivo_directo') || document.getElementById('document-search-input') || document.querySelector('input[type="text"]');
+            const selectTipo = document.getElementById('tipo_comprobante_directo') || document.querySelector('select');
 
-    if (btnBuscarComercial) {
-        btnBuscarComercial.addEventListener('click', function (e) {
+            if (!inputConsecutivo || !inputConsecutivo.value.trim() || !selectTipo) return;
+
+            // ¡PUM! Detenemos por completo la petición original del ERP y evitamos que salga el cartel contable
             e.preventDefault();
             e.stopPropagation();
 
-            const consecutivoValue = inputConsecutivo.value.trim();
+            const consecutivo = inputConsecutivo.value.trim();
             const tipoValue = selectTipo.value;
-
-            if (!consecutivoValue) {
-                alert('Por favor, ingrese o pegue el número de consecutivo.');
-                return;
-            }
-            if (!tipoValue) {
-                alert('Debe seleccionar el tipo de comprobante en la lista.');
-                return;
-            }
 
             let rutaDestino = '';
 
-            // Enrutamiento directo a los listados comerciales nativos de SU+
-            switch (tipoValue) {
-                case 'venta_factura':
-                    rutaDestino = window.location.origin + '/ventas?search=' + encodeURIComponent(consecutivoValue);
-                    break;
-                case 'compra_factura':
-                    rutaDestino = window.location.origin + '/purchases?search=' + encodeURIComponent(consecutivoValue);
-                    break;
-                case 'documento_soporte':
-                    rutaDestino = window.location.origin + '/cotizaciones?search=' + encodeURIComponent(consecutivoValue); 
-                    break;
-                case 'nomina_periodo':
-                    rutaDestino = window.location.origin + '/comprobantes?search=' + encodeURIComponent(consecutivoValue);
-                    break;
-                default:
-                    rutaDestino = window.location.origin + '/purchases?search=' + encodeURIComponent(consecutivoValue);
-                    break;
+            // Redirección directa calibrada con las rutas comerciales nativas de tu SU+ GESTIÓN
+            if (tipoValue.includes('venta') || tipoValue.includes('Venta')) {
+                rutaDestino = window.location.origin + '/ventas?search=' + encodeURIComponent(consecutivo);
+            } else if (tipoValue.includes('compra') || tipoValue.includes('Compra')) {
+                rutaDestino = window.location.origin + '/purchases?search=' + encodeURIComponent(consecutivo);
+            } else if (tipoValue.includes('soporte') || tipoValue.includes('Soporte')) {
+                rutaDestino = window.location.origin + '/cotizaciones?search=' + encodeURIComponent(consecutivo);
+            } else if (tipoValue.includes('nomina') || tipoValue.includes('Nómina')) {
+                rutaDestino = window.location.origin + '/comprobantes?search=' + encodeURIComponent(consecutivo);
+            } else {
+                rutaDestino = window.location.origin + '/purchases?search=' + encodeURIComponent(consecutivo);
             }
 
-            // Cambiamos de pantalla al instante evadiendo el modal contable defectuoso
+            // Movemos la pestaña inmediatamente al listado comercial filtrado
             window.location.href = rutaDestino;
-        });
-    }
+        }
+    }, true); // El 'true' es el superpoder que congela las acciones nativas del ERP
 });
 </script>

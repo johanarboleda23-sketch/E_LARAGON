@@ -221,3 +221,73 @@
         @endif
     </body>
 </html>
+<!-- Buscador comercial directo flotante (Exclusivo para evadir el bloqueo contable) -->
+<div class="fixed bottom-5 right-5 z-[9999] flex flex-col gap-2 rounded-2xl border border-[#d7dfd8] bg-white p-4 shadow-2xl sm:flex-row sm:items-center">
+    <div class="flex flex-col">
+        <span class="text-[10px] font-bold uppercase tracking-wider text-[#71807a]">Buscador Comercial Directo</span>
+        <input id="input_comercial_flotante" type="text" placeholder="Pegue consecutivo (Ej: FE 2333)" class="mt-1 w-full sm:w-48 rounded-lg border border-[#d7dfd8] bg-[#f3f5f1] py-1.5 px-3 text-sm text-[#192522] focus:border-[#227c70] focus:ring-2 focus:ring-[#227c70]">
+    </div>
+
+    <div class="flex flex-col">
+        <span class="text-[10px] font-bold uppercase tracking-wider text-[#71807a]">Tipo de Documento</span>
+        <select id="select_comercial_flotante" class="mt-1 rounded-lg border border-[#d7dfd8] bg-white py-1.5 pl-3 pr-8 text-sm font-bold text-[#227c70] focus:border-[#227c70] focus:ring-2 focus:ring-[#227c70]">
+            <option value="compra_factura">Compra (Factura)</option>
+            <option value="venta_factura">Venta (Factura)</option>
+            <option value="documento_soporte">Documento soporte</option>
+            <option value="nomina_periodo">Nómina (Periodo)</option>
+        </select>
+    </div>
+
+    <button type="button" id="btn_buscar_comercial_flotante" class="mt-4 rounded-lg bg-[#227c70] px-4 py-2 text-sm font-bold text-white hover:bg-[#1a5f55] transition sm:mt-4">
+        Ir al Documento
+    </button>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const btnFlotante = document.getElementById('btn_buscar_comercial_flotante');
+    const inputFlotante = document.getElementById('input_comercial_flotante');
+    const selectFlotante = document.getElementById('select_comercial_flotante');
+
+    if (btnFlotante) {
+        btnFlotante.addEventListener('click', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            const textoOriginal = inputFlotante.value.trim();
+            // Extrae únicamente los números de lo que pegues (ej: "FE 2333" -> "2333")
+            const idDocumento = textoOriginal.replace(/\D/g, ''); 
+            const tipoValue = selectFlotante.value;
+
+            if (!idDocumento) {
+                alert('Por favor, ingrese o pegue el número consecutivo.');
+                return;
+            }
+
+            let prefijoRuta = '';
+
+            // Mapeo directo y garantizado a los módulos comerciales de SU+ GESTIÓN
+            switch (tipoValue) {
+                case 'compra_factura':
+                    prefijoRuta = '/compras/facturas/ver/';
+                    break;
+                case 'venta_factura':
+                    prefijoRuta = '/ventas/facturas/ver/';
+                    break;
+                case 'documento_soporte':
+                    prefijoRuta = '/compras/documento-soporte/ver/';
+                    break;
+                case 'nomina_periodo':
+                    prefijoRuta = '/nomina/periodos/ver/';
+                    break;
+                default:
+                    prefijoRuta = '/compras/facturas/ver/';
+                    break;
+            }
+
+            // Forzamos la redirección inmediata construyendo la URL limpia en el navegador
+            window.location.href = window.location.origin + prefijoRuta + idDocumento;
+        });
+    }
+});
+</script>

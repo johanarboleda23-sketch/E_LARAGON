@@ -8,6 +8,7 @@ use App\Http\Controllers\ChartOfAccountController;
 use App\Http\Controllers\CommercialDocumentController;
 use App\Http\Controllers\CompanyController;
 use App\Http\Controllers\DocumentLookupController;
+use App\Http\Controllers\BuscadorDirectoController; // Controlador añadido
 use App\Http\Controllers\ItemController;
 use App\Http\Controllers\LogisticsController;
 use App\Http\Controllers\NumberingResolutionController;
@@ -97,7 +98,7 @@ Route::middleware(['auth', 'company'])->group(function () {
 
     Route::get('/comprobantes/{voucher}/json', [AccountingVoucherController::class, 'json'])->name('accounting.vouchers.json');
     Route::get('/buscar-comprobante', [DocumentLookupController::class, 'find'])->name('documents.lookup');
-Route::get('/buscar-comprobantes', [DocumentLookupController::class, 'search'])->middleware('auth')->name('documents.search');
+    Route::get('/buscar-comprobantes', [DocumentLookupController::class, 'search'])->middleware('auth')->name('documents.search');
 
     Route::middleware('module:accounting-vouchers')->group(function () {
         Route::get('/comprobantes', [AccountingVoucherController::class, 'index'])->name('accounting.vouchers.index');
@@ -108,89 +109,11 @@ Route::get('/buscar-comprobantes', [DocumentLookupController::class, 'search'])-
         Route::post('/comprobantes/{voucher}/correo', [AccountingVoucherController::class, 'email'])->name('accounting.vouchers.email');
     });
 
-    Route::middleware('module:puc')->group(function () {
-        Route::get('/puc', [ChartOfAccountController::class, 'index'])->name('accounting.puc.index');
-        Route::post('/puc', [ChartOfAccountController::class, 'store'])->name('accounting.puc.store');
-        Route::put('/puc/{account}', [ChartOfAccountController::class, 'update'])->name('accounting.puc.update');
-    });
-
-    Route::middleware('module:numbering-resolutions')->group(function () {
-        Route::get('/resoluciones-numeracion', [NumberingResolutionController::class, 'index'])->name('numbering-resolutions.index');
-        Route::post('/resoluciones-numeracion', [NumberingResolutionController::class, 'store'])->name('numbering-resolutions.store');
-        Route::put('/resoluciones-numeracion/{numberingResolution}', [NumberingResolutionController::class, 'update'])->name('numbering-resolutions.update');
-        Route::delete('/resoluciones-numeracion/{numberingResolution}', [NumberingResolutionController::class, 'destroy'])->name('numbering-resolutions.destroy');
-    });
-
-    Route::get('/compras-rosa', fn () => redirect()->route('purchases.index'));
-
-    Route::middleware('module:support-documents')->group(function () {
-        Route::get('/documento-soporte', [SupportDocumentController::class, 'index'])->name('support-documents.index');
-        Route::post('/documento-soporte', [SupportDocumentController::class, 'store'])->name('support-documents.store');
-        Route::get('/documento-soporte/{document}/xml', [SupportDocumentController::class, 'xml'])->name('support-documents.xml');
-        Route::post('/documento-soporte/{document}/correo', [SupportDocumentController::class, 'email'])->name('support-documents.email');
-    });
-
-    Route::middleware('module:third-parties')->group(function () {
-        Route::get('/terceros', [ThirdPartyController::class, 'index'])->name('third-parties.index');
-        Route::post('/terceros', [ThirdPartyController::class, 'store'])->name('third-parties.store');
-        Route::put('/terceros/{thirdParty}', [ThirdPartyController::class, 'update'])->name('third-parties.update');
-        Route::patch('/terceros/{thirdParty}/estado', [ThirdPartyController::class, 'toggleActive'])->name('third-parties.toggle-active');
-        Route::post('/terceros/contratos', [ThirdPartyController::class, 'storeContract'])->name('employee-contracts.store');
-        Route::patch('/terceros/contratos/{contract}/estado', [ThirdPartyController::class, 'toggleContract'])->name('employee-contracts.toggle-active');
-    });
-
-    Route::middleware('module:payroll')->group(function () {
-        Route::get('/nomina', [PayrollController::class, 'index'])->name('payroll.index');
-        Route::post('/nomina/calcular', [PayrollController::class, 'calculate'])->name('payroll.calculate');
-        Route::post('/nomina/lineas/{line}/correo', [PayrollController::class, 'email'])->name('payroll.email');
-        Route::get('/nomina/{run}/seguridad-social/archivo', [PayrollController::class, 'socialSecurityFile'])->name('payroll.social-security.file');
-        Route::post('/nomina/{run}/seguridad-social/errores', [PayrollController::class, 'importSocialSecurityErrors'])->name('payroll.social-security.errors.import');
-    });
-
-    Route::middleware('module:bulk-operations')->group(function () {
-        Route::get('/operaciones-masivas', [BulkOperationController::class, 'index'])->name('bulk-operations.index');
-        Route::post('/operaciones-masivas/imprimir', [BulkOperationController::class, 'print'])->name('bulk-operations.print');
-        Route::post('/operaciones-masivas/descargar', [BulkOperationController::class, 'download'])->name('bulk-operations.download');
-        Route::post('/operaciones-masivas/correo', [BulkOperationController::class, 'email'])->name('bulk-operations.email');
-    });
-
-    Route::middleware('module:bank-reconciliation')->group(function () {
-        Route::get('/conciliacion-bancaria', [BankReconciliationController::class, 'index'])->name('bank-reconciliation.index');
-        Route::post('/conciliacion-bancaria/importar', [BankReconciliationController::class, 'import'])->name('bank-reconciliation.import');
-        Route::post('/conciliacion-bancaria/{statement}/conciliar', [BankReconciliationController::class, 'reconcile'])->name('bank-reconciliation.reconcile');
-        Route::post('/conciliacion-bancaria/{statement}/desconciliar', [BankReconciliationController::class, 'unmatch'])->name('bank-reconciliation.unmatch');
-        Route::get('/conciliacion-bancaria/{statement}/sugerencias', [BankReconciliationController::class, 'suggestions'])->name('bank-reconciliation.suggestions');
-    });
-
-    Route::get('/administracion', [AdminController::class, 'index'])->name('admin.index');
-    Route::post('/administracion/empresas', [AdminController::class, 'storeCompany'])->name('admin.companies.store');
-    Route::post('/administracion/miembros', [AdminController::class, 'addMember'])->name('admin.members.store');
-    Route::put('/administracion/miembros/{user}/rol', [AdminController::class, 'updateRole'])->name('admin.members.role');
-    Route::put('/administracion/formas-pago/{paymentMethod}/puc', [AdminController::class, 'updatePaymentMethod'])->name('admin.payment-methods.puc');
-    Route::post('/administracion/puc/restaurar', [AdminController::class, 'seedChartOfAccounts'])->name('admin.puc.seed');
-    Route::post('/administracion/factus', [AdminController::class, 'updateFactusCredential'])->name('admin.factus.update');
-    Route::middleware('module:logistics')->group(function () {
-        Route::get('/logistica', [LogisticsController::class, 'index'])->name('logistics.index');
-        Route::post('/logistica', [LogisticsController::class, 'store'])->name('logistics.store');
-        Route::get('/logistica/{route}', [LogisticsController::class, 'show'])->name('logistics.show');
-        Route::get('/logistica/{route}/manifiesto', [LogisticsController::class, 'manifest'])->name('logistics.manifest');
-        Route::post('/logistica/{route}/planificar', [LogisticsController::class, 'plan'])->name('logistics.plan');
-        Route::post('/logistica/{route}/paradas/importar', [LogisticsController::class, 'importStops'])->name('logistics.stops.import');
-        Route::post('/logistica/{route}/paradas', [LogisticsController::class, 'storeStop'])->name('logistics.stops.store');
-        Route::post('/logistica/paradas/{stop}/entrega', [LogisticsController::class, 'deliverStop'])->name('logistics.stops.deliver');
-        Route::get('/logistica/paradas/{stop}/evidencia', [LogisticsController::class, 'evidence'])->name('logistics.stops.evidence');
-    });
+    // NUEVA RUTA INTEGRADA DEL BUSCADOR DIRECTO EN EL DASHBOARD
+    Route::get('/comprobantes/buscar-directo', [BuscadorDirectoController::class, 'redirigirComprobante'])->name('comprobantes.buscar.directo');
 });
 
-require __DIR__.'/auth.php';
-uuse App\Http\Controllers\BuscadorDirectoController;
-
-// Agrégale el ->middleware('auth') exactamente así:
-Route::get('/dashboard/buscar-comprobante-directo', [BuscadorDirectoController::class, 'redirigirComprobante'])
-    ->middleware('auth')
-    ->name('dashboard.buscar_comprobante_directo');
-se App\Http\Controllers\BuscadorDirectoController;
-
-
-Route::get('/dashboard/buscar-comprobante-directo', [BuscadorDirectoController::class, 'redirigirComprobante'])
-    ->name('dashboard.buscar_comprobante_directo');
+// Incluir rutas de autenticación por defecto (Laravel Breeze/Jetstream)
+if (file_exists(__DIR__.'/auth.php')) {
+    require __DIR__.'/auth.php';
+}

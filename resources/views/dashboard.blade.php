@@ -1,30 +1,26 @@
 <x-app-layout>
     <x-slot name="header">
         <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <!-- Título del Tablero -->
             <div>
                 <p class="text-[11px] font-bold uppercase tracking-[0.28em] text-[#d96b4c]">SU+ GESTION EMPRESARIAL / Centro de control</p>
                 <h2 class="mt-1 text-2xl font-black tracking-tight text-[#192522]">Tablero principal</h2>
             </div>
+            
+            <!-- Contenedor de Acciones (Buscadores y Empresa) -->
             <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <label class="relative block w-full sm:w-80">
-                    <span class="sr-only">Buscar en SU+ GESTION EMPRESARIAL</span>
-                    <span class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-[#71807a]">⌕</span>
-                    <input id="module-search" type="search" placeholder="Buscar módulo o acción..." class="w-full rounded-xl border-[#d7dfd8] bg-[#f3f5f1] py-2.5 pl-9 pr-4 text-sm text-[#192522] placeholder:text-[#8b9992] focus:border-[#227c70] focus:ring-[#227c70]">
-                </label>
-                <!-- Document search by consecutive -->
-                            <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <label class="relative block w-full sm:w-80">
+                
+                <!-- 1. Buscador General de Módulos -->
+                <label class="relative block w-full sm:w-64">
                     <span class="sr-only">Buscar en SU+ GESTION EMPRESARIAL</span>
                     <span class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-[#71807a]">⌕</span>
                     <input id="module-search" type="search" placeholder="Buscar módulo o acción..." class="w-full rounded-xl border-[#d7dfd8] bg-[#f3f5f1] py-2.5 pl-9 pr-4 text-sm text-[#192522] placeholder:text-[#8b9992] focus:border-[#227c70] focus:ring-[#227c70]">
                 </label>
 
-                <!-- BUSCADOR COMERCIAL DIRECTO (VISIBLE SIEMPRE PARA TU USUARIO) -->
+                <!-- 2. Buscador Comercial Directo (Consecutivos) -->
                 <div class="flex flex-col gap-2 sm:flex-row sm:items-center bg-[#f3f5f1] p-1.5 rounded-xl border border-[#d7dfd8]">
-                    <!-- Input para pegar el consecutivo (Ej: FE 2333) -->
-                    <input id="consecutivo_directo_dashboard" type="text" placeholder="Pegar consecutivo aquí..." class="w-full sm:w-48 rounded-lg border-0 bg-white py-1.5 px-3 text-sm text-[#192522] placeholder:text-[#8b9992] focus:ring-2 focus:ring-[#227c70]">
-
-                    <!-- Desplegable de tipos de comprobante comercial -->
+                    <input id="consecutivo_directo_dashboard" type="text" placeholder="Pegar consecutivo aquí..." class="w-full sm:w-40 rounded-lg border-0 bg-white py-1.5 px-3 text-sm text-[#192522] placeholder:text-[#8b9992] focus:ring-2 focus:ring-[#227c70]">
+                    
                     <select id="tipo_comprobante_directo_dashboard" class="rounded-lg border-0 bg-white py-1.5 pl-3 pr-8 text-sm font-bold text-[#227c70] focus:ring-2 focus:ring-[#227c70]">
                         <option value="">Seleccione tipo...</option>
                         <option value="venta_factura">Venta (Factura)</option>
@@ -34,64 +30,30 @@
                         <option value="comprobante_contable">Comprobante contable</option>
                     </select>
 
-                    <!-- Botón de ejecución directa -->
                     <button type="button" id="btn_buscar_comercial_dashboard" class="rounded-lg bg-[#227c70] px-4 py-1.5 text-sm font-bold text-white hover:bg-[#1a5f55] transition">Buscar</button>
                 </div>
 
+                <!-- 3. Selector de Empresa Activa (Solo para usuarios autenticados) -->
                 @auth
-                    <!-- Selector de empresa activa (Solo visible si estás logueado) -->
                     <form method="POST" action="{{ route('company.switch') }}" class="flex items-center gap-2 rounded-xl border border-[#d7dfd8] bg-white px-3 py-2">
                         @csrf
                         <label for="active-company" class="text-[10px] font-bold uppercase tracking-wider text-[#71807a]">Empresa</label>
                         <select id="active-company" name="company_id" onchange="this.form.submit()" class="border-0 bg-transparent py-0 pl-0 pr-6 text-sm font-bold text-[#227c70] focus:ring-0">
-                            @foreach($companies as $company)<option value="{{ $company->id }}" @selected((int) session('company_id') === $company->id)>{{ $company->name }}</option>@endforeach
+                            @foreach(companies as company)
+                                <option value="{{ \$company->id }}" @selected((int) session('company_id') === company->id)> company->name }}</option>
+                            @endforeach
                         </select>
                     </form>
                 @endauth
-            </div>
-<div class="flex items-center gap-2 mt-2">
-                    <input id="document-search-input" type="search" placeholder="Consecutivo del documento..."
-                        class="w-full rounded-xl border-[#d7dfd8] bg-[#f3f5f1] py-2.5 pl-9 pr-4 text-sm text-[#192522] placeholder:text-[#8b9992] focus:border-[#227c70] focus:ring-[#227c70]" />
-                    <button type="button" id="document-search-button" class="rounded-xl border border-[#d7dfd8] bg-white px-4 py-2.5 text-sm font-bold text-[#227c70]">
-                        Buscar documentos
-                    </button>
-                </div>
-                <div id="document-search-results" class="mt-2"></div>
-                @guest
-                    <!-- Bloque de búsqueda directa de comprobantes -->
-<div class="flex flex-col gap-2 sm:flex-row sm:items-center bg-[#f3f5f1] p-1.5 rounded-xl border border-[#d7dfd8]">
-    <!-- Input para pegar el consecutivo -->
-    <input id="consecutivo_directo" type="text" placeholder="Pegar consecutivo aquí..." class="w-full sm:w-48 rounded-lg border-0 bg-white py-1.5 px-3 text-sm text-[#192522] placeholder:text-[#8b9992] focus:ring-2 focus:ring-[#227c70]">
 
-    <!-- Desplegable de tipos de comprobante -->
-    <select id="tipo_comprobante_directo" class="rounded-lg border-0 bg-white py-1.5 pl-3 pr-8 text-sm font-bold text-[#227c70] focus:ring-2 focus:ring-[#227c70]">
-        <option value="">Seleccione tipo...</option>
-        <option value="venta_factura">Venta (Factura)</option>
-        <option value="compra_factura">Compra (Factura)</option>
-        <option value="documento_soporte">Documento soporte</option>
-        <option value="nomina_periodo">Nómina (Periodo)</option>
-        <option value="comprobante_contable">Comprobante contable</option>
-    </select>
-
-    <!-- Botón de ejecución -->
-    <button type="button" id="btn_buscar_comprobante_directo" class="rounded-lg bg-[#227c70] px-4 py-1.5 text-sm font-bold text-white hover:bg-[#1a5f55] transition">Buscar</button>
-</div>
-
-                @else
-                    <form method="POST" action="{{ route('company.switch') }}" class="flex items-center gap-2 rounded-xl border border-[#d7dfd8] bg-white px-3 py-2">
-                        @csrf
-                        <label for="active-company" class="text-[10px] font-bold uppercase tracking-wider text-[#71807a]">Empresa</label>
-                        <select id="active-company" name="company_id" onchange="this.form.submit()" class="border-0 bg-transparent py-0 pl-0 pr-6 text-sm font-bold text-[#227c70] focus:ring-0">
-                            @foreach($companies as $company)<option value="{{ $company->id }}" @selected((int) session('company_id') === $company->id)>{{ $company->name }}</option>@endforeach
-                        </select>
-                    </form>
-                @endguest
             </div>
         </div>
     </x-slot>
 
+    <!-- Cuerpo Principal del Dashboard -->
     <div class="min-h-[calc(100vh-65px)] bg-[#f3f5f1] px-4 py-6 sm:px-8">
         <div class="mx-auto max-w-7xl">
+            <!-- Banner Principal -->
             <section class="relative overflow-hidden rounded-2xl bg-[#227c70] px-6 py-8 text-white shadow-lg shadow-[#227c70]/15 sm:px-10">
                 <div class="relative z-10 max-w-2xl">
                     <p class="text-[11px] font-bold uppercase tracking-[0.24em] text-[#b8e3d7]">Centro de operaciones</p>
@@ -101,228 +63,61 @@
                 <div class="absolute -right-16 -top-24 h-64 w-64 rounded-full border-[24px] border-white/10"></div>
             </section>
 
+            <!-- Listado de Módulos del Sistema -->
             @php
-                $modules = [
-                    ['name' => 'Compras', 'hint' => 'Facturas y XML', 'route' => 'purchases.index', 'icon' => '▣', 'tone' => 'bg-[#fff0e8] text-[#b65338]'],
-                    ['name' => 'Ventas', 'hint' => 'Facturación', 'route' => 'sales.index', 'icon' => '↗', 'tone' => 'bg-[#edf7f4] text-[#227c70]'],
-                    ['name' => 'POS electrónico', 'hint' => 'Punto de venta rápido', 'route' => 'pos.index', 'icon' => '⊡', 'tone' => 'bg-[#edf7f4] text-[#227c70]'],
-                    ['name' => 'Inventario', 'hint' => 'Productos y stock', 'route' => 'items.index', 'icon' => '□', 'tone' => 'bg-[#eef1fb] text-[#5064a4]'],
-                    ['name' => 'Nómina', 'hint' => 'Liquidación', 'route' => 'payroll.index', 'icon' => '◎', 'tone' => 'bg-[#f4f1fb] text-[#73559e]'],
-                    ['name' => 'Bancos', 'hint' => 'Conciliación', 'route' => 'bank-reconciliation.index', 'icon' => '⌁', 'tone' => 'bg-[#eaf5f8] text-[#14728a]'],
-                    ['name' => 'Logística', 'hint' => 'Rutas y entregas', 'route' => 'logistics.index', 'icon' => '⌖', 'tone' => 'bg-[#fff8df] text-[#a67b16]'],
-                    ['name' => 'Contabilidad', 'hint' => 'Comprobantes', 'route' => 'accounting.vouchers.index', 'icon' => '◇', 'tone' => 'bg-[#f1f4f2] text-[#354d45]'],
-                    ['name' => 'PUC', 'hint' => 'Cuentas auxiliares', 'route' => 'accounting.puc.index', 'icon' => '⊙', 'tone' => 'bg-[#edf7f4] text-[#227c70]'],
-                    ['name' => 'Terceros', 'hint' => 'Clientes y proveedores', 'route' => 'third-parties.index', 'icon' => '♙', 'tone' => 'bg-[#fff0e8] text-[#b65338]'],
-                    ['name' => 'Nota crédito clientes', 'hint' => 'Devoluciones y ajustes', 'route' => 'commercial-documents.customer-credit-notes', 'icon' => '⤷', 'tone' => 'bg-[#edf7f4] text-[#227c70]'],
-                    ['name' => 'Nota débito proveedores', 'hint' => 'Ajustes a proveedores', 'route' => 'commercial-documents.supplier-debit-notes', 'icon' => '⤶', 'tone' => 'bg-[#fff0e8] text-[#b65338]'],
-                    ['name' => 'Reportes', 'hint' => 'Indicadores', 'route' => 'reports.index', 'icon' => '▥', 'tone' => 'bg-[#eef1fb] text-[#5064a4]'],
-                    ['name' => 'Normativa', 'hint' => 'Consulta legal colombiana', 'route' => 'regulations.index', 'icon' => '§', 'tone' => 'bg-[#f1f4f2] text-[#354d45]'],
-                    ['name' => 'Resoluciones DIAN', 'hint' => 'Numeración autorizada', 'route' => 'numbering-resolutions.index', 'icon' => '№', 'tone' => 'bg-[#fff8df] text-[#a67b16]'],
-                    ['name' => 'Operaciones masivas', 'hint' => 'Imprimir y enviar', 'route' => 'bulk-operations.index', 'icon' => '⇪', 'tone' => 'bg-[#f4f1fb] text-[#73559e]'],
-                    ['name' => 'Administración', 'hint' => 'Empresa y usuarios', 'route' => 'admin.index', 'icon' => '⚙', 'tone' => 'bg-[#f1f4f2] text-[#354d45]'],
+                \$modules = [
+                    ['name' => 'Compras', 'hint' => 'Facturas y XML', 'route' => 'compras.index', 'icon' => '📥'],
+                    ['name' => 'Ventas', 'hint' => 'Facturación emitida', 'route' => 'ventas.index', 'icon' => '📤'],
+                    ['name' => 'Nómina', 'hint' => 'Gestión de personal', 'route' => 'nomina.index', 'icon' => '👥'],
+                    ['name' => 'Contabilidad', 'hint' => 'Asientos y reportes', 'route' => 'contabilidad.index', 'icon' => '📊'],
                 ];
             @endphp
 
-            <div id="module-grid" class="mx-auto mt-6 grid max-w-5xl grid-cols-2 justify-items-center gap-4 sm:grid-cols-3 lg:grid-cols-4">
-                @foreach($modules as $module)
-                    <a href="{{ route($module['route']) }}" data-module-card data-search="{{ strtolower($module['name'].' '.$module['hint']) }}" class="group flex min-h-36 w-full max-w-56 flex-col justify-between rounded-2xl border border-[#d7dfd8] bg-white p-4 shadow-sm transition duration-200 hover:-translate-y-1 hover:border-[#227c70] hover:shadow-lg sm:p-5">
-                        <span class="grid h-11 w-11 place-items-center rounded-xl text-2xl font-black {{ $module['tone'] }}">{{ $module['icon'] }}</span>
-                        <span><span class="mt-5 block text-sm font-black text-[#192522]">{{ $module['name'] }}</span><span class="mt-1 block text-xs text-[#71807a]">{{ $module['hint'] }}</span></span>
+            <div class="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+                @foreach(modules as module)
+                    <a href="{{ route(\$module['route']) }}" class="flex items-center gap-4 rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-md">
+                        <div class="text-3xl">{{ \$module['icon'] }}</div>
+                        <div>
+                            <h3 class="font-bold text-[#192522]">{{ \$module['name'] }}</h3>
+                            <p class="text-xs text-[#8b9992]">{{ \$module['hint'] }}</p>
+                        </div>
                     </a>
                 @endforeach
             </div>
-            <p id="empty-search" class="mt-8 hidden rounded-xl border border-dashed border-[#c7d2cb] bg-white p-8 text-center text-sm text-[#71807a]">No encontramos un módulo con esa búsqueda.</p>
-
-            <section class="mx-auto mt-6 grid max-w-5xl gap-4 md:grid-cols-3">
-                <a href="{{ route('items.create') }}" class="rounded-2xl bg-[#192522] p-5 text-white transition hover:bg-[#263b36]"><span class="text-2xl text-[#f5c96a]">＋</span><p class="mt-5 font-black">Crear producto</p><p class="mt-1 text-xs text-[#b9c9c1]">Añade una referencia al inventario.</p></a>
-                <a href="{{ route('commercial-documents.quotations') }}" class="rounded-2xl bg-[#f5c96a] p-5 text-[#263b36] transition hover:bg-[#ffda89]"><span class="text-2xl">≡</span><p class="mt-5 font-black">Nueva cotización</p><p class="mt-1 text-xs text-[#52635b]">Convierte oportunidades en ventas.</p></a>
-                <a href="{{ route('purchases.index') }}#dian" class="rounded-2xl bg-[#d96b4c] p-5 text-white transition hover:bg-[#bd583c]"><span class="text-2xl">⚡</span><p class="mt-5 font-black">Cargar XML DIAN</p><p class="mt-1 text-xs text-[#ffe4d8]">Automatiza la lectura de compras.</p></a>
-            </section>
         </div>
     </div>
 
+    <!-- Script de Búsqueda Directa -->
     <script>
-        const docSearchInput = document.getElementById('document-search-input');
-        const docSearchButton = document.getElementById('document-search-button');
-        const docSearchResults = document.getElementById('document-search-results');
+    document.addEventListener('DOMContentLoaded', () => {
+        const inputConsecutivo = document.getElementById('consecutivo_directo_dashboard');
+        const selectTipo = document.getElementById('tipo_comprobante_directo_dashboard');
+        const btnBuscar = document.getElementById('btn_buscar_comercial_dashboard');
 
-        docSearchButton?.addEventListener('click', () => {
-            const consecutive = docSearchInput?.value.trim();
-            if (!consecutive) {
-                alert('Ingrese un consecutivo para buscar.');
-                return;
+        function ejecutarBusqueda() {
+            const Consecutivo = inputConsecutivo.value.trim();
+            const tipo = selectTipo.value;
+
+            If (!consecutivo) {
+                Alert('Por favor, ingresa un consecutivo.');
+                InputConsecutivo.focus();
+                Return;
             }
-            fetch(`/buscar-comprobantes?consecutive=${encodeURIComponent(consecutive)}`, {
-                headers: { Accept: 'application/json' },
-            })
-                .then(res => res.json())
-                .then(data => {
-                    if (!data.found) {
-                        docSearchResults.innerHTML = `<p class="text-sm text-red-600">${data.message}</p>`;
-                        return;
-                    }
-                    const list = data.results.map(r => {
-                        const url = `/comprobantes/${r.voucher_id}/contabilizacion`;
-                        return `<li><a href="${url}" class="text-blue-600 underline">${r.label} - Voucher #${r.voucher_id}</a></li>`;
-                    }).join('');
-                    docSearchResults.innerHTML = `<ul class="list-disc pl-5">${list}</ul>`;
-                })
-                .catch(err => {
-                    console.error(err);
-                    alert('Error al buscar documentos.');
-                });
+
+            If (!tipo) {
+                Alert('Por favor, selecciona un tipo de comprobante.');
+                SelectTipo.focus();
+                Return;
+            }
+
+            // Redirección directa hacia la ruta de Laravel
+            Window.location.href = `{{ route('comprobantes.buscar.directo') }}?tipo=${tipo}&consecutivo=${encodeURIComponent(consecutivo)}`;
+        }
+
+        BtnBuscar.addEventListener('click', ejecutarBusqueda);
+        InputConsecutivo.addEventListener('keypress', (e) => {
+            If (e.key === 'Enter') ejecutarBusqueda();
         });
-        const moduleCards = [...document.querySelectorAll('[data-module-card]')];
-        const emptySearch = document.getElementById('empty-search');
-        searchInput?.addEventListener('input', (event) => {
-            const query = event.target.value.trim().toLowerCase();
-            let visible = 0;
-            moduleCards.forEach((card) => {
-                const matches = !query || card.dataset.search.includes(query);
-                card.classList.toggle('hidden', !matches);
-                visible += matches ? 1 : 0;
-            });
-            emptySearch?.classList.toggle('hidden', visible > 0);
-        });
-
-        function openDocumentLookup() {
-            document.getElementById('document-lookup-modal').classList.remove('hidden');
-            document.getElementById('document-lookup-modal').classList.add('flex');
-        }
-
-        function closeDocumentLookup() {
-            document.getElementById('document-lookup-modal').classList.add('hidden');
-            document.getElementById('document-lookup-modal').classList.remove('flex');
-            document.getElementById('document-lookup-error').classList.add('hidden');
-        }
-
-        async function submitDocumentLookup(event) {
-            event.preventDefault();
-            const module = document.getElementById('document-lookup-module').value;
-            const consecutive = document.getElementById('document-lookup-consecutive').value.trim();
-            const errorBox = document.getElementById('document-lookup-error');
-            errorBox.classList.add('hidden');
-            if (!consecutive) {
-                return;
-            }
-            const response = await fetch(`{{ route('documents.lookup') }}?module=${encodeURIComponent(module)}&consecutive=${encodeURIComponent(consecutive)}`, {
-                headers: { Accept: 'application/json' },
-            });
-            const data = await response.json();
-            if (!response.ok || !data.found) {
-                errorBox.textContent = data.message || 'No se encontró el comprobante.';
-                errorBox.classList.remove('hidden');
-                return;
-            }
-            closeDocumentLookup();
-            window.open(`/comprobantes/${data.voucher_id}/contabilizacion`, '_blank');
-        }
+    });
     </script>
-    <div id="document-lookup-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50" onclick="if(event.target === this) closeDocumentLookup()">
-        <div class="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-            <div class="flex items-center justify-between"><h3 class="text-lg font-black text-[#192522]">Buscar comprobante</h3><button type="button" onclick="closeDocumentLookup()" class="text-[#71807a]">✕</button></div>
-            <form onsubmit="submitDocumentLookup(event)" class="mt-4 space-y-3">
-                <select id="document-lookup-module" class="w-full rounded-xl border-[#d7dfd8] text-sm">
-                    @foreach(\App\Http\Controllers\DocumentLookupController::MODULES as $key => $module)
-                        <option value="{{ $key }}">{{ $module['label'] }}</option>
-                    @endforeach
-                </select>
-                <input id="document-lookup-consecutive" type="text" required placeholder="Consecutivo (ej. 1, FAC-001)" class="w-full rounded-xl border-[#d7dfd8] text-sm">
-                <p id="document-lookup-error" class="hidden rounded-lg bg-red-50 p-2 text-xs text-red-600"></p>
-                <button type="submit" class="w-full rounded-xl bg-[#227c70] px-4 py-2.5 text-sm font-bold text-white">Buscar</button>
-            </form>
-        </div>
-    </div>
-    <x-voucher-modal />
 </x-app-layout>
-<script>
-document.addEventListener('DOMContentLoaded', function () {
-    const btnBuscarDirecto = document.getElementById('btn_buscar_comprobante_directo');
-    const inputConsecutivo = document.getElementById('consecutivo_directo');
-    const selectTipo = document.getElementById('tipo_comprobante_directo');
-
-    if (btnBuscarDirecto) {
-        btnBuscarDirecto.addEventListener('click', function (e) {
-            e.preventDefault();
-
-            const consecutivoValue = inputConsecutivo.value.trim();
-            const tipoValue = selectTipo.value;
-
-            if (!consecutivoValue) {
-                alert('Por favor, pegue o digite el número de consecutivo.');
-                return;
-            }
-            if (!tipoValue) {
-                alert('Debe seleccionar el tipo de comprobante en la lista.');
-                return;
-            }
-
-            // Petición al controlador de Laravel para traer la ruta exacta
-            const urlConsulta = `/dashboard/buscar-comprobante-directo?consecutivo=${encodeURIComponent(consecutivoValue)}&tipo=${encodeURIComponent(tipoValue)}`;
-
-            fetch(urlConsulta, {
-                method: 'GET',
-                headers: {
-                    'X-Requested-With': 'XMLHttpRequest',
-                    'Content-Type': 'application/json'
-                }
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success && data.url) {
-                    // Redirección inmediata al documento coincidente
-                    window.location.href = data.url;
-                } else {
-                    alert(data.message || 'No se encontró el documento solicitado.');
-                }
-            })
-            .catch(error => {
-                console.error('Error de comunicación con Laravel:', error);
-                alert('Ocurrió un error en el servidor al intentar buscar.');
-            });
-        });
-    }
-});
-</script>
-<script>
-document.addEventListener('DOMContentLoaded', function () {
-    // Usamos 'true' al final del addEventListener para activar la fase de captura.
-    // Esto hace que nuestro código se ejecute PRIMERO, antes de que el script nativo del ERP salte con la alerta contable.
-    document.addEventListener('click', function (e) {
-        // Detectamos si hicieron clic en el botón nativo de buscar comprobantes
-        if (e.target && (e.target.textContent.trim() === 'Buscar' || e.target.id === 'document-search-button' || e.target.id === 'btn_buscar_comprobante_directo')) {
-            
-            // Localizamos el campo de texto y el selector desplegable activos en tu barra superior
-            const inputConsecutivo = document.getElementById('consecutivo_directo') || document.getElementById('document-search-input') || document.querySelector('input[type="text"]');
-            const selectTipo = document.getElementById('tipo_comprobante_directo') || document.querySelector('select');
-
-            if (!inputConsecutivo || !inputConsecutivo.value.trim() || !selectTipo) return;
-
-            // ¡PUM! Detenemos por completo la petición original del ERP y evitamos que salga el cartel contable
-            e.preventDefault();
-            e.stopPropagation();
-
-            const consecutivo = inputConsecutivo.value.trim();
-            const tipoValue = selectTipo.value;
-
-            let rutaDestino = '';
-
-            // Redirección directa calibrada con las rutas comerciales nativas de tu SU+ GESTIÓN
-            if (tipoValue.includes('venta') || tipoValue.includes('Venta')) {
-                rutaDestino = window.location.origin + '/ventas?search=' + encodeURIComponent(consecutivo);
-            } else if (tipoValue.includes('compra') || tipoValue.includes('Compra')) {
-                rutaDestino = window.location.origin + '/purchases?search=' + encodeURIComponent(consecutivo);
-            } else if (tipoValue.includes('soporte') || tipoValue.includes('Soporte')) {
-                rutaDestino = window.location.origin + '/cotizaciones?search=' + encodeURIComponent(consecutivo);
-            } else if (tipoValue.includes('nomina') || tipoValue.includes('Nómina')) {
-                rutaDestino = window.location.origin + '/comprobantes?search=' + encodeURIComponent(consecutivo);
-            } else {
-                rutaDestino = window.location.origin + '/purchases?search=' + encodeURIComponent(consecutivo);
-            }
-
-            // Movemos la pestaña inmediatamente al listado comercial filtrado
-            window.location.href = rutaDestino;
-        }
-    }, true); // El 'true' es el superpoder que congela las acciones nativas del ERP
-});
-</script>

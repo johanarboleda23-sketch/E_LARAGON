@@ -8,7 +8,6 @@ use App\Http\Controllers\ChartOfAccountController;
 use App\Http\Controllers\CommercialDocumentController;
 use App\Http\Controllers\CompanyController;
 use App\Http\Controllers\DocumentLookupController;
-use App\Http\Controllers\BuscadorDirectoController; // Controlador añadido
 use App\Http\Controllers\ItemController;
 use App\Http\Controllers\LogisticsController;
 use App\Http\Controllers\NumberingResolutionController;
@@ -72,10 +71,7 @@ Route::middleware(['auth', 'company'])->group(function () {
     Route::get('/normativa', [RegulationController::class, 'index'])->name('regulations.index');
 
     Route::middleware('module:purchases')->group(function () {
-        // Cable 1: El cargador robotizado del XML de la DIAN (En singular impecable)
         Route::post('/purchases/import-xml', [PurchaseController::class, 'importXML'])->name('purchases.import-xml');
-
-        // Cable 2: El módulo general de gestión de compras avanzado rosa
         Route::resource('purchases', PurchaseController::class);
     });
 
@@ -108,31 +104,8 @@ Route::middleware(['auth', 'company'])->group(function () {
         Route::get('/comprobantes/{voucher}/estado-cuenta', [AccountingVoucherController::class, 'statement'])->name('accounting.vouchers.statement');
         Route::post('/comprobantes/{voucher}/correo', [AccountingVoucherController::class, 'email'])->name('accounting.vouchers.email');
     });
-
-    // NUEVA RUTA INTEGRADA DEL BUSCADOR DIRECTO EN EL DASHBOARD
-    Route::get('/comprobantes/buscar-directo', [BuscadorDirectoController::class, 'redirigirComprobante'])->name('comprobantes.buscar.directo');
-});
-
-// Incluir rutas de autenticación por defecto (Laravel Breeze/Jetstream)
-if (file_exists(__DIR__.'/auth.php')) {
-    require __DIR__.'/auth.php';
-}
-    // NUEVA RUTA INTEGRADA DEL BUSCADOR DIRECTO EN EL DASHBOARD
-    Route::get('/comprobantes/buscar-directo', [BuscadorDirectoController::class, 'redirigirComprobante'])->name('comprobantes.buscar.directo');
-});
-
-// Incluir rutas de autenticación por defecto (Laravel Breeze/Jetstream)
-if (file_exists(__DIR__.'/auth.php')) {
-    require __DIR__.'/auth.php';
-}
-    // RUTA COMENTADA TEMPORALMENTE PARA ELIMINAR EL ERROR 500
-    // Route::get('/comprobantes/buscar-directo', [BuscadorDirectoController::class, 'redirigirComprobante'])->name('comprobantes.buscar.directo');
 });
 
 if (file_exists(__DIR__.'/auth.php')) {
     require __DIR__.'/auth.php';
-}
-
-Route::get('/comprobantes/buscar-directo', [BuscadorDirectoController::class, 'redirigirComprobante'])->name('comprobantes.buscar.directo');
-
 

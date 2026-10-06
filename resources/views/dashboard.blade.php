@@ -34,17 +34,18 @@
                 </div>
 
                 <!-- 3. Selector de Empresa Activa (Solo para usuarios autenticados) -->
-                @auth
-                    <form method="POST" action="{{ route('company.switch') }}" class="flex items-center gap-2 rounded-xl border border-[#d7dfd8] bg-white px-3 py-2">
-                        @csrf
-                        <label for="active-company" class="text-[10px] font-bold uppercase tracking-wider text-[#71807a]">Empresa</label>
-                        <select id="active-company" name="company_id" onchange="this.form.submit()" class="border-0 bg-transparent py-0 pl-0 pr-6 text-sm font-bold text-[#227c70] focus:ring-0">
-                            @foreach(companies as company)
-                                <option value="{{ \$company->id }}" @selected((int) session('company_id') === company->id)> company->name }}</option>
-                            @endforeach
-                        </select>
-                    </form>
-                @endauth
+@auth
+    <form method="POST" action="{{ route('company.switch') }}" class="flex items-center gap-2 rounded-xl border border-[#d7dfd8] bg-white px-3 py-2">
+        @csrf
+        <label for="active-company" class="text-[10px] font-bold uppercase tracking-wider text-[#71807a]">Empresa</label>
+        <select id="active-company" name="company_id" onchange="this.form.submit()" class="border-0 bg-transparent py-0 pl-0 pr-6 text-sm font-bold text-[#227c70] focus:ring-0">
+            @foreach($companies as $company)
+                <option value="{{ $company->id }}" @selected((int) session('company_id') === $company->id)>{{ $company->name }}</option>
+            @endforeach
+        </select>
+    </form>
+@endauth
+
 
             </div>
         </div>
@@ -73,51 +74,21 @@
                 ];
             @endphp
 
-            <div class="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-                @foreach(modules as module)
-                    <a href="{{ route(\$module['route']) }}" class="flex items-center gap-4 rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-md">
-                        <div class="text-3xl">{{ \$module['icon'] }}</div>
-                        <div>
-                            <h3 class="font-bold text-[#192522]">{{ \$module['name'] }}</h3>
-                            <p class="text-xs text-[#8b9992]">{{ \$module['hint'] }}</p>
-                        </div>
-                    </a>
-                @endforeach
+            <<div class="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+    @foreach($modules as $module)
+        <a href="{{ route($module['route']) }}" class="flex items-center gap-4 rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-md">
+            <div class="text-3xl">{{ $module['icon'] }}</div>
+            <div>
+                <h3 class="font-bold text-[#192522]">{{ $module['name'] }}</h3>
+                <p class="text-xs text-[#8b9992]">{{ $module['hint'] }}</p>
+            </div>
+        </a>
+    @endforeach
+</div>
+
             </div>
         </div>
     </div>
 
     <!-- Script de Búsqueda Directa -->
-    <script>
-    document.addEventListener('DOMContentLoaded', () => {
-        const inputConsecutivo = document.getElementById('consecutivo_directo_dashboard');
-        const selectTipo = document.getElementById('tipo_comprobante_directo_dashboard');
-        const btnBuscar = document.getElementById('btn_buscar_comercial_dashboard');
-
-        function ejecutarBusqueda() {
-            const Consecutivo = inputConsecutivo.value.trim();
-            const tipo = selectTipo.value;
-
-            If (!consecutivo) {
-                Alert('Por favor, ingresa un consecutivo.');
-                InputConsecutivo.focus();
-                Return;
-            }
-
-            If (!tipo) {
-                Alert('Por favor, selecciona un tipo de comprobante.');
-                SelectTipo.focus();
-                Return;
-            }
-
-            // Redirección directa hacia la ruta de Laravel
-            Window.location.href = `{{ route('comprobantes.buscar.directo') }}?tipo=${tipo}&consecutivo=${encodeURIComponent(consecutivo)}`;
-        }
-
-        BtnBuscar.addEventListener('click', ejecutarBusqueda);
-        InputConsecutivo.addEventListener('keypress', (e) => {
-            If (e.key === 'Enter') ejecutarBusqueda();
-        });
-    });
-    </script>
-</x-app-layout>
+    <s

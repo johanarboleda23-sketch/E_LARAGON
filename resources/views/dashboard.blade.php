@@ -12,7 +12,44 @@
                     <input id="module-search" type="search" placeholder="Buscar módulo o acción..." class="w-full rounded-xl border-[#d7dfd8] bg-[#f3f5f1] py-2.5 pl-9 pr-4 text-sm text-[#192522] placeholder:text-[#8b9992] focus:border-[#227c70] focus:ring-[#227c70]">
                 </label>
                 <!-- Document search by consecutive -->
-                <div class="flex items-center gap-2 mt-2">
+                            <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <label class="relative block w-full sm:w-80">
+                    <span class="sr-only">Buscar en SU+ GESTION EMPRESARIAL</span>
+                    <span class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-[#71807a]">⌕</span>
+                    <input id="module-search" type="search" placeholder="Buscar módulo o acción..." class="w-full rounded-xl border-[#d7dfd8] bg-[#f3f5f1] py-2.5 pl-9 pr-4 text-sm text-[#192522] placeholder:text-[#8b9992] focus:border-[#227c70] focus:ring-[#227c70]">
+                </label>
+
+                <!-- BUSCADOR COMERCIAL DIRECTO (VISIBLE SIEMPRE PARA TU USUARIO) -->
+                <div class="flex flex-col gap-2 sm:flex-row sm:items-center bg-[#f3f5f1] p-1.5 rounded-xl border border-[#d7dfd8]">
+                    <!-- Input para pegar el consecutivo (Ej: FE 2333) -->
+                    <input id="consecutivo_directo_dashboard" type="text" placeholder="Pegar consecutivo aquí..." class="w-full sm:w-48 rounded-lg border-0 bg-white py-1.5 px-3 text-sm text-[#192522] placeholder:text-[#8b9992] focus:ring-2 focus:ring-[#227c70]">
+
+                    <!-- Desplegable de tipos de comprobante comercial -->
+                    <select id="tipo_comprobante_directo_dashboard" class="rounded-lg border-0 bg-white py-1.5 pl-3 pr-8 text-sm font-bold text-[#227c70] focus:ring-2 focus:ring-[#227c70]">
+                        <option value="">Seleccione tipo...</option>
+                        <option value="venta_factura">Venta (Factura)</option>
+                        <option value="compra_factura">Compra (Factura)</option>
+                        <option value="documento_soporte">Documento soporte</option>
+                        <option value="nomina_periodo">Nómina (Periodo)</option>
+                        <option value="comprobante_contable">Comprobante contable</option>
+                    </select>
+
+                    <!-- Botón de ejecución directa -->
+                    <button type="button" id="btn_buscar_comercial_dashboard" class="rounded-lg bg-[#227c70] px-4 py-1.5 text-sm font-bold text-white hover:bg-[#1a5f55] transition">Buscar</button>
+                </div>
+
+                @auth
+                    <!-- Selector de empresa activa (Solo visible si estás logueado) -->
+                    <form method="POST" action="{{ route('company.switch') }}" class="flex items-center gap-2 rounded-xl border border-[#d7dfd8] bg-white px-3 py-2">
+                        @csrf
+                        <label for="active-company" class="text-[10px] font-bold uppercase tracking-wider text-[#71807a]">Empresa</label>
+                        <select id="active-company" name="company_id" onchange="this.form.submit()" class="border-0 bg-transparent py-0 pl-0 pr-6 text-sm font-bold text-[#227c70] focus:ring-0">
+                            @foreach($companies as $company)<option value="{{ $company->id }}" @selected((int) session('company_id') === $company->id)>{{ $company->name }}</option>@endforeach
+                        </select>
+                    </form>
+                @endauth
+            </div>
+<div class="flex items-center gap-2 mt-2">
                     <input id="document-search-input" type="search" placeholder="Consecutivo del documento..."
                         class="w-full rounded-xl border-[#d7dfd8] bg-[#f3f5f1] py-2.5 pl-9 pr-4 text-sm text-[#192522] placeholder:text-[#8b9992] focus:border-[#227c70] focus:ring-[#227c70]" />
                     <button type="button" id="document-search-button" class="rounded-xl border border-[#d7dfd8] bg-white px-4 py-2.5 text-sm font-bold text-[#227c70]">
@@ -243,6 +280,56 @@ document.addEventListener('DOMContentLoaded', function () {
                 console.error('Error de comunicación con Laravel:', error);
                 alert('Ocurrió un error en el servidor al intentar buscar.');
             });
+        });
+    }
+});
+</script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const btnBuscarComercial = document.getElementById('btn_buscar_comercial_dashboard');
+    const inputConsecutivo = document.getElementById('consecutivo_directo_dashboard');
+    const selectTipo = document.getElementById('tipo_comprobante_directo_dashboard');
+
+    if (btnBuscarComercial) {
+        btnBuscarComercial.addEventListener('click', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            const consecutivoValue = inputConsecutivo.value.trim();
+            const tipoValue = selectTipo.value;
+
+            if (!consecutivoValue) {
+                alert('Por favor, ingrese o pegue el número de consecutivo.');
+                return;
+            }
+            if (!tipoValue) {
+                alert('Debe seleccionar el tipo de comprobante en la lista.');
+                return;
+            }
+
+            let rutaDestino = '';
+
+            // Enrutamiento directo a los listados comerciales nativos de SU+
+            switch (tipoValue) {
+                case 'venta_factura':
+                    rutaDestino = window.location.origin + '/ventas?search=' + encodeURIComponent(consecutivoValue);
+                    break;
+                case 'compra_factura':
+                    rutaDestino = window.location.origin + '/purchases?search=' + encodeURIComponent(consecutivoValue);
+                    break;
+                case 'documento_soporte':
+                    rutaDestino = window.location.origin + '/cotizaciones?search=' + encodeURIComponent(consecutivoValue); 
+                    break;
+                case 'nomina_periodo':
+                    rutaDestino = window.location.origin + '/comprobantes?search=' + encodeURIComponent(consecutivoValue);
+                    break;
+                default:
+                    rutaDestino = window.location.origin + '/purchases?search=' + encodeURIComponent(consecutivoValue);
+                    break;
+            }
+
+            // Cambiamos de pantalla al instante evadiendo el modal contable defectuoso
+            window.location.href = rutaDestino;
         });
     }
 });

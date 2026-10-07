@@ -34,18 +34,17 @@
                 </div>
 
                 <!-- 3. Selector de Empresa Activa (Solo para usuarios autenticados) -->
-@auth
-    <form method="POST" action="{{ route('company.switch') }}" class="flex items-center gap-2 rounded-xl border border-[#d7dfd8] bg-white px-3 py-2">
-        @csrf
-        <label for="active-company" class="text-[10px] font-bold uppercase tracking-wider text-[#71807a]">Empresa</label>
-        <select id="active-company" name="company_id" onchange="this.form.submit()" class="border-0 bg-transparent py-0 pl-0 pr-6 text-sm font-bold text-[#227c70] focus:ring-0">
-            @foreach($companies as $company)
-                <option value="{{ $company->id }}" @selected((int) session('company_id') === $company->id)>{{ $company->name }}</option>
-            @endforeach
-        </select>
-    </form>
-@endauth
-
+                @auth
+                    <form method="POST" action="{{ route('company.switch') }}" class="flex items-center gap-2 rounded-xl border border-[#d7dfd8] bg-white px-3 py-2">
+                        @csrf
+                        <label for="active-company" class="text-[10px] font-bold uppercase tracking-wider text-[#71807a]">Empresa</label>
+                        <select id="active-company" name="company_id" onchange="this.form.submit()" class="border-0 bg-transparent py-0 pl-0 pr-6 text-sm font-bold text-[#227c70] focus:ring-0">
+                            @foreach(companies as company)
+                                <option value="{{ \$company->id }}" @selected((int) session('company_id') === company->id)> company->name }}</option>
+                            @endforeach
+                        </select>
+                    </form>
+                @endauth
 
             </div>
         </div>
@@ -67,28 +66,82 @@
             <!-- Listado de Módulos del Sistema -->
             @php
                 \$modules = [
-                    ['name' => 'Compras', 'hint' => 'Facturas y XML', 'route' => 'compras.index', 'icon' => '📥'],
-                    ['name' => 'Ventas', 'hint' => 'Facturación emitida', 'route' => 'ventas.index', 'icon' => '📤'],
-                    ['name' => 'Nómina', 'hint' => 'Gestión de personal', 'route' => 'nomina.index', 'icon' => '👥'],
-                    ['name' => 'Contabilidad', 'hint' => 'Asientos y reportes', 'route' => 'contabilidad.index', 'icon' => '📊'],
+                    ['name' => 'Compras', 'hint' => 'Facturas y XML', 'route' => 'purchases.index', 'icon' => '📥'],
+                    ['name' => 'Ventas', 'hint' => 'Facturación emitida', 'route' => 'sales.index', 'icon' => '📤'],
+                    ['name' => 'Nómina', 'hint' => 'Gestión de personal', 'route' => 'accounting.vouchers.index', 'icon' => '👥'],
+                    ['name' => 'Contabilidad', 'hint' => 'Asientos y reportes', 'route' => 'accounting.vouchers.index', 'icon' => '📊'],
                 ];
             @endphp
 
-            <<div class="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-    @foreach($modules as $module)
-        <a href="{{ route($module['route']) }}" class="flex items-center gap-4 rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-md">
-            <div class="text-3xl">{{ $module['icon'] }}</div>
-            <div>
-                <h3 class="font-bold text-[#192522]">{{ $module['name'] }}</h3>
-                <p class="text-xs text-[#8b9992]">{{ $module['hint'] }}</p>
-            </div>
-        </a>
-    @endforeach
-</div>
-
+            <div class="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+                @foreach(modules as module)
+                    <a href="{{ route(\$module['route']) }}" class="flex items-center gap-4 rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-md">
+                        <div class="text-3xl">{{ \$module['icon'] }}</div>
+                        <div>
+                            <h3 class="font-bold text-[#192522]">{{ \$module['name'] }}</h3>
+                            <p class="text-xs text-[#8b9992]">{{ \$module['hint'] }}</p>
+                        </div>
+                    </a>
+                @endforeach
             </div>
         </div>
     </div>
 
-    <!-- Script de Búsqueda Directa -->
-    <s
+    <!-- Script de Búsqueda Sincronizado con tu Controlador JSON -->
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const inputConsecutivo = document.getElementById('consecutivo_directo_dashboard');
+        const selectTipo = document.getElementById('tipo_comprobante_directo_dashboard');
+        const btnBuscar = document.getElementById('btn_buscar_comercial_dashboard');
+
+        function ejecutarBusqueda() {
+            const consecutivo = inputConsecutivo.value.trim();
+            const tipo = selectTipo.value;
+
+            if (!consecutivo) {
+                alert('Por favor, ingresa un consecutivo.');
+                inputConsecutivo.focus();
+                return;
+            }
+
+            if (!tipo) {
+                alert('Por favor, selecciona un tipo de comprobante.');
+                selectTipo.focus();
+                return;
+            }
+
+            btnBuscar.disabled = true;
+            btnBuscar.innerText = 'Buscando...';
+
+            fetch(`{{ route('comprobantes.buscar.directo') }}?tipo=${tipo}&consecutivo=${encodeURIComponent(consecutivo)}`, {
+                method: 'GET',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success && data.url) {
+                    window.location.href = data.url;
+                } else {
+                    alert(data.message || 'No se encontró el documento.');
+                    btnBuscar.disabled = false;
+                    btnBuscar.innerText = 'Buscar';
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Ocurrió un problema en el servidor al buscar.');
+                btnBuscar.disabled = false;
+                btnBuscar.innerText = 'Buscar';
+            });
+        }
+
+        btnBuscar.addEventListener('click', ejecutarBusqueda);
+        inputConsecutivo.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') ejecutarBusqueda();
+        });
+    });
+    </script>
+</x-app-layout>

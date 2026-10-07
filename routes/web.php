@@ -103,9 +103,9 @@ Route::middleware(['auth', 'company'])->group(function () {
         Route::get('/comprobantes/{voucher}/contabilizacion', [AccountingVoucherController::class, 'accounting'])->name('accounting.vouchers.accounting');
         Route::get('/comprobantes/{voucher}/estado-cuenta', [AccountingVoucherController::class, 'statement'])->name('accounting.vouchers.statement');
         Route::post('/comprobantes/{voucher}/correo', [AccountingVoucherController::class, 'email'])->name('accounting.vouchers.email');
-    });
+     });
 });
 
-if (file_exists(__DIR__.'/auth.php')) {
-    require __DIR__.'/auth.php';
-
+if (file_exists(__DIR__ . '/auth.php')) {
+    require __DIR__ . '/auth.php';
+}

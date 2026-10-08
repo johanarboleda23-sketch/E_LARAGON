@@ -6,9 +6,11 @@ use App\Models\ChartOfAccount;
 use App\Models\Company;
 use App\Models\FactusCredential;
 use App\Models\PaymentMethod;
+use App\Models\Purchase;
 use App\Models\User;
 use App\Support\DefaultChartOfAccounts;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class AdminController extends Controller
 {
@@ -80,6 +82,33 @@ class AdminController extends Controller
         $paymentMethod->update($data);
 
         return back()->with('success', 'Cuenta PUC de la forma de pago actualizada.');
+    }
+
+    public function storePaymentMethod(Request $request)
+    {
+        $this->authorizeAdmin($request);
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:255', Rule::unique('payment_methods', 'name')->where('company_id', session('company_id'))],
+            'chart_of_account_id' => ['nullable', 'integer', 'exists:chart_of_accounts,id'],
+        ]);
+        $data['is_editable'] = true;
+
+        PaymentMethod::create($data);
+
+        return back()->with('success', 'Forma de pago creada correctamente.');
+    }
+
+    public function destroyPaymentMethod(Request $request, PaymentMethod $paymentMethod)
+    {
+        $this->authorizeAdmin($request);
+        abort_unless($paymentMethod->is_editable, 422, 'Esta forma de pago no se puede eliminar.');
+
+        $inUse = Purchase::where('payment_method_id', $paymentMethod->id)->exists();
+        abort_if($inUse, 422, 'No se puede eliminar: ya tiene facturas asociadas. Puedes dejarla sin cuenta PUC en su lugar.');
+
+        $paymentMethod->delete();
+
+        return back()->with('success', 'Forma de pago eliminada.');
     }
 
     public function seedChartOfAccounts(Request $request)

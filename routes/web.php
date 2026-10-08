@@ -169,6 +169,8 @@ Route::middleware(['auth', 'company'])->group(function () {
     Route::post('/admin/members', [AdminController::class, 'addMember'])->name('admin.members.store');
     Route::put('/admin/members/{user}/role', [AdminController::class, 'updateRole'])->name('admin.members.role');
     Route::put('/admin/payment-methods/{paymentMethod}', [AdminController::class, 'updatePaymentMethod'])->name('admin.payment-methods.puc');
+    Route::post('/admin/payment-methods', [AdminController::class, 'storePaymentMethod'])->name('admin.payment-methods.store');
+    Route::delete('/admin/payment-methods/{paymentMethod}', [AdminController::class, 'destroyPaymentMethod'])->name('admin.payment-methods.destroy');
     Route::post('/admin/puc/seed', [AdminController::class, 'seedChartOfAccounts'])->name('admin.puc.seed');
     Route::post('/admin/factus', [AdminController::class, 'updateFactusCredential'])->name('admin.factus.update');
 

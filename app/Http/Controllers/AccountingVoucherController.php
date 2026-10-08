@@ -178,6 +178,8 @@ class AccountingVoucherController extends Controller
 
     public function accounting(AccountingVoucher $voucher)
     {
+        $voucher->load('lines.account', 'creator');
+
         return view('accounting.vouchers.accounting', compact('voucher'));
     }
 

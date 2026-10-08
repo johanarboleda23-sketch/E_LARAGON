@@ -12,7 +12,9 @@
     <div class="actions">
         <button onclick="window.print()">Imprimir / Guardar como PDF</button>
         @if($purchase->accounting_voucher_id)
-            <a target="_blank" href="{{ route('accounting.vouchers.accounting', $purchase->accounting_voucher_id) }}">Ver asiento contable</a>
+            <a target="_blank" href="{{ route('accounting.vouchers.accounting', $purchase->accounting_voucher_id) }}">Ver contabilización</a>
+        @else
+            <button type="button" disabled style="opacity:.55;cursor:not-allowed" title="Esta factura aún no tiene un asiento contable asociado.">Ver contabilización</button>
         @endif
     </div>
     <header>

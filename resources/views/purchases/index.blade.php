@@ -66,9 +66,9 @@
                     <button type="button" onclick="focusReceivable()" class="btn-white" style="border-color:#bfdbfe; color:#1d4ed8;">Estado Cartera (C x P)</button>
                     @php($latestPurchaseVoucherId = optional($recentPurchases->first())->accounting_voucher_id)
                     @if($latestPurchaseVoucherId)
-                        <a href="{{ route('accounting.vouchers.accounting', $latestPurchaseVoucherId) }}" target="_blank" class="btn-white" style="border-color:#e9d5ff; color:#6b21a8; text-decoration:none; display:inline-block;">Ver Asiento Contable</a>
+                        <a href="{{ route('accounting.vouchers.accounting', $latestPurchaseVoucherId) }}" target="_blank" class="btn-white" style="border-color:#e9d5ff; color:#6b21a8; text-decoration:none; display:inline-block;">Ver contabilización</a>
                     @else
-                        <button type="button" onclick="showAccountingEntry()" class="btn-white" style="border-color:#e9d5ff; color:#6b21a8;">Ver Asiento Contable</button>
+                        <button type="button" onclick="showAccountingEntry()" class="btn-white" style="border-color:#e9d5ff; color:#6b21a8;">Ver contabilización</button>
                     @endif
                     <a href="/items" class="btn-pink-light" style="text-decoration:none; display:inline-block; line-height:14px;">📦 Almacén / Inventario</a>
                     <div class="download-menu" id="download-menu">
@@ -265,7 +265,9 @@
                             <td>
                                 <a class="btn-white" style="text-decoration:none;display:inline-block" href="{{ route('purchases.show', $purchase) }}" target="_blank">Ver documento</a>
                                 @if($purchase->accounting_voucher_id)
-                                    <a class="btn-white" style="text-decoration:none;display:inline-block" target="_blank" href="{{ route('accounting.vouchers.accounting', $purchase->accounting_voucher_id) }}">Asiento contable</a>
+                                    <a class="btn-white" style="text-decoration:none;display:inline-block" target="_blank" href="{{ route('accounting.vouchers.accounting', $purchase->accounting_voucher_id) }}">Ver contabilización</a>
+                                @else
+                                    <span class="btn-white" style="opacity:.55;cursor:not-allowed" title="Aún no tiene un asiento contable asociado.">Ver contabilización</span>
                                 @endif
                                 @if(!$purchase->trashed())
                                     <form action="{{ route('purchases.destroy', $purchase) }}" method="POST" onsubmit="return confirm('¿Eliminar esta factura? Quedará en el historial.')">

@@ -207,6 +207,27 @@ class PurchaseControllerTest extends TestCase
         $this->assertSame(10, $item->fresh()->stock);
     }
 
+    public function test_show_displays_an_existing_and_a_soft_deleted_purchase(): void
+    {
+        $this->authenticateWithCompany();
+        $item = $this->createProduct();
+
+        $this->post(route('purchases.store'), $this->purchasePayload($item, 100_000))
+            ->assertRedirect(route('purchases.index'));
+        $purchase = Purchase::query()->where('invoice_number', 'DAV-RET-001')->firstOrFail();
+
+        $this->get(route('purchases.show', $purchase))
+            ->assertOk()
+            ->assertSee($purchase->invoice_number);
+
+        $this->delete(route('purchases.destroy', $purchase))
+            ->assertRedirect(route('purchases.index'));
+
+        $this->get(route('purchases.show', $purchase))
+            ->assertOk()
+            ->assertSee($purchase->invoice_number);
+    }
+
     private function authenticateWithCompany(): Company
     {
         $company = Company::factory()->create();

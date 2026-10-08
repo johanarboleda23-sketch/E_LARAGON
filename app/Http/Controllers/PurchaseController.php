@@ -225,6 +225,13 @@ class PurchaseController extends Controller
             : '¡Factura guardada y stock actualizado! No se contabilizó automáticamente: '.($skipReason ?? 'configura las cuentas PUC necesarias.'));
     }
 
+    public function show(Purchase $purchase)
+    {
+        $purchase->load('details.item');
+
+        return view('purchases.show', compact('purchase'));
+    }
+
     public function destroy(Purchase $purchase)
     {
         $purchase->update(['deleted_by' => auth()->id()]);

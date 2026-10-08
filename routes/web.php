@@ -72,7 +72,7 @@ Route::middleware(['auth', 'company'])->group(function () {
 
     Route::middleware('module:purchases')->group(function () {
         Route::post('/purchases/import-xml', [PurchaseController::class, 'importXML'])->name('purchases.import-xml');
-        Route::resource('purchases', PurchaseController::class);
+        Route::resource('purchases', PurchaseController::class)->withTrashed(['show']);
     });
 
     Route::middleware('module:sales')->group(function () {

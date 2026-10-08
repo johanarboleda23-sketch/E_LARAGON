@@ -12,6 +12,7 @@ use App\Models\ThirdParty;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
 
 class SupportDocumentControllerTest extends TestCase
@@ -105,6 +106,54 @@ class SupportDocumentControllerTest extends TestCase
 
         $document = SupportDocument::query()->latest('id')->firstOrFail();
         $this->assertSame('DS-1', $document->consecutive);
+    }
+
+    public function test_edit_and_update_change_the_support_document_header(): void
+    {
+        $this->authenticateWithCompany();
+        $supplier = $this->createSupplier();
+        $this->post(route('support-documents.store'), $this->payload($supplier, subtotal: 1_000_000))
+            ->assertSessionHasNoErrors();
+        $document = SupportDocument::query()->where('consecutive', 'DS-TEST-001')->firstOrFail();
+
+        $this->get(route('support-documents.edit', $document))->assertOk()->assertSee('DS-TEST-001');
+
+        $this->put(route('support-documents.update', $document), [
+            'consecutive' => 'DS-TEST-001-B',
+            'document_date' => now()->toDateString(),
+            'third_party_id' => $supplier->id,
+            'concept' => 'Concepto actualizado',
+        ])->assertRedirect(route('support-documents.show', $document));
+
+        $this->assertSame('Concepto actualizado', $document->fresh()->concept);
+    }
+
+    public function test_statement_lists_all_documents_from_the_same_supplier(): void
+    {
+        $this->authenticateWithCompany();
+        $supplier = $this->createSupplier();
+        $this->post(route('support-documents.store'), $this->payload($supplier, subtotal: 1_000_000))
+            ->assertSessionHasNoErrors();
+        $document = SupportDocument::query()->where('consecutive', 'DS-TEST-001')->firstOrFail();
+
+        $this->get(route('support-documents.statement', $document))
+            ->assertOk()
+            ->assertSee($supplier->name)
+            ->assertSee($document->consecutive);
+    }
+
+    public function test_email_sends_the_support_document(): void
+    {
+        Mail::fake();
+        $this->authenticateWithCompany();
+        $supplier = $this->createSupplier();
+        $this->post(route('support-documents.store'), $this->payload($supplier, subtotal: 1_000_000))
+            ->assertSessionHasNoErrors();
+        $document = SupportDocument::query()->where('consecutive', 'DS-TEST-001')->firstOrFail();
+
+        $this->post(route('support-documents.email', $document), ['email' => 'proveedor@example.com'])
+            ->assertRedirect()
+            ->assertSessionHas('success', 'Documento soporte enviado por correo.');
     }
 
     private function authenticateWithCompany(): Company

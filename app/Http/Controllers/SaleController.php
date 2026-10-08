@@ -13,6 +13,7 @@ use App\Services\FactusService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Validation\Rule;
 
 class SaleController extends Controller
 {
@@ -165,6 +166,43 @@ class SaleController extends Controller
         $sale->load('details.item');
 
         return view('sales.show', compact('sale'));
+    }
+
+    public function edit(Sale $sale)
+    {
+        return view('sales.edit', compact('sale'));
+    }
+
+    public function update(Request $request, Sale $sale)
+    {
+        $data = $request->validate([
+            'invoice_number' => ['required', 'string', 'max:255', Rule::unique('sales', 'invoice_number')->ignore($sale->id)],
+            'customer_name' => 'required|string|max:255',
+            'customer_document' => 'nullable|string|max:100',
+            'customer_email' => 'nullable|email|max:255',
+            'sale_date' => 'required|date',
+        ]);
+
+        $sale->update($data);
+
+        return redirect()->route('sales.show', $sale)->with('success', 'Factura actualizada correctamente.');
+    }
+
+    public function statement(Sale $sale)
+    {
+        $documents = Sale::query()
+            ->where('customer_name', $sale->customer_name)
+            ->orderBy('sale_date')
+            ->orderBy('id')
+            ->get();
+
+        $balance = $documents->sum(fn (Sale $document) => (float) $document->total);
+
+        return view('sales.statement', [
+            'customer' => $sale->customer_name,
+            'documents' => $documents,
+            'balance' => $balance,
+        ]);
     }
 
     public function account(Sale $sale)

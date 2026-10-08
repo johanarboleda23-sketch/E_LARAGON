@@ -15,6 +15,16 @@
                     <x-nav-link :href="route('dashboard')" :active="request()->routeIs('dashboard')">
                         Tablero
                     </x-nav-link>
+                    @auth
+                        @php
+                            $currentCompanyRole = auth()->user()->companies()->where('companies.id', (int) session('company_id'))->first()?->pivot->role;
+                        @endphp
+                        @if(in_array($currentCompanyRole, ['admin', 'owner'], true))
+                            <x-nav-link :href="route('admin.index')" :active="request()->routeIs('admin.*')">
+                                Administración
+                            </x-nav-link>
+                        @endif
+                    @endauth
                 </div>
             </div>
 
@@ -74,6 +84,13 @@
             <x-responsive-nav-link :href="route('dashboard')" :active="request()->routeIs('dashboard')">
                 {{ __('Dashboard') }}
             </x-responsive-nav-link>
+            @auth
+                @if(in_array($currentCompanyRole ?? null, ['admin', 'owner'], true))
+                    <x-responsive-nav-link :href="route('admin.index')" :active="request()->routeIs('admin.*')">
+                        Administración
+                    </x-responsive-nav-link>
+                @endif
+            @endauth
         </div>
 
         <!-- Responsive Settings Options -->

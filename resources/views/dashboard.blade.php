@@ -71,6 +71,16 @@
                     ['name' => 'Ventas', 'hint' => 'Facturación emitida', 'route' => 'sales.index', 'icon' => '📤'],
                     ['name' => 'Nómina', 'hint' => 'Gestión de personal', 'route' => 'payroll.index', 'icon' => '👥'],
                     ['name' => 'Contabilidad', 'hint' => 'Asientos y reportes', 'route' => 'accounting.vouchers.index', 'icon' => '📊'],
+                    ['name' => 'PUC', 'hint' => 'Plan único de cuentas', 'route' => 'accounting.puc.index', 'icon' => '📒'],
+                    ['name' => 'Documento soporte', 'hint' => 'Compras a no obligados', 'route' => 'support-documents.index', 'icon' => '🧾'],
+                    ['name' => 'Conciliación bancaria', 'hint' => 'Extractos y cruces', 'route' => 'bank-reconciliation.index', 'icon' => '🏦'],
+                    ['name' => 'Nota crédito clientes', 'hint' => 'Devoluciones a clientes', 'route' => 'commercial-documents.customer-credit-notes', 'icon' => '↩️'],
+                    ['name' => 'Nota débito proveedores', 'hint' => 'Ajustes a proveedores', 'route' => 'commercial-documents.supplier-debit-notes', 'icon' => '↪️'],
+                    ['name' => 'Logística', 'hint' => 'Rutas y entregas', 'route' => 'logistics.index', 'icon' => '🚚'],
+                    ['name' => 'Reportes financieros', 'hint' => 'Excel y PDF', 'route' => 'reports.index', 'icon' => '📈'],
+                    ['name' => 'Terceros', 'hint' => 'Clientes, proveedores, empleados', 'route' => 'third-parties.index', 'icon' => '🧑‍🤝‍🧑'],
+                    ['name' => 'Inventario', 'hint' => 'Productos y stock', 'route' => 'items.index', 'icon' => '📦'],
+                    ['name' => 'Punto de venta', 'hint' => 'Ventas rápidas (POS)', 'route' => 'pos.index', 'icon' => '🛒'],
                 ];
             @endphp
 

@@ -13,6 +13,7 @@ use App\Models\ThirdParty;
 use App\Services\AccountingEntryService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -54,6 +55,11 @@ class PurchaseController extends Controller
         }
 
         return view('purchases.index', compact('paymentMethods', 'postingAccounts', 'products', 'withholdings', 'recentPurchases', 'suppliers', 'nextConsecutive'));
+    }
+
+    public function create()
+    {
+        return redirect()->route('purchases.index');
     }
 
     /**
@@ -232,6 +238,41 @@ class PurchaseController extends Controller
         return view('purchases.show', compact('purchase'));
     }
 
+    public function edit(Purchase $purchase)
+    {
+        $paymentMethods = PaymentMethod::query()->orderBy('name')->get();
+
+        return view('purchases.edit', compact('purchase', 'paymentMethods'));
+    }
+
+    public function update(Request $request, Purchase $purchase)
+    {
+        $data = $request->validate([
+            'invoice_number' => ['required', 'string', 'max:255', Rule::unique('purchases', 'invoice_number')->ignore($purchase->id)],
+            'provider' => 'required|string|max:255',
+            'provider_nit' => 'nullable|string|max:50',
+            'purchase_date' => 'required|date',
+            'payment_method_id' => ['nullable', 'integer', 'exists:payment_methods,id'],
+        ]);
+
+        $purchase->update($data);
+
+        return redirect()->route('purchases.show', $purchase)->with('success', 'Factura actualizada correctamente.');
+    }
+
+    public function email(Request $request, Purchase $purchase)
+    {
+        $data = $request->validate(['email' => 'required|email']);
+        $purchase->load('details.item');
+        $body = "Factura de compra: {$purchase->invoice_number}\nProveedor: {$purchase->provider}\nFecha: {$purchase->purchase_date}\nTotal: {$purchase->total_pagar}\n\nDetalle:\n";
+        foreach ($purchase->details as $detail) {
+            $body .= ($detail->item?->name ?? $detail->line_description ?? 'Línea').' x '.$detail->quantity.' - '.($detail->quantity * $detail->cost_price)."\n";
+        }
+        Mail::raw($body, fn ($message) => $message->to($data['email'])->subject('Factura de compra '.$purchase->invoice_number));
+
+        return back()->with('success', 'Factura enviada por correo.');
+    }
+
     public function account(Purchase $purchase)
     {
         if ($purchase->accounting_voucher_id) {
@@ -244,6 +285,23 @@ class PurchaseController extends Controller
         return back()->with('success', $voucher
             ? '¡Factura contabilizada correctamente!'
             : 'No se pudo contabilizar: '.($skipReason ?? 'configura las cuentas PUC necesarias.'));
+    }
+
+    public function statement(Purchase $purchase)
+    {
+        $documents = Purchase::withTrashed()
+            ->where('provider', $purchase->provider)
+            ->orderBy('purchase_date')
+            ->orderBy('id')
+            ->get();
+
+        $balance = $documents->sum(fn (Purchase $document) => $document->trashed() ? 0 : (float) $document->total_pagar);
+
+        return view('purchases.statement', [
+            'provider' => $purchase->provider,
+            'documents' => $documents,
+            'balance' => $balance,
+        ]);
     }
 
     public function destroy(Purchase $purchase)

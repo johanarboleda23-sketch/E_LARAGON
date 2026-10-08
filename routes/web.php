@@ -73,6 +73,8 @@ Route::middleware(['auth', 'company'])->group(function () {
     Route::middleware('module:purchases')->group(function () {
         Route::post('/purchases/import-xml', [PurchaseController::class, 'importXML'])->name('purchases.import-xml');
         Route::post('/purchases/{purchase}/contabilizar', [PurchaseController::class, 'account'])->name('purchases.account');
+        Route::post('/purchases/{purchase}/correo', [PurchaseController::class, 'email'])->name('purchases.email');
+        Route::get('/purchases/{purchase}/estado-cartera', [PurchaseController::class, 'statement'])->name('purchases.statement');
         Route::resource('purchases', PurchaseController::class)->withTrashed(['show']);
     });
 
@@ -80,18 +82,24 @@ Route::middleware(['auth', 'company'])->group(function () {
         Route::get('/ventas', [SaleController::class, 'index'])->name('sales.index');
         Route::post('/ventas', [SaleController::class, 'store'])->name('sales.store');
         Route::get('/ventas/{sale}', [SaleController::class, 'show'])->name('sales.show');
+        Route::get('/ventas/{sale}/editar', [SaleController::class, 'edit'])->name('sales.edit');
+        Route::put('/ventas/{sale}', [SaleController::class, 'update'])->name('sales.update');
         Route::post('/ventas/{sale}/correo', [SaleController::class, 'email'])->name('sales.email');
         Route::get('/ventas/{sale}/xml', [SaleController::class, 'xml'])->name('sales.xml');
         Route::post('/ventas/{sale}/contabilizar', [SaleController::class, 'account'])->name('sales.account');
+        Route::get('/ventas/{sale}/estado-cartera', [SaleController::class, 'statement'])->name('sales.statement');
     });
 
     Route::middleware('module:support-documents')->group(function () {
         Route::get('/documentos-soporte', [SupportDocumentController::class, 'index'])->name('support-documents.index');
         Route::post('/documentos-soporte', [SupportDocumentController::class, 'store'])->name('support-documents.store');
         Route::get('/documentos-soporte/{document}', [SupportDocumentController::class, 'show'])->name('support-documents.show');
+        Route::get('/documentos-soporte/{document}/editar', [SupportDocumentController::class, 'edit'])->name('support-documents.edit');
+        Route::put('/documentos-soporte/{document}', [SupportDocumentController::class, 'update'])->name('support-documents.update');
         Route::get('/documentos-soporte/{document}/xml', [SupportDocumentController::class, 'xml'])->name('support-documents.xml');
         Route::post('/documentos-soporte/{document}/correo', [SupportDocumentController::class, 'email'])->name('support-documents.email');
         Route::post('/documentos-soporte/{document}/contabilizar', [SupportDocumentController::class, 'account'])->name('support-documents.account');
+        Route::get('/documentos-soporte/{document}/estado-cartera', [SupportDocumentController::class, 'statement'])->name('support-documents.statement');
     });
 
     Route::middleware('module:payroll')->group(function () {

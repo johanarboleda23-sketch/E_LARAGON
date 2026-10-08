@@ -11,6 +11,7 @@ use App\Models\Sale;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
 
 class SaleControllerTest extends TestCase
@@ -99,6 +100,53 @@ class SaleControllerTest extends TestCase
         $this->assertNull($sale->factus_status);
         $response->assertSessionHas('success', fn (string $message) => str_contains($message, 'No se envió a la DIAN'));
         Http::assertNothingSent();
+    }
+
+    public function test_edit_and_update_change_the_sale_header(): void
+    {
+        $this->authenticateWithCompany();
+        $item = $this->createProduct();
+        $this->post(route('sales.store'), $this->salePayload($item, 100_000))
+            ->assertRedirect(route('sales.index'));
+        $sale = Sale::query()->where('invoice_number', 'VTA-TEST-001')->firstOrFail();
+
+        $this->get(route('sales.edit', $sale))->assertOk()->assertSee('VTA-TEST-001');
+
+        $this->put(route('sales.update', $sale), [
+            'invoice_number' => 'VTA-TEST-001-B',
+            'customer_name' => 'Cliente actualizado',
+            'sale_date' => now()->toDateString(),
+        ])->assertRedirect(route('sales.show', $sale));
+
+        $this->assertSame('Cliente actualizado', $sale->fresh()->customer_name);
+    }
+
+    public function test_statement_lists_all_sales_from_the_same_customer(): void
+    {
+        $this->authenticateWithCompany();
+        $item = $this->createProduct();
+        $this->post(route('sales.store'), $this->salePayload($item, 100_000))
+            ->assertRedirect(route('sales.index'));
+        $sale = Sale::query()->where('invoice_number', 'VTA-TEST-001')->firstOrFail();
+
+        $this->get(route('sales.statement', $sale))
+            ->assertOk()
+            ->assertSee($sale->customer_name)
+            ->assertSee($sale->invoice_number);
+    }
+
+    public function test_email_sends_the_sale_invoice(): void
+    {
+        Mail::fake();
+        $this->authenticateWithCompany();
+        $item = $this->createProduct();
+        $this->post(route('sales.store'), $this->salePayload($item, 100_000))
+            ->assertRedirect(route('sales.index'));
+        $sale = Sale::query()->where('invoice_number', 'VTA-TEST-001')->firstOrFail();
+
+        $this->post(route('sales.email', $sale), ['email' => 'cliente@example.com'])
+            ->assertRedirect()
+            ->assertSessionHas('success', 'Factura enviada por correo.');
     }
 
     private function authenticateWithCompany(): Company

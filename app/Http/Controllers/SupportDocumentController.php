@@ -9,6 +9,7 @@ use App\Services\AccountingEntryService;
 use App\Services\FactusService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Validation\Rule;
 
 class SupportDocumentController extends Controller
 {
@@ -32,6 +33,45 @@ class SupportDocumentController extends Controller
         $document->load('supplier');
 
         return view('support-documents.show', compact('document'));
+    }
+
+    public function edit(SupportDocument $document)
+    {
+        $suppliers = ThirdParty::where('is_supplier', true)->where('active', true)->orderBy('name')->get();
+
+        return view('support-documents.edit', compact('document', 'suppliers'));
+    }
+
+    public function update(Request $request, SupportDocument $document)
+    {
+        $data = $request->validate([
+            'consecutive' => ['required', 'string', 'max:60', Rule::unique('support_documents', 'consecutive')->ignore($document->id)],
+            'document_date' => 'required|date',
+            'third_party_id' => 'required|exists:third_parties,id',
+            'concept' => 'required|string|max:255',
+        ]);
+
+        $document->update($data);
+
+        return redirect()->route('support-documents.show', $document)->with('success', 'Documento actualizado correctamente.');
+    }
+
+    public function statement(SupportDocument $document)
+    {
+        $documents = SupportDocument::query()
+            ->with('supplier')
+            ->where('third_party_id', $document->third_party_id)
+            ->orderBy('document_date')
+            ->orderBy('id')
+            ->get();
+
+        $balance = $documents->sum(fn (SupportDocument $item) => (float) $item->total);
+
+        return view('support-documents.statement', [
+            'supplier' => $document->supplier,
+            'documents' => $documents,
+            'balance' => $balance,
+        ]);
     }
 
     public function account(SupportDocument $document)

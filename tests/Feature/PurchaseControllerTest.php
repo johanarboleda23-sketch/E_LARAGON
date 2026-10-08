@@ -11,6 +11,7 @@ use App\Models\Purchase;
 use App\Models\PurchaseDetail;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
 
 class PurchaseControllerTest extends TestCase
@@ -246,6 +247,56 @@ class PurchaseControllerTest extends TestCase
         $this->post(route('purchases.account', $purchase))->assertRedirect();
 
         $this->assertNotNull($purchase->fresh()->accounting_voucher_id);
+    }
+
+    public function test_edit_and_update_change_the_purchase_header(): void
+    {
+        $this->authenticateWithCompany();
+        $item = $this->createProduct();
+        $this->post(route('purchases.store'), $this->purchasePayload($item, 100_000))
+            ->assertRedirect(route('purchases.index'));
+        $purchase = Purchase::query()->where('invoice_number', 'DAV-RET-001')->firstOrFail();
+
+        $this->get(route('purchases.edit', $purchase))->assertOk()->assertSee('DAV-RET-001');
+
+        $this->put(route('purchases.update', $purchase), [
+            'invoice_number' => 'DAV-RET-001-B',
+            'provider' => 'Proveedor actualizado',
+            'provider_nit' => '900999999-1',
+            'purchase_date' => now()->toDateString(),
+        ])->assertRedirect(route('purchases.show', $purchase));
+
+        $purchase->refresh();
+        $this->assertSame('DAV-RET-001-B', $purchase->invoice_number);
+        $this->assertSame('Proveedor actualizado', $purchase->provider);
+    }
+
+    public function test_statement_lists_all_purchases_from_the_same_provider(): void
+    {
+        $this->authenticateWithCompany();
+        $item = $this->createProduct();
+        $payload = $this->purchasePayload($item, 100_000);
+        $this->post(route('purchases.store'), $payload)->assertRedirect(route('purchases.index'));
+        $purchase = Purchase::query()->where('invoice_number', 'DAV-RET-001')->firstOrFail();
+
+        $this->get(route('purchases.statement', $purchase))
+            ->assertOk()
+            ->assertSee($purchase->provider)
+            ->assertSee($purchase->invoice_number);
+    }
+
+    public function test_email_sends_the_purchase_invoice(): void
+    {
+        Mail::fake();
+        $this->authenticateWithCompany();
+        $item = $this->createProduct();
+        $this->post(route('purchases.store'), $this->purchasePayload($item, 100_000))
+            ->assertRedirect(route('purchases.index'));
+        $purchase = Purchase::query()->where('invoice_number', 'DAV-RET-001')->firstOrFail();
+
+        $this->post(route('purchases.email', $purchase), ['email' => 'proveedor@example.com'])
+            ->assertRedirect()
+            ->assertSessionHas('success', 'Factura enviada por correo.');
     }
 
     private function authenticateWithCompany(): Company

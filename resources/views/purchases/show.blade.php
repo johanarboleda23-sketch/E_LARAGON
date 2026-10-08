@@ -11,12 +11,19 @@
 <body>
     @if(session('success'))<div style="padding:10px;background:#ecfdf5;color:#047857;margin-bottom:14px;border-radius:6px;font-weight:bold;">{{ session('success') }}</div>@endif
     <div class="actions">
+        <a href="{{ route('purchases.edit', $purchase) }}">✏ Editar</a>
         <button onclick="window.print()">Imprimir / Guardar como PDF</button>
+        <a href="{{ route('purchases.statement', $purchase) }}" target="_blank">Ver estado de cartera</a>
         @if($purchase->accounting_voucher_id)
             <a target="_blank" href="{{ route('accounting.vouchers.accounting', $purchase->accounting_voucher_id) }}">Ver contabilización</a>
         @else
             <form action="{{ route('purchases.account', $purchase) }}" method="POST" style="display:inline" onsubmit="return confirm('¿Contabilizar esta factura ahora?')">@csrf<button type="submit">Contabilizar ahora</button></form>
         @endif
+        <form action="{{ route('purchases.email', $purchase) }}" method="POST" style="display:inline-flex;gap:4px;align-items:center">
+            @csrf
+            <input type="email" name="email" required placeholder="correo@proveedor.com" style="padding:8px;border-radius:5px;border:1px solid #cbd6cf;font-size:12px;">
+            <button type="submit">✉ Enviar por correo</button>
+        </form>
     </div>
     <header>
         <div>

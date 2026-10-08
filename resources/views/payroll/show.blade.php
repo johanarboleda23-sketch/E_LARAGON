@@ -2,6 +2,9 @@
 <x-slot name="header"><div class="flex items-center justify-between"><h2 class="text-xl font-bold text-gray-800">Nómina {{ $run->period }}</h2><a href="{{ route('payroll.index') }}" class="rounded border px-3 py-2 text-xs">⌂ Nómina</a></div></x-slot>
 <div class="min-h-screen bg-gray-50 p-5">
     <div class="mx-auto max-w-5xl space-y-5">
+        @if(session('success'))
+            <div class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{{ session('success') }}</div>
+        @endif
         <section class="rounded-xl bg-white p-5 shadow-sm">
             <div class="flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -12,7 +15,7 @@
                     @if($run->accounting_voucher_id)
                         <a href="{{ route('accounting.vouchers.accounting', $run->accounting_voucher_id) }}" target="_blank" class="rounded border px-3 py-2 text-xs font-bold text-[#227c70]">Ver contabilización</a>
                     @else
-                        <span class="rounded border px-3 py-2 text-xs font-bold text-gray-400" title="Esta nómina aún no tiene un asiento contable asociado.">Ver contabilización</span>
+                        <form action="{{ route('payroll.account', $run) }}" method="POST" onsubmit="return confirm('¿Contabilizar esta nómina ahora?')">@csrf<button type="submit" class="rounded border px-3 py-2 text-xs font-bold text-[#b65338]">Contabilizar ahora</button></form>
                     @endif
             </div>
             <div class="mt-4 grid gap-3 sm:grid-cols-3">

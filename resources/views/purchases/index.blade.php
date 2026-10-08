@@ -53,6 +53,7 @@
 
     <div class="form-container">
         <!-- FORMULARIO GENERAL DE COMPRAS -->
+        @if(session('success'))<div style="padding:10px;background:#ecfdf5;color:#047857;margin-bottom:12px;border-radius:8px;font-weight:bold;font-size:12px;">{{ session('success') }}</div>@endif
         <form action="{{ route('purchases.store') }}" method="POST" id="purchase-form">
             @csrf
 
@@ -267,7 +268,10 @@
                                 @if($purchase->accounting_voucher_id)
                                     <a class="btn-white" style="text-decoration:none;display:inline-block" target="_blank" href="{{ route('accounting.vouchers.accounting', $purchase->accounting_voucher_id) }}">Ver contabilización</a>
                                 @else
-                                    <span class="btn-white" style="opacity:.55;cursor:not-allowed" title="Aún no tiene un asiento contable asociado.">Ver contabilización</span>
+                                    <form action="{{ route('purchases.account', $purchase) }}" method="POST" style="display:inline-block" onsubmit="return confirm('¿Contabilizar esta factura ahora?')">
+                                        @csrf
+                                        <button type="submit" class="btn-white" style="color:#b65338;border-color:#f1c2ae;">Contabilizar ahora</button>
+                                    </form>
                                 @endif
                                 @if(!$purchase->trashed())
                                     <form action="{{ route('purchases.destroy', $purchase) }}" method="POST" onsubmit="return confirm('¿Eliminar esta factura? Quedará en el historial.')">

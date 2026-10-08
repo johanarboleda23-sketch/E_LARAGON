@@ -169,6 +169,20 @@ class PayrollController extends Controller
         return view('payroll.show', compact('run'));
     }
 
+    public function account(PayrollRun $run)
+    {
+        if ($run->accounting_voucher_id) {
+            return back()->with('success', 'Esta nómina ya estaba contabilizada.');
+        }
+
+        $skipReason = null;
+        $voucher = $this->accountingEntryService->postPayroll($run, $skipReason);
+
+        return back()->with('success', $voucher
+            ? '¡Nómina contabilizada correctamente!'
+            : 'No se pudo contabilizar: '.($skipReason ?? 'configura las cuentas PUC necesarias.'));
+    }
+
     public function socialSecurityFile(PayrollRun $run): Response
     {
         $run->load('lines.employee');

@@ -9,12 +9,13 @@
     </style>
 </head>
 <body>
+    @if(session('success'))<div style="padding:10px;background:#ecfdf5;color:#047857;margin-bottom:14px;border-radius:6px;font-weight:bold;">{{ session('success') }}</div>@endif
     <div class="actions">
         <button onclick="window.print()">Imprimir / Guardar como PDF</button>
         @if($sale->accounting_voucher_id)
             <a target="_blank" href="{{ route('accounting.vouchers.accounting', $sale->accounting_voucher_id) }}">Ver contabilización</a>
         @else
-            <button type="button" disabled style="opacity:.55;cursor:not-allowed" title="Esta factura aún no tiene un asiento contable asociado.">Ver contabilización</button>
+            <form action="{{ route('sales.account', $sale) }}" method="POST" style="display:inline" onsubmit="return confirm('¿Contabilizar esta factura ahora?')">@csrf<button type="submit">Contabilizar ahora</button></form>
         @endif
     </div>
     <header>

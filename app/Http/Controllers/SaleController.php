@@ -167,6 +167,20 @@ class SaleController extends Controller
         return view('sales.show', compact('sale'));
     }
 
+    public function account(Sale $sale)
+    {
+        if ($sale->accounting_voucher_id) {
+            return back()->with('success', 'Esta factura ya estaba contabilizada.');
+        }
+
+        $skipReason = null;
+        $voucher = $this->accountingEntryService->postSale($sale, $skipReason);
+
+        return back()->with('success', $voucher
+            ? '¡Factura contabilizada correctamente!'
+            : 'No se pudo contabilizar: '.($skipReason ?? 'configura las cuentas PUC necesarias.'));
+    }
+
     public function xml(Sale $sale)
     {
         $sale->load('details.item');

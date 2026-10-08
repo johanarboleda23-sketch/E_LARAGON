@@ -228,6 +228,26 @@ class PurchaseControllerTest extends TestCase
             ->assertSee($purchase->invoice_number);
     }
 
+    public function test_account_now_posts_a_purchase_that_was_not_accounted_automatically(): void
+    {
+        $this->authenticateWithCompany();
+        $item = $this->createProduct();
+        $bankAccount = $this->createAccount('1110-TEST', 'Bancos de prueba', 1);
+        $this->createAccount('1435', 'Inventario de prueba', 1);
+
+        $this->post(route('purchases.store'), $this->purchasePayload($item, 100_000))
+            ->assertRedirect(route('purchases.index'));
+        $purchase = Purchase::query()->where('invoice_number', 'DAV-RET-001')->firstOrFail();
+        $this->assertNull($purchase->accounting_voucher_id);
+
+        $paymentMethod = PaymentMethod::create(['name' => 'Banco prueba', 'is_editable' => true, 'chart_of_account_id' => $bankAccount->id]);
+        $purchase->update(['payment_method_id' => $paymentMethod->id]);
+
+        $this->post(route('purchases.account', $purchase))->assertRedirect();
+
+        $this->assertNotNull($purchase->fresh()->accounting_voucher_id);
+    }
+
     private function authenticateWithCompany(): Company
     {
         $company = Company::factory()->create();

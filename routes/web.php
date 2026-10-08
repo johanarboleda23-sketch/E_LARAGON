@@ -72,6 +72,7 @@ Route::middleware(['auth', 'company'])->group(function () {
 
     Route::middleware('module:purchases')->group(function () {
         Route::post('/purchases/import-xml', [PurchaseController::class, 'importXML'])->name('purchases.import-xml');
+        Route::post('/purchases/{purchase}/contabilizar', [PurchaseController::class, 'account'])->name('purchases.account');
         Route::resource('purchases', PurchaseController::class)->withTrashed(['show']);
     });
 
@@ -81,6 +82,7 @@ Route::middleware(['auth', 'company'])->group(function () {
         Route::get('/ventas/{sale}', [SaleController::class, 'show'])->name('sales.show');
         Route::post('/ventas/{sale}/correo', [SaleController::class, 'email'])->name('sales.email');
         Route::get('/ventas/{sale}/xml', [SaleController::class, 'xml'])->name('sales.xml');
+        Route::post('/ventas/{sale}/contabilizar', [SaleController::class, 'account'])->name('sales.account');
     });
 
     Route::middleware('module:support-documents')->group(function () {
@@ -89,6 +91,7 @@ Route::middleware(['auth', 'company'])->group(function () {
         Route::get('/documentos-soporte/{document}', [SupportDocumentController::class, 'show'])->name('support-documents.show');
         Route::get('/documentos-soporte/{document}/xml', [SupportDocumentController::class, 'xml'])->name('support-documents.xml');
         Route::post('/documentos-soporte/{document}/correo', [SupportDocumentController::class, 'email'])->name('support-documents.email');
+        Route::post('/documentos-soporte/{document}/contabilizar', [SupportDocumentController::class, 'account'])->name('support-documents.account');
     });
 
     Route::middleware('module:payroll')->group(function () {
@@ -96,6 +99,7 @@ Route::middleware(['auth', 'company'])->group(function () {
         Route::post('/nomina/calcular', [PayrollController::class, 'calculate'])->name('payroll.calculate');
         Route::post('/nomina/{line}/correo', [PayrollController::class, 'email'])->name('payroll.email');
         Route::get('/nomina/{run}', [PayrollController::class, 'show'])->name('payroll.show');
+        Route::post('/nomina/{run}/contabilizar', [PayrollController::class, 'account'])->name('payroll.account');
         Route::get('/nomina/{run}/seguridad-social', [PayrollController::class, 'socialSecurityFile'])->name('payroll.social-security.file');
         Route::post('/nomina/{run}/errores-seguridad-social/importar', [PayrollController::class, 'importSocialSecurityErrors'])->name('payroll.social-security.errors.import');
     });

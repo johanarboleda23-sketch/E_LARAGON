@@ -232,6 +232,20 @@ class PurchaseController extends Controller
         return view('purchases.show', compact('purchase'));
     }
 
+    public function account(Purchase $purchase)
+    {
+        if ($purchase->accounting_voucher_id) {
+            return back()->with('success', 'Esta factura ya estaba contabilizada.');
+        }
+
+        $skipReason = null;
+        $voucher = $this->accountingEntryService->postPurchase($purchase, $skipReason);
+
+        return back()->with('success', $voucher
+            ? '¡Factura contabilizada correctamente!'
+            : 'No se pudo contabilizar: '.($skipReason ?? 'configura las cuentas PUC necesarias.'));
+    }
+
     public function destroy(Purchase $purchase)
     {
         $purchase->update(['deleted_by' => auth()->id()]);

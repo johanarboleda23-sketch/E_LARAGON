@@ -34,6 +34,20 @@ class SupportDocumentController extends Controller
         return view('support-documents.show', compact('document'));
     }
 
+    public function account(SupportDocument $document)
+    {
+        if ($document->accounting_voucher_id) {
+            return back()->with('success', 'Este documento ya estaba contabilizado.');
+        }
+
+        $skipReason = null;
+        $voucher = $this->accountingEntryService->postSupportDocument($document, $skipReason);
+
+        return back()->with('success', $voucher
+            ? '¡Documento contabilizado correctamente!'
+            : 'No se pudo contabilizar: '.($skipReason ?? 'configura las cuentas PUC necesarias.'));
+    }
+
     public function store(Request $request)
     {
         $hasActiveResolution = NumberingResolution::query()->where('document_type', 'support_document')->where('active', true)->exists();

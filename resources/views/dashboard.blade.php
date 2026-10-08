@@ -32,6 +32,7 @@
 
                     <button type="button" id="btn_buscar_comercial_dashboard" class="rounded-lg bg-[#227c70] px-4 py-1.5 text-sm font-bold text-white hover:bg-[#1a5f55] transition">Buscar</button>
                 </div>
+                <p id="mensaje_busqueda_comercial" class="hidden w-full text-xs font-bold sm:w-auto"></p>
 
                 <!-- 3. Selector de Empresa Activa (Solo para usuarios autenticados) -->
                 @auth
@@ -39,8 +40,8 @@
                         @csrf
                         <label for="active-company" class="text-[10px] font-bold uppercase tracking-wider text-[#71807a]">Empresa</label>
                         <select id="active-company" name="company_id" onchange="this.form.submit()" class="border-0 bg-transparent py-0 pl-0 pr-6 text-sm font-bold text-[#227c70] focus:ring-0">
-                            @foreach(companies as company)
-                                <option value="{{ \$company->id }}" @selected((int) session('company_id') === company->id)> company->name }}</option>
+                            @foreach($companies as $company)
+                                <option value="{{ $company->id }}" @selected((int) session('company_id') === $company->id)>{{ $company->name }}</option>
                             @endforeach
                         </select>
                     </form>
@@ -65,82 +66,127 @@
 
             <!-- Listado de Módulos del Sistema -->
             @php
-                \$modules = [
+                $modules = [
                     ['name' => 'Compras', 'hint' => 'Facturas y XML', 'route' => 'purchases.index', 'icon' => '📥'],
                     ['name' => 'Ventas', 'hint' => 'Facturación emitida', 'route' => 'sales.index', 'icon' => '📤'],
-                    ['name' => 'Nómina', 'hint' => 'Gestión de personal', 'route' => 'accounting.vouchers.index', 'icon' => '👥'],
+                    ['name' => 'Nómina', 'hint' => 'Gestión de personal', 'route' => 'payroll.index', 'icon' => '👥'],
                     ['name' => 'Contabilidad', 'hint' => 'Asientos y reportes', 'route' => 'accounting.vouchers.index', 'icon' => '📊'],
                 ];
             @endphp
 
-            <div class="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-                @foreach(modules as module)
-                    <a href="{{ route(\$module['route']) }}" class="flex items-center gap-4 rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-md">
-                        <div class="text-3xl">{{ \$module['icon'] }}</div>
+            <div id="modules-grid" class="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+                @foreach($modules as $module)
+                    <a href="{{ route($module['route']) }}" data-module-name="{{ strtolower($module['name'].' '.$module['hint']) }}" class="flex items-center gap-4 rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-md">
+                        <div class="text-3xl">{{ $module['icon'] }}</div>
                         <div>
-                            <h3 class="font-bold text-[#192522]">{{ \$module['name'] }}</h3>
-                            <p class="text-xs text-[#8b9992]">{{ \$module['hint'] }}</p>
+                            <h3 class="font-bold text-[#192522]">{{ $module['name'] }}</h3>
+                            <p class="text-xs text-[#8b9992]">{{ $module['hint'] }}</p>
                         </div>
                     </a>
                 @endforeach
             </div>
+            <p id="modules-empty" class="mt-6 hidden text-sm text-[#71807a]">Ningún módulo coincide con tu búsqueda.</p>
         </div>
     </div>
 
-    <!-- Script de Búsqueda Sincronizado con tu Controlador JSON -->
+    <!-- Script de Búsqueda Sincronizado con el controlador real (DocumentLookupController) -->
     <script>
     document.addEventListener('DOMContentLoaded', () => {
+        // --- Buscador comercial directo (consecutivos) ---
         const inputConsecutivo = document.getElementById('consecutivo_directo_dashboard');
         const selectTipo = document.getElementById('tipo_comprobante_directo_dashboard');
         const btnBuscar = document.getElementById('btn_buscar_comercial_dashboard');
+        const mensaje = document.getElementById('mensaje_busqueda_comercial');
+
+        // El <select> usa claves en español; el backend (DocumentLookupController::MODULES)
+        // espera estas otras claves.
+        const mapaTipos = {
+            venta_factura: 'sale',
+            compra_factura: 'purchase',
+            documento_soporte: 'support_document',
+            nomina_periodo: 'payroll',
+            comprobante_contable: 'voucher',
+        };
+
+        function mostrarMensaje(texto, tipo) {
+            mensaje.textContent = texto;
+            mensaje.classList.remove('hidden', 'text-[#b91c1c]', 'text-[#227c70]');
+            mensaje.classList.add(tipo === 'error' ? 'text-[#b91c1c]' : 'text-[#227c70]');
+        }
 
         function ejecutarBusqueda() {
             const consecutivo = inputConsecutivo.value.trim();
-            const tipo = selectTipo.value;
+            const tipoSeleccionado = selectTipo.value;
 
             if (!consecutivo) {
-                alert('Por favor, ingresa un consecutivo.');
+                mostrarMensaje('Por favor, ingresa un consecutivo.', 'error');
                 inputConsecutivo.focus();
                 return;
             }
 
-            if (!tipo) {
-                alert('Por favor, selecciona un tipo de comprobante.');
+            if (!tipoSeleccionado) {
+                mostrarMensaje('Por favor, selecciona un tipo de comprobante.', 'error');
                 selectTipo.focus();
                 return;
             }
 
+            const modulo = mapaTipos[tipoSeleccionado];
             btnBuscar.disabled = true;
             btnBuscar.innerText = 'Buscando...';
+            mensaje.classList.add('hidden');
 
-            fetch(`{{ route('comprobantes.buscar.directo') }}?tipo=${tipo}&consecutivo=${encodeURIComponent(consecutivo)}`, {
+            const url = new URL('{{ route('documents.lookup') }}', window.location.origin);
+            url.searchParams.set('module', modulo);
+            url.searchParams.set('consecutive', consecutivo);
+
+            fetch(url, {
                 method: 'GET',
                 headers: {
                     'X-Requested-With': 'XMLHttpRequest',
-                    'Accept': 'application/json'
-                }
+                    'Accept': 'application/json',
+                },
             })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success && data.url) {
-                    window.location.href = data.url;
-                } else {
-                    alert(data.message || 'No se encontró el documento.');
+                .then(async (response) => ({ ok: response.ok, data: await response.json() }))
+                .then(({ ok, data }) => {
+                    if (ok && data.found && data.voucher_id) {
+                        mostrarMensaje('Documento encontrado. Abriendo...', 'success');
+                        window.location.href = `{{ url('/comprobantes') }}/${data.voucher_id}/contabilizacion`;
+                        return;
+                    }
+
+                    mostrarMensaje(data.message || 'No se encontró ningún documento con ese consecutivo.', 'error');
                     btnBuscar.disabled = false;
                     btnBuscar.innerText = 'Buscar';
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                alert('Ocurrió un problema en el servidor al buscar.');
-                btnBuscar.disabled = false;
-                btnBuscar.innerText = 'Buscar';
-            });
+                })
+                .catch((error) => {
+                    console.error('Error en buscador comercial:', error);
+                    mostrarMensaje('Ocurrió un problema en el servidor al buscar.', 'error');
+                    btnBuscar.disabled = false;
+                    btnBuscar.innerText = 'Buscar';
+                });
         }
 
         btnBuscar.addEventListener('click', ejecutarBusqueda);
         inputConsecutivo.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') ejecutarBusqueda();
+        });
+
+        // --- Buscador general de módulos (filtra las tarjetas del tablero en vivo) ---
+        const inputModulo = document.getElementById('module-search');
+        const tarjetas = Array.from(document.querySelectorAll('#modules-grid [data-module-name]'));
+        const vacio = document.getElementById('modules-empty');
+
+        inputModulo?.addEventListener('input', () => {
+            const termino = inputModulo.value.trim().toLowerCase();
+            let visibles = 0;
+
+            tarjetas.forEach((tarjeta) => {
+                const coincide = tarjeta.dataset.moduleName.includes(termino);
+                tarjeta.classList.toggle('hidden', !coincide);
+                if (coincide) visibles++;
+            });
+
+            vacio.classList.toggle('hidden', visibles !== 0);
         });
     });
     </script>

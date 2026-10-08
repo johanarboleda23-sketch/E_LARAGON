@@ -162,6 +162,13 @@ class PayrollController extends Controller
         return back()->with('success', 'Nómina enviada a '.$line->employee->email.'.');
     }
 
+    public function show(PayrollRun $run)
+    {
+        $run->load('lines.employee', 'accountingVoucher');
+
+        return view('payroll.show', compact('run'));
+    }
+
     public function socialSecurityFile(PayrollRun $run): Response
     {
         $run->load('lines.employee');

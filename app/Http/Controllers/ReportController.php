@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\AccountingVoucherLine;
+use App\Models\CommercialDocument;
 use App\Models\PayrollRun;
 use App\Models\Purchase;
 use App\Models\Sale;
@@ -23,7 +24,7 @@ class ReportController extends Controller
         ], [
             'from' => ['required', 'date_format:Y-m-d'],
             'to' => ['required', 'date_format:Y-m-d', 'after_or_equal:from'],
-            'type' => ['required', 'in:all,purchases,sales,support,payroll,accounting,taxes'],
+            'type' => ['required', 'in:all,purchases,sales,support,payroll,accounting,taxes,commercial'],
             'account_from' => ['nullable', 'string', 'max:20'],
             'account_to' => ['nullable', 'string', 'max:20', 'required_with:account_from', 'gte:account_from'],
             'third_party' => ['nullable', 'string', 'max:255'],
@@ -58,6 +59,15 @@ class ReportController extends Controller
         }
         if (in_array($type, ['all', 'payroll'], true)) {
             PayrollRun::whereBetween('payment_date', [$from, $to])->get()->each(fn ($item) => $rows->push(['date' => $item->payment_date->toDateString(), 'type' => 'Nómina', 'document' => $item->period, 'third_party' => 'Empleados', 'total' => $item->total_net]));
+        }
+        if (in_array($type, ['all', 'commercial'], true)) {
+            CommercialDocument::whereBetween('document_date', [$from, $to])->get()->each(fn ($item) => $rows->push([
+                'date' => $item->document_date->toDateString(),
+                'type' => CommercialDocument::TYPES[$item->document_type] ?? $item->document_type,
+                'document' => $item->consecutive,
+                'third_party' => $item->third_party_name,
+                'total' => $item->total,
+            ]));
         }
         if ($type === 'accounting') {
             AccountingVoucherLine::whereHas('voucher', function ($query) use ($from, $to, $thirdParty) {

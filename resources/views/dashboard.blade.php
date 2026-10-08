@@ -81,6 +81,11 @@
                     ['name' => 'Terceros', 'hint' => 'Clientes, proveedores, empleados', 'route' => 'third-parties.index', 'icon' => '🧑‍🤝‍🧑'],
                     ['name' => 'Inventario', 'hint' => 'Productos y stock', 'route' => 'items.index', 'icon' => '📦'],
                     ['name' => 'Punto de venta', 'hint' => 'Ventas rápidas (POS)', 'route' => 'pos.index', 'icon' => '🛒'],
+                    ['name' => 'Cotizaciones', 'hint' => 'Ofertas a clientes', 'route' => 'commercial-documents.quotations', 'icon' => '📝'],
+                    ['name' => 'Órdenes de venta', 'hint' => 'Pedidos confirmados', 'route' => 'commercial-documents.sales-orders', 'icon' => '🗂️'],
+                    ['name' => 'Remisiones', 'hint' => 'Entregas sin factura', 'route' => 'commercial-documents.remissions', 'icon' => '📦'],
+                    ['name' => 'Órdenes de compra', 'hint' => 'Pedidos a proveedores', 'route' => 'commercial-documents.purchase-orders', 'icon' => '📋'],
+                    ['name' => 'TRM y monedas', 'hint' => 'Tasas de cambio y conversor', 'route' => 'currency.index', 'icon' => '💱'],
                 ];
             @endphp
 

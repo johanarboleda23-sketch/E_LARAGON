@@ -7,6 +7,7 @@ use App\Http\Controllers\BulkOperationController;
 use App\Http\Controllers\ChartOfAccountController;
 use App\Http\Controllers\CommercialDocumentController;
 use App\Http\Controllers\CompanyController;
+use App\Http\Controllers\CurrencyController;
 use App\Http\Controllers\DocumentLookupController;
 use App\Http\Controllers\ItemController;
 use App\Http\Controllers\LogisticsController;
@@ -100,6 +101,11 @@ Route::middleware(['auth', 'company'])->group(function () {
         Route::post('/documentos-soporte/{document}/correo', [SupportDocumentController::class, 'email'])->name('support-documents.email');
         Route::post('/documentos-soporte/{document}/contabilizar', [SupportDocumentController::class, 'account'])->name('support-documents.account');
         Route::get('/documentos-soporte/{document}/estado-cartera', [SupportDocumentController::class, 'statement'])->name('support-documents.statement');
+    });
+
+    Route::middleware('module:currency')->group(function () {
+        Route::get('/monedas', [CurrencyController::class, 'index'])->name('currency.index');
+        Route::post('/monedas', [CurrencyController::class, 'store'])->name('currency.store');
     });
 
     Route::middleware('module:payroll')->group(function () {

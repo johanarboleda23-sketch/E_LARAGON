@@ -7,6 +7,8 @@
             </div>
             <a href="{{ route('dashboard') }}" class="rounded-md border border-gray-200 px-3 py-2 text-xs text-gray-600 hover:bg-gray-50">Tablero</a>
             <a href="{{ route('accounting.puc.index') }}" class="rounded-md border border-pink-200 px-3 py-2 text-xs text-pink-700 hover:bg-pink-50">PUC</a>
+            <a href="{{ route('reports.index', ['type' => 'all']) }}" class="rounded-md border border-pink-200 px-3 py-2 text-xs text-pink-700 hover:bg-pink-50">Todos los comprobantes</a>
+            <a href="{{ route('currency.index') }}" class="rounded-md border border-pink-200 px-3 py-2 text-xs text-pink-700 hover:bg-pink-50">TRM / Monedas</a>
         </div>
     </x-slot>
 

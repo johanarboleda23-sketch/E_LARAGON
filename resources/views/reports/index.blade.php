@@ -25,6 +25,7 @@
 						<option value="sales" @selected(old('type', $type) === 'sales')>Ventas</option>
 						<option value="support" @selected(old('type', $type) === 'support')>Documentos soporte</option>
 						<option value="payroll" @selected(old('type', $type) === 'payroll')>Nómina</option>
+						<option value="commercial" @selected(old('type', $type) === 'commercial')>Comprobantes comerciales (cotizaciones, órdenes, notas)</option>
 						<option value="accounting" @selected(old('type', $type) === 'accounting')>Movimientos PUC</option>
 						<option value="taxes" @selected(old('type', $type) === 'taxes')>Impuestos (IVA y retefuente)</option>
 					</select>

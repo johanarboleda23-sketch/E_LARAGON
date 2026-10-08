@@ -41,62 +41,63 @@ class DocumentLookupController extends Controller
         }
 
         return response()->json(['found' => true, 'voucher_id' => $voucherId]);
-        /**
-         * Search for documents by consecutive and return a list of matching vouchers.
-         */
-        public function search(Request $request): JsonResponse
-        {
-            $data = $request->validate([
-                'consecutive' => ['required', 'string', 'max:100'],
-            ]);
+    }
 
-            $results = [];
+    /**
+     * Search for documents by consecutive and return a list of matching vouchers.
+     */
+    public function search(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'consecutive' => ['required', 'string', 'max:100'],
+        ]);
 
-            foreach (self::MODULES as $key => $config) {
-                $records = $config['model']::query()
-                    ->where($config['field'], $data['consecutive'])
-                    ->get();
+        $results = [];
 
-                foreach ($records as $record) {
-                    $voucherId = $key === 'voucher' ? $record->id : $record->accounting_voucher_id;
-                    $hasVoucher = (bool) $voucherId;
+        foreach (self::MODULES as $key => $config) {
+            $records = $config['model']::query()
+                ->where($config['field'], $data['consecutive'])
+                ->get();
+
+            foreach ($records as $record) {
+                $voucherId = $key === 'voucher' ? $record->id : $record->accounting_voucher_id;
+                $hasVoucher = (bool) $voucherId;
+                $results[] = [
+                    'module' => $key,
+                    'voucher_id' => $voucherId,
+                    'label' => $config['label'] ?? $key,
+                    'has_voucher' => $hasVoucher,
+                ];
+            }
+        }
+
+        if (empty($results)) {
+            return response()->json(['found' => false, 'message' => 'No se encontró ningún documento con ese consecutivo.'], 404);
+        }
+
+        return response()->json(['found' => true, 'results' => $results]);
+
+        foreach (self::MODULES as $key => $config) {
+            $records = $config['model']::query()
+                ->where($config['field'], $data['consecutive'])
+                ->get();
+
+            foreach ($records as $record) {
+                $voucherId = $key === 'voucher' ? $record->id : $record->accounting_voucher_id;
+                if ($voucherId) {
                     $results[] = [
                         'module' => $key,
                         'voucher_id' => $voucherId,
                         'label' => $config['label'] ?? $key,
-                        'has_voucher' => $hasVoucher,
                     ];
                 }
             }
-
-            if (empty($results)) {
-                return response()->json(['found' => false, 'message' => 'No se encontró ningún documento con ese consecutivo.'], 404);
-            }
-
-            return response()->json(['found' => true, 'results' => $results]);
-
-            foreach (self::MODULES as $key => $config) {
-                $records = $config['model']::query()
-                    ->where($config['field'], $data['consecutive'])
-                    ->get();
-
-                foreach ($records as $record) {
-                    $voucherId = $key === 'voucher' ? $record->id : $record->accounting_voucher_id;
-                    if ($voucherId) {
-                        $results[] = [
-                            'module' => $key,
-                            'voucher_id' => $voucherId,
-                            'label' => $config['label'] ?? $key,
-                        ];
-                    }
-                }
-            }
-
-            if (empty($results)) {
-                return response()->json(['found' => false, 'message' => 'No se encontró ningún documento con ese consecutivo.'], 404);
-            }
-
-            return response()->json(['found' => true, 'results' => $results]);
         }
+
+        if (empty($results)) {
+            return response()->json(['found' => false, 'message' => 'No se encontró ningún documento con ese consecutivo.'], 404);
+        }
+
+        return response()->json(['found' => true, 'results' => $results]);
     }
 }

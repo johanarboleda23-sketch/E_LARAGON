@@ -44,6 +44,7 @@ class PurchaseController extends Controller
             ->where('allows_posting', true)
             ->orderBy('code')
             ->get(['id', 'code', 'name', 'class']);
+        $nextConsecutive = NumberingResolution::peekNext('purchase');
 
         if ($paymentMethods->isEmpty()) {
             foreach (['Efectivo', 'Bancos', 'Anticipo', 'Crédito'] as $name) {
@@ -52,7 +53,7 @@ class PurchaseController extends Controller
             $paymentMethods = PaymentMethod::query()->orderBy('name')->get();
         }
 
-        return view('purchases.index', compact('paymentMethods', 'postingAccounts', 'products', 'withholdings', 'recentPurchases', 'suppliers'));
+        return view('purchases.index', compact('paymentMethods', 'postingAccounts', 'products', 'withholdings', 'recentPurchases', 'suppliers', 'nextConsecutive'));
     }
 
     /**

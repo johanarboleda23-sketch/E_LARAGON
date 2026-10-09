@@ -281,26 +281,37 @@ class PurchaseControllerTest extends TestCase
         $this->assertTrue($voucher->lines->contains('chart_of_account_id', $auxiliaryInventoryAccount->id));
     }
 
-    public function test_edit_and_update_change_the_purchase_header(): void
+    public function test_edit_and_update_change_the_purchase_header_and_line_items(): void
     {
         $this->authenticateWithCompany();
         $item = $this->createProduct();
         $this->post(route('purchases.store'), $this->purchasePayload($item, 100_000))
             ->assertRedirect(route('purchases.index'));
         $purchase = Purchase::query()->where('invoice_number', 'DAV-RET-001')->firstOrFail();
+        $this->assertSame(11, $item->fresh()->stock);
 
         $this->get(route('purchases.edit', $purchase))->assertOk()->assertSee('DAV-RET-001');
 
-        $this->put(route('purchases.update', $purchase), [
-            'invoice_number' => 'DAV-RET-001-B',
-            'provider' => 'Proveedor actualizado',
-            'provider_nit' => '900999999-1',
-            'purchase_date' => now()->toDateString(),
-        ])->assertRedirect(route('purchases.show', $purchase));
+        $updatePayload = $this->purchasePayload($item, 50_000);
+        $updatePayload['invoice_number'] = 'DAV-RET-001-B';
+        $updatePayload['provider'] = 'Proveedor actualizado';
+        $updatePayload['provider_nit'] = '900999999-1';
+        $updatePayload['purchase_date'] = now()->toDateString();
+        $updatePayload['items'][0]['quantity'] = 3;
+
+        $this->put(route('purchases.update', $purchase), $updatePayload)
+            ->assertRedirect(route('purchases.show', $purchase));
 
         $purchase->refresh();
         $this->assertSame('DAV-RET-001-B', $purchase->invoice_number);
         $this->assertSame('Proveedor actualizado', $purchase->provider);
+        $this->assertSame(1, $purchase->details()->count());
+        $this->assertSame(3, $purchase->details()->first()->quantity);
+        $this->assertSame(150_000.0, (float) $purchase->subtotal);
+
+        // El stock debe reflejar solo la nueva cantidad (10 + 3 = 13): la entrada original de 1
+        // unidad fue revertida antes de aplicar la edición.
+        $this->assertSame(13, $item->fresh()->stock);
     }
 
     public function test_statement_lists_all_purchases_from_the_same_provider(): void

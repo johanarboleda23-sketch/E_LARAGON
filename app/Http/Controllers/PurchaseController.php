@@ -127,30 +127,13 @@ class PurchaseController extends Controller
             }
         }
 
-        $subtotal = 0.0;
-        $ivaTotal = 0.0;
-        foreach ($data['items'] as $itemData) {
-            $lineSubtotal = round((int) $itemData['quantity'] * (float) $itemData['cost_price'], 2);
-            $subtotal += $lineSubtotal;
-            $ivaTotal += round($lineSubtotal * (float) $itemData['iva_percentage'] / 100, 2);
-        }
+        [$subtotal, $ivaTotal, $retefuente, $retentionBase, $totalPagar] = $this->calculateTotals($data['items'], $data['withholding_concept'], $data['provider_regimen']);
 
-        $withholdingConcept = $data['withholding_concept'];
-        if ($data['provider_regimen'] === 'sin_responsabilidad' && $withholdingConcept === 'none') {
-            $withholdingConcept = 'purchase_no_declarante';
-        }
-
-        $concept = config('colombia_withholdings.concepts.'.$withholdingConcept);
-        $retentionBase = $concept['base_on'] === 'iva' ? $ivaTotal : $subtotal;
-        $minimumBase = (float) $concept['base_uvt'] * (float) config('colombia_withholdings.uvt');
-        $taxableBase = $retentionBase >= $minimumBase ? $retentionBase : 0;
-        $retention = round($taxableBase * (float) $concept['rate'], 2);
-
-        $data['subtotal'] = round($subtotal, 2);
-        $data['iva_total'] = round($ivaTotal, 2);
-        $data['retefuente'] = $retention;
-        $data['retention_base'] = $taxableBase;
-        $data['total_pagar'] = round($subtotal + $ivaTotal - $retention, 2);
+        $data['subtotal'] = $subtotal;
+        $data['iva_total'] = $ivaTotal;
+        $data['retefuente'] = $retefuente;
+        $data['retention_base'] = $retentionBase;
+        $data['total_pagar'] = $totalPagar;
 
         try {
             $invoiceNumber = NumberingResolution::allocateNext('purchase') ?? $data['invoice_number'];
@@ -172,54 +155,7 @@ class PurchaseController extends Controller
                 'total_pagar' => $data['total_pagar'],
             ]);
 
-            foreach ($data['items'] as $itemData) {
-                $lineType = $itemData['purchase_line_type'];
-                $item = $lineType === 'producto' ? Item::lockForUpdate()->findOrFail($itemData['item_id']) : null;
-                $quantity = (int) $itemData['quantity'];
-                $costPrice = (float) $itemData['cost_price'];
-                $ivaPercentage = (float) $itemData['iva_percentage'];
-                $utilityPercentage = (float) ($itemData['utility_percentage'] ?? 0);
-                $ivaValue = $quantity * $costPrice * $ivaPercentage / 100;
-                $salePrice = $costPrice * (1 + $utilityPercentage / 100);
-
-                PurchaseDetail::create([
-                    'purchase_id' => $purchase->id,
-                    'purchase_line_type' => $lineType,
-                    'item_id' => $item?->id,
-                    'chart_of_account_id' => $itemData['chart_of_account_id'] ?? null,
-                    'line_description' => $itemData['line_description'] ?? $item?->name,
-                    'quantity' => $quantity,
-                    'cost_price' => $costPrice,
-                    'iva_percentage' => $ivaPercentage,
-                    'iva_value' => $ivaValue,
-                    'utility_percentage' => $utilityPercentage,
-                    'calculated_sale_price' => $salePrice,
-                    'useful_life_months' => $itemData['useful_life_months'] ?? null,
-                    'depreciation_method' => $itemData['depreciation_method'] ?? null,
-                    'residual_value' => $itemData['residual_value'] ?? null,
-                    'depreciation_expense_account_id' => $itemData['depreciation_expense_account_id'] ?? null,
-                    'accumulated_depreciation_account_id' => $itemData['accumulated_depreciation_account_id'] ?? null,
-                ]);
-
-                if ($lineType === 'producto') {
-                    $stockBefore = $item->stock;
-                    $item->increment('stock', $quantity);
-                    $item->refresh();
-                    $item->update([
-                        'purchase_price' => $costPrice,
-                        'sale_price' => $salePrice,
-                    ]);
-                    InventoryMovement::create([
-                        'item_id' => $item->id,
-                        'purchase_id' => $purchase->id,
-                        'type' => 'entrada',
-                        'quantity' => $quantity,
-                        'stock_before' => $stockBefore,
-                        'stock_after' => $item->stock,
-                        'reason' => 'Compra '.$purchase->invoice_number,
-                    ]);
-                }
-            }
+            $this->syncDetailsAndStock($purchase, $data['items']);
 
             return $purchase;
         });
@@ -231,6 +167,133 @@ class PurchaseController extends Controller
             : '¡Factura guardada y stock actualizado! No se contabilizó automáticamente: '.($skipReason ?? 'configura las cuentas PUC necesarias.'));
     }
 
+    /**
+     * Calcula subtotal, IVA, retefuente, base de retención y total a pagar para un conjunto de líneas.
+     *
+     * @param  array<int, array<string, mixed>>  $items
+     * @return array{0: float, 1: float, 2: float, 3: float, 4: float}
+     */
+    private function calculateTotals(array $items, string $withholdingConcept, string $providerRegimen): array
+    {
+        $subtotal = 0.0;
+        $ivaTotal = 0.0;
+        foreach ($items as $itemData) {
+            $lineSubtotal = round((int) $itemData['quantity'] * (float) $itemData['cost_price'], 2);
+            $subtotal += $lineSubtotal;
+            $ivaTotal += round($lineSubtotal * (float) $itemData['iva_percentage'] / 100, 2);
+        }
+
+        if ($providerRegimen === 'sin_responsabilidad' && $withholdingConcept === 'none') {
+            $withholdingConcept = 'purchase_no_declarante';
+        }
+
+        $concept = config('colombia_withholdings.concepts.'.$withholdingConcept);
+        $retentionBase = $concept['base_on'] === 'iva' ? $ivaTotal : $subtotal;
+        $minimumBase = (float) $concept['base_uvt'] * (float) config('colombia_withholdings.uvt');
+        $taxableBase = $retentionBase >= $minimumBase ? $retentionBase : 0;
+        $retention = round($taxableBase * (float) $concept['rate'], 2);
+        $totalPagar = round($subtotal + $ivaTotal - $retention, 2);
+
+        return [round($subtotal, 2), round($ivaTotal, 2), $retention, $taxableBase, $totalPagar];
+    }
+
+    /**
+     * Crea los renglones de la factura y aplica el movimiento de entrada al inventario.
+     *
+     * @param  array<int, array<string, mixed>>  $items
+     */
+    private function syncDetailsAndStock(Purchase $purchase, array $items, ?string $movementReason = null): void
+    {
+        $movementReason ??= 'Compra '.$purchase->invoice_number;
+
+        foreach ($items as $itemData) {
+            $lineType = $itemData['purchase_line_type'];
+            $item = $lineType === 'producto' ? Item::lockForUpdate()->findOrFail($itemData['item_id']) : null;
+            $quantity = (int) $itemData['quantity'];
+            $costPrice = (float) $itemData['cost_price'];
+            $ivaPercentage = (float) $itemData['iva_percentage'];
+            $utilityPercentage = (float) ($itemData['utility_percentage'] ?? 0);
+            $ivaValue = $quantity * $costPrice * $ivaPercentage / 100;
+            $salePrice = $costPrice * (1 + $utilityPercentage / 100);
+
+            PurchaseDetail::create([
+                'purchase_id' => $purchase->id,
+                'purchase_line_type' => $lineType,
+                'item_id' => $item?->id,
+                'chart_of_account_id' => $itemData['chart_of_account_id'] ?? null,
+                'line_description' => $itemData['line_description'] ?? $item?->name,
+                'quantity' => $quantity,
+                'cost_price' => $costPrice,
+                'iva_percentage' => $ivaPercentage,
+                'iva_value' => $ivaValue,
+                'utility_percentage' => $utilityPercentage,
+                'calculated_sale_price' => $salePrice,
+                'useful_life_months' => $itemData['useful_life_months'] ?? null,
+                'depreciation_method' => $itemData['depreciation_method'] ?? null,
+                'residual_value' => $itemData['residual_value'] ?? null,
+                'depreciation_expense_account_id' => $itemData['depreciation_expense_account_id'] ?? null,
+                'accumulated_depreciation_account_id' => $itemData['accumulated_depreciation_account_id'] ?? null,
+            ]);
+
+            if ($lineType === 'producto') {
+                $stockBefore = $item->stock;
+                $item->increment('stock', $quantity);
+                $item->refresh();
+                $item->update([
+                    'purchase_price' => $costPrice,
+                    'sale_price' => $salePrice,
+                ]);
+                InventoryMovement::create([
+                    'item_id' => $item->id,
+                    'purchase_id' => $purchase->id,
+                    'type' => 'entrada',
+                    'quantity' => $quantity,
+                    'stock_before' => $stockBefore,
+                    'stock_after' => $item->stock,
+                    'reason' => $movementReason,
+                ]);
+            }
+        }
+    }
+
+    /**
+     * Revierte el stock y la contabilización previos de una factura antes de editarla, para que
+     * los renglones y totales puedan reemplazarse de forma segura.
+     */
+    private function reverseDetailsAndStock(Purchase $purchase): void
+    {
+        $purchase->loadMissing('details.item');
+
+        foreach ($purchase->details as $detail) {
+            if ($detail->purchase_line_type === 'producto' && $detail->item) {
+                $item = Item::lockForUpdate()->find($detail->item->id);
+                if ($item) {
+                    $stockBefore = $item->stock;
+                    $item->decrement('stock', $detail->quantity);
+                    $item->refresh();
+                    InventoryMovement::create([
+                        'item_id' => $item->id,
+                        'purchase_id' => $purchase->id,
+                        'type' => 'salida',
+                        'quantity' => $detail->quantity,
+                        'stock_before' => $stockBefore,
+                        'stock_after' => $item->stock,
+                        'reason' => 'Reversión por edición de factura '.$purchase->invoice_number,
+                    ]);
+                }
+            }
+        }
+
+        $purchase->details()->delete();
+
+        if ($purchase->accounting_voucher_id) {
+            $oldVoucher = $purchase->accountingVoucher;
+            $purchase->update(['accounting_voucher_id' => null]);
+            $oldVoucher?->lines()->delete();
+            $oldVoucher?->delete();
+        }
+    }
+
     public function show(Purchase $purchase)
     {
         $purchase->load('details.item');
@@ -240,11 +303,20 @@ class PurchaseController extends Controller
 
     public function edit(Purchase $purchase)
     {
+        $purchase->load('details.item');
         $paymentMethods = PaymentMethod::query()->orderBy('name')->get();
+        $suppliers = ThirdParty::where('is_supplier', true)->where('active', true)->orderBy('name')->get();
+        $products = Item::query()->where('type', 'producto')->orderBy('name')->get(['id', 'name', 'code', 'stock']);
+        $postingAccounts = ChartOfAccount::query()->where('active', true)->where('allows_posting', true)->orderBy('code')->get(['id', 'code', 'name', 'class']);
+        $withholdings = config('colombia_withholdings');
 
-        return view('purchases.edit', compact('purchase', 'paymentMethods'));
+        return view('purchases.edit', compact('purchase', 'paymentMethods', 'suppliers', 'products', 'postingAccounts', 'withholdings'));
     }
 
+    /**
+     * Reemplaza por completo el encabezado y los renglones de una factura: revierte el stock y la
+     * contabilización previos, aplica los nuevos valores y vuelve a contabilizar automáticamente.
+     */
     public function update(Request $request, Purchase $purchase)
     {
         $data = $request->validate([
@@ -253,11 +325,73 @@ class PurchaseController extends Controller
             'provider_nit' => 'nullable|string|max:50',
             'purchase_date' => 'required|date',
             'payment_method_id' => ['nullable', 'integer', 'exists:payment_methods,id'],
+            'provider_regimen' => ['required', Rule::in(['comun', 'simplificado', 'gran_contribuyente', 'sin_responsabilidad'])],
+            'withholding_concept' => ['required', Rule::in(array_keys(config('colombia_withholdings.concepts')))],
+            'items' => 'required|array|min:1',
+            'items.*.purchase_line_type' => ['required', Rule::in(['producto', 'gasto', 'activo_fijo'])],
+            'items.*.item_id' => ['nullable', 'integer', 'exists:items,id'],
+            'items.*.chart_of_account_id' => ['nullable', 'integer', 'exists:chart_of_accounts,id'],
+            'items.*.line_description' => ['nullable', 'string', 'max:255'],
+            'items.*.quantity' => 'required|integer|min:1',
+            'items.*.cost_price' => 'required|numeric|min:0',
+            'items.*.iva_percentage' => 'required|numeric|min:0',
+            'items.*.utility_percentage' => 'nullable|numeric|min:0',
+            'items.*.useful_life_months' => ['nullable', 'integer', 'min:1', 'max:1200'],
+            'items.*.depreciation_method' => ['nullable', Rule::in(['straight_line'])],
+            'items.*.residual_value' => ['nullable', 'numeric', 'min:0'],
+            'items.*.depreciation_expense_account_id' => ['nullable', 'integer', 'exists:chart_of_accounts,id'],
+            'items.*.accumulated_depreciation_account_id' => ['nullable', 'integer', 'exists:chart_of_accounts,id'],
         ]);
 
-        $purchase->update($data);
+        foreach ($data['items'] as $index => $itemData) {
+            $lineType = $itemData['purchase_line_type'];
+            $accountId = $itemData['chart_of_account_id'] ?? null;
 
-        return redirect()->route('purchases.show', $purchase)->with('success', 'Factura actualizada correctamente.');
+            if ($lineType === 'producto' && ! $itemData['item_id']) {
+                throw ValidationException::withMessages([
+                    "items.{$index}.item_id" => 'Los productos requieren una referencia del inventario.',
+                ]);
+            }
+
+            if ($lineType !== 'producto' && ! $accountId) {
+                throw ValidationException::withMessages([
+                    "items.{$index}.chart_of_account_id" => 'Los gastos y activos fijos requieren una cuenta auxiliar del PUC.',
+                ]);
+            }
+
+            if ($accountId && ! ChartOfAccount::query()->whereKey($accountId)->where('active', true)->where('allows_posting', true)->exists()) {
+                throw ValidationException::withMessages([
+                    "items.{$index}.chart_of_account_id" => 'Selecciona una cuenta auxiliar activa del PUC.',
+                ]);
+            }
+        }
+
+        [$subtotal, $ivaTotal, $retefuente, $retentionBase, $totalPagar] = $this->calculateTotals($data['items'], $data['withholding_concept'], $data['provider_regimen']);
+
+        DB::transaction(function () use ($data, $purchase, $subtotal, $ivaTotal, $retefuente, $totalPagar): void {
+            $this->reverseDetailsAndStock($purchase);
+
+            $purchase->update([
+                'invoice_number' => $data['invoice_number'],
+                'provider' => $data['provider'],
+                'provider_nit' => $data['provider_nit'] ?? null,
+                'payment_method_id' => $data['payment_method_id'] ?? null,
+                'purchase_date' => $data['purchase_date'],
+                'subtotal' => $subtotal,
+                'iva_total' => $ivaTotal,
+                'retefuente' => $retefuente,
+                'total_pagar' => $totalPagar,
+            ]);
+
+            $this->syncDetailsAndStock($purchase, $data['items'], 'Edición de factura '.$data['invoice_number']);
+        });
+
+        $skipReason = null;
+        $accountingVoucher = $this->accountingEntryService->postPurchase($purchase->fresh(), $skipReason);
+
+        return redirect()->route('purchases.show', $purchase)->with('success', $accountingVoucher
+            ? '¡Factura actualizada, stock recalculado y vuelta a contabilizar correctamente!'
+            : '¡Factura actualizada y stock recalculado! No se contabilizó automáticamente: '.($skipReason ?? 'configura las cuentas PUC necesarias.'));
     }
 
     public function email(Request $request, Purchase $purchase)

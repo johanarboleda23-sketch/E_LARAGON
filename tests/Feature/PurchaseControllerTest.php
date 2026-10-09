@@ -249,6 +249,38 @@ class PurchaseControllerTest extends TestCase
         $this->assertNotNull($purchase->fresh()->accounting_voucher_id);
     }
 
+    public function test_it_posts_to_an_auxiliary_child_account_when_the_root_code_is_a_summary_account(): void
+    {
+        // Simula el PUC oficial real: el código 1435 existe como cuenta "resumen" (no permite
+        // contabilizar directamente, tal como viene en el catálogo estándar colombiano tras
+        // importarlo), y la contabilización automática debe usar la cuenta auxiliar hija.
+        $this->authenticateWithCompany();
+        $item = $this->createProduct();
+        $bankAccount = $this->createAccount('1110-TEST', 'Bancos de prueba', 1);
+        ChartOfAccount::create([
+            'code' => '1435',
+            'name' => 'Mercancías no fabricadas (resumen)',
+            'class' => 1,
+            'nature' => 'debit',
+            'allows_posting' => false,
+            'active' => true,
+        ]);
+        $auxiliaryInventoryAccount = $this->createAccount('143501', 'Mercancías - auxiliar', 1);
+
+        $paymentMethod = PaymentMethod::create(['name' => 'Banco prueba', 'is_editable' => true, 'chart_of_account_id' => $bankAccount->id]);
+        $payload = $this->purchasePayload($item, 100_000);
+        $payload['invoice_number'] = 'DAV-AUX-001';
+        $payload['payment_method_id'] = $paymentMethod->id;
+
+        $this->post(route('purchases.store'), $payload)->assertRedirect(route('purchases.index'));
+
+        $purchase = Purchase::query()->where('invoice_number', 'DAV-AUX-001')->firstOrFail();
+        $this->assertNotNull($purchase->accounting_voucher_id);
+
+        $voucher = AccountingVoucher::query()->with('lines')->findOrFail($purchase->accounting_voucher_id);
+        $this->assertTrue($voucher->lines->contains('chart_of_account_id', $auxiliaryInventoryAccount->id));
+    }
+
     public function test_edit_and_update_change_the_purchase_header(): void
     {
         $this->authenticateWithCompany();

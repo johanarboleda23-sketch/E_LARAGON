@@ -16,6 +16,32 @@ use Illuminate\Validation\ValidationException;
 class AccountingEntryService
 {
     /**
+     * Resuelve el ID de una cuenta PUC que permita contabilizar directamente. Primero intenta
+     * el código exacto; si ese código existe pero es una cuenta resumen (no auxiliar, por ejemplo
+     * tras importar el PUC oficial completo), busca la cuenta auxiliar activa más específica bajo
+     * ese mismo código (ej. 143501 bajo 1435).
+     */
+    private function resolvePostingAccountId(string $code): ?int
+    {
+        $exact = ChartOfAccount::query()
+            ->where('code', $code)
+            ->where('active', true)
+            ->where('allows_posting', true)
+            ->value('id');
+
+        if ($exact) {
+            return $exact;
+        }
+
+        return ChartOfAccount::query()
+            ->where('code', 'like', $code.'%')
+            ->where('active', true)
+            ->where('allows_posting', true)
+            ->orderBy('code')
+            ->value('id');
+    }
+
+    /**
      * Causa automáticamente una compra. Devuelve el comprobante generado, o null junto con
      * un motivo legible (vía $skipReason) cuando falta alguna cuenta PUC o forma de pago.
      */
@@ -40,7 +66,7 @@ class AccountingEntryService
         foreach ($purchase->details as $detail) {
             $debitAccountId = match ($detail->purchase_line_type ?? 'producto') {
                 'gasto', 'activo_fijo' => $detail->chart_of_account_id,
-                default => ChartOfAccount::query()->where('code', '1435')->value('id'),
+                default => $this->resolvePostingAccountId('1435'),
             };
 
             if (! $debitAccountId) {
@@ -58,7 +84,7 @@ class AccountingEntryService
         }
 
         if ((float) $purchase->iva_total > 0) {
-            $ivaAccountId = ChartOfAccount::query()->where('code', '2408')->value('id');
+            $ivaAccountId = $this->resolvePostingAccountId('2408');
             if (! $ivaAccountId) {
                 $skipReason = 'Falta la cuenta PUC 2408 (Impuesto sobre las ventas por pagar) para contabilizar el IVA descontable.';
 
@@ -69,7 +95,7 @@ class AccountingEntryService
 
         $creditTotal = (float) $purchase->total_pagar;
         if ((float) $purchase->retefuente > 0) {
-            $retentionAccountId = ChartOfAccount::query()->where('code', '2365')->value('id');
+            $retentionAccountId = $this->resolvePostingAccountId('2365');
             if (! $retentionAccountId) {
                 $skipReason = 'Falta la cuenta PUC 2365 (Retención en la fuente) para contabilizar la retención calculada en esta compra.';
 
@@ -99,14 +125,14 @@ class AccountingEntryService
      */
     public function postSale(Sale $sale, ?string &$skipReason = null): ?AccountingVoucher
     {
-        $receivableAccountId = ChartOfAccount::query()->where('code', '1305')->value('id');
+        $receivableAccountId = $this->resolvePostingAccountId('1305');
         if (! $receivableAccountId) {
             $skipReason = 'Falta la cuenta PUC 1305 (Clientes) para contabilizar la venta.';
 
             return null;
         }
 
-        $incomeAccountId = ChartOfAccount::query()->where('code', '4135')->value('id');
+        $incomeAccountId = $this->resolvePostingAccountId('4135');
         if (! $incomeAccountId) {
             $skipReason = 'Falta la cuenta PUC 4135 (Ingresos por ventas) para contabilizar la venta.';
 
@@ -126,7 +152,7 @@ class AccountingEntryService
         ]]);
 
         if ((float) $sale->iva_total > 0) {
-            $ivaAccountId = ChartOfAccount::query()->where('code', '2408')->value('id');
+            $ivaAccountId = $this->resolvePostingAccountId('2408');
             if (! $ivaAccountId) {
                 $skipReason = 'Falta la cuenta PUC 2408 (Impuesto sobre las ventas por pagar) para contabilizar el IVA generado.';
 
@@ -136,7 +162,7 @@ class AccountingEntryService
         }
 
         if ((float) $sale->retention_total > 0) {
-            $retentionAccountId = ChartOfAccount::query()->where('code', '1355')->value('id');
+            $retentionAccountId = $this->resolvePostingAccountId('1355');
             if (! $retentionAccountId) {
                 $skipReason = 'Falta la cuenta PUC 1355 (Anticipo de impuestos y contribuciones) para contabilizar la retención que te practicó el cliente.';
 
@@ -166,14 +192,14 @@ class AccountingEntryService
     {
         $document->loadMissing('supplier');
 
-        $expenseAccountId = ChartOfAccount::query()->where('code', '5195')->value('id');
+        $expenseAccountId = $this->resolvePostingAccountId('5195');
         if (! $expenseAccountId) {
             $skipReason = 'Falta la cuenta PUC 5195 (Gastos diversos) para contabilizar el documento soporte.';
 
             return null;
         }
 
-        $payableAccountId = ChartOfAccount::query()->where('code', '2205')->value('id');
+        $payableAccountId = $this->resolvePostingAccountId('2205');
         if (! $payableAccountId) {
             $skipReason = 'Falta la cuenta PUC 2205 (Proveedores nacionales) para contabilizar el documento soporte.';
 
@@ -188,7 +214,7 @@ class AccountingEntryService
         ]]);
 
         if ((float) $document->retention_total > 0) {
-            $retentionAccountId = ChartOfAccount::query()->where('code', '2365')->value('id');
+            $retentionAccountId = $this->resolvePostingAccountId('2365');
             if (! $retentionAccountId) {
                 $skipReason = 'Falta la cuenta PUC 2365 (Retención en la fuente) para contabilizar la retención calculada en este documento soporte.';
 
@@ -246,7 +272,7 @@ class AccountingEntryService
             'net_pay_payable' => 'Salarios por pagar',
         ];
         foreach ($codes as $key => $code) {
-            $accountId = ChartOfAccount::query()->where('code', $code)->value('id');
+            $accountId = $this->resolvePostingAccountId($code);
             if (! $accountId) {
                 $skipReason = "Falta la cuenta PUC {$code} ({$labels[$key]}) para contabilizar la nómina.";
 

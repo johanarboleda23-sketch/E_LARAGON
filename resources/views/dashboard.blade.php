@@ -169,6 +169,12 @@
                         return;
                     }
 
+                    if (data.document_url) {
+                        mostrarMensaje('Documento encontrado. Aún no está contabilizado, abriendo...', 'success');
+                        window.location.href = data.document_url;
+                        return;
+                    }
+
                     mostrarMensaje(data.message || 'No se encontró ningún documento con ese consecutivo.', 'error');
                     btnBuscar.disabled = false;
                     btnBuscar.innerText = 'Buscar';

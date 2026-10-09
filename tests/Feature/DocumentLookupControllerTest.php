@@ -50,6 +50,28 @@ class DocumentLookupControllerTest extends TestCase
         $response->assertNotFound()->assertJson(['found' => false]);
     }
 
+    public function test_it_returns_the_document_url_when_it_exists_but_has_no_voucher_yet(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $sale = Sale::create([
+            'company_id' => $company->id,
+            'invoice_number' => 'FAC-002',
+            'sale_date' => now()->toDateString(),
+            'customer_name' => 'Cliente de prueba',
+            'subtotal' => 100,
+            'iva_total' => 0,
+            'total' => 100,
+        ]);
+
+        $response = $this->getJson(route('documents.lookup', ['module' => 'sale', 'consecutive' => 'FAC-002']));
+
+        $response->assertNotFound()
+            ->assertJson([
+                'found' => false,
+                'document_url' => route('sales.show', $sale),
+            ]);
+    }
+
     private function authenticateWithCompany(): Company
     {
         $company = Company::factory()->create();

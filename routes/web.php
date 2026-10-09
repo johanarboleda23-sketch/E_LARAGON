@@ -182,6 +182,7 @@ Route::middleware(['auth', 'company'])->group(function () {
     Route::middleware('module:items')->group(function () {
         Route::resource('items', ItemController::class)->except('show');
         Route::post('/items/{item}/stock', [ItemController::class, 'adjustStock'])->name('items.stock');
+        Route::put('/items/{item}/cuentas-puc', [ItemController::class, 'updateAccounts'])->name('items.accounts');
     });
 
     Route::get('/comprobantes/{voucher}/json', [AccountingVoucherController::class, 'json'])->name('accounting.vouchers.json');

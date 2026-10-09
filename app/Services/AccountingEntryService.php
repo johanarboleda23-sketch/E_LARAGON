@@ -66,7 +66,7 @@ class AccountingEntryService
         foreach ($purchase->details as $detail) {
             $debitAccountId = match ($detail->purchase_line_type ?? 'producto') {
                 'gasto', 'activo_fijo' => $detail->chart_of_account_id,
-                default => $this->resolvePostingAccountId('1435'),
+                default => $detail->item?->inventory_account_id ?? $this->resolvePostingAccountId('1435'),
             };
 
             if (! $debitAccountId) {
@@ -125,6 +125,8 @@ class AccountingEntryService
      */
     public function postSale(Sale $sale, ?string &$skipReason = null): ?AccountingVoucher
     {
+        $sale->loadMissing('details.item');
+
         $receivableAccountId = $this->resolvePostingAccountId('1305');
         if (! $receivableAccountId) {
             $skipReason = 'Falta la cuenta PUC 1305 (Clientes) para contabilizar la venta.';
@@ -132,24 +134,47 @@ class AccountingEntryService
             return null;
         }
 
-        $incomeAccountId = $this->resolvePostingAccountId('4135');
-        if (! $incomeAccountId) {
-            $skipReason = 'Falta la cuenta PUC 4135 (Ingresos por ventas) para contabilizar la venta.';
-
-            return null;
-        }
+        $defaultIncomeAccountId = $this->resolvePostingAccountId('4135');
 
         $lines = collect([[
             'chart_of_account_id' => $receivableAccountId,
             'detail' => 'Clientes '.$sale->customer_name,
             'debit' => (float) $sale->total,
             'credit' => 0,
-        ], [
-            'chart_of_account_id' => $incomeAccountId,
-            'detail' => 'Ingreso por venta',
-            'debit' => 0,
-            'credit' => round((float) $sale->subtotal - (float) $sale->discount_total, 2),
         ]]);
+
+        // Agrupamos el ingreso por la cuenta PUC de cada producto/servicio vendido (si está
+        // configurada); los que no tengan una cuenta propia caen en la cuenta de ingresos por
+        // defecto (4135). Así la contabilización refleja todas las cuentas de ingreso reales.
+        $incomeGroups = $sale->details->isNotEmpty()
+            ? $sale->details->groupBy(fn ($detail) => $detail->item?->income_account_id ?: 'default')
+            : collect(['default' => collect()]);
+
+        foreach ($incomeGroups as $accountKey => $details) {
+            $incomeAccountId = $accountKey !== 'default' ? (int) $accountKey : $defaultIncomeAccountId;
+
+            if (! $incomeAccountId) {
+                $skipReason = 'Falta la cuenta PUC 4135 (Ingresos por ventas) para contabilizar la venta.';
+
+                return null;
+            }
+
+            $groupTotal = $details->isNotEmpty()
+                ? round((float) $details->sum('line_total'), 2)
+                : round((float) $sale->subtotal - (float) $sale->discount_total, 2);
+
+            if ($groupTotal <= 0) {
+                continue;
+            }
+
+            $accountName = $accountKey !== 'default' ? $details->first()->item?->incomeAccount?->name : null;
+            $lines->push([
+                'chart_of_account_id' => $incomeAccountId,
+                'detail' => $accountName ? 'Ingreso por venta - '.$accountName : 'Ingreso por venta',
+                'debit' => 0,
+                'credit' => $groupTotal,
+            ]);
+        }
 
         if ((float) $sale->iva_total > 0) {
             $ivaAccountId = $this->resolvePostingAccountId('2408');

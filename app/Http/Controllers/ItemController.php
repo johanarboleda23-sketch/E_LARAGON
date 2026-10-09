@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ChartOfAccount;
 use App\Models\InventoryMovement;
 use App\Models\Item;
 use Illuminate\Http\Request;
@@ -12,6 +13,7 @@ class ItemController extends Controller
     public function index()
     {
         $items = Item::query()
+            ->with(['inventoryAccount', 'incomeAccount'])
             ->when(request('search'), function ($query, $search) {
                 $query->where(function ($query) use ($search) {
                     $query->where('name', 'like', "%{$search}%")
@@ -22,8 +24,9 @@ class ItemController extends Controller
             ->when(request('low_stock'), fn ($query) => $query->whereColumn('stock', '<=', 'min_stock'))
             ->latest()
             ->get();
+        $postingAccounts = ChartOfAccount::query()->where('active', true)->where('allows_posting', true)->orderBy('code')->get(['id', 'code', 'name']);
 
-        return view('items.index', compact('items'));
+        return view('items.index', compact('items', 'postingAccounts'));
     }
 
     // Muestra el formulario en una página completa
@@ -77,6 +80,18 @@ class ItemController extends Controller
         $item->delete();
 
         return redirect()->route('items.index')->with('success', 'Registro eliminado con éxito.');
+    }
+
+    public function updateAccounts(Request $request, Item $item)
+    {
+        $data = $request->validate([
+            'inventory_account_id' => ['nullable', 'integer', 'exists:chart_of_accounts,id'],
+            'income_account_id' => ['nullable', 'integer', 'exists:chart_of_accounts,id'],
+        ]);
+
+        $item->update($data);
+
+        return back()->with('success', 'Cuentas PUC de "'.$item->name.'" actualizadas. La contabilización automática las usará a partir de ahora.');
     }
 
     public function adjustStock(Request $request, Item $item)

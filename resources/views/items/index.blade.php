@@ -35,6 +35,7 @@
                                 <th class="px-6 py-3 text-left text-xs font-medium text-pink-700 uppercase">P. Venta</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-pink-700 uppercase">P. Compra</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-pink-700 uppercase">Stock</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-pink-700 uppercase">Cuentas PUC</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-pink-700 uppercase">Acciones</th>
                             </tr>
                         </thead>
@@ -46,6 +47,13 @@
                                     <td class="px-6 py-4 text-sm text-gray-900">${{ number_format($item->sale_price, 2) }}</td>
                                     <td class="px-6 py-4 text-sm text-gray-900">{{ $item->purchase_price !== null ? '$' . number_format($item->purchase_price, 2) : 'N/A' }}</td>
                                     <td class="px-6 py-4 text-sm {{ $item->type === 'producto' && $item->stock <= $item->min_stock ? 'font-bold text-red-600' : 'text-gray-900' }}">{{ $item->type === 'producto' ? $item->stock . ' (mín. ' . $item->min_stock . ')' : 'Servicio' }}</td>
+                                    <td class="px-6 py-4 text-xs">
+                                        <button type="button" onclick="document.getElementById('modal-puc-{{ $item->id }}').classList.remove('hidden')" class="text-teal-700 hover:underline font-semibold">🔗 Amarrar a PUC</button>
+                                        <p class="mt-1 text-gray-500">
+                                            @if($item->type === 'producto')Inventario: {{ $item->inventoryAccount?->code ?? '—' }}<br>@endif
+                                            Ingreso: {{ $item->incomeAccount?->code ?? '—' }}
+                                        </p>
+                                    </td>
                                     <td class="px-6 py-4 text-sm"><a href="{{ route('items.edit', $item) }}" class="text-pink-600 hover:underline">Editar</a>
                                         @if ($item->type === 'producto')
                                             <form action="{{ route('items.stock', $item) }}" method="POST" class="mt-2 flex flex-wrap items-center gap-1">
@@ -68,7 +76,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="6" class="px-6 py-4 text-center text-sm text-gray-400">No hay registros aún.</td>
+                                    <td colspan="7" class="px-6 py-4 text-center text-sm text-gray-400">No hay registros aún.</td>
                                 </tr>
                             @endforelse
                         </tbody>
@@ -77,6 +85,48 @@
             </div>
         </div>
     </div>
+
+    <!-- MODALES: amarrar cada producto/servicio a sus cuentas PUC -->
+    @foreach($items as $item)
+        <div id="modal-puc-{{ $item->id }}" class="fixed inset-0 bg-gray-900 bg-opacity-40 hidden z-50 flex items-center justify-center">
+            <div class="relative mx-auto p-6 border-2 border-teal-200 w-96 shadow-2xl rounded-xl bg-white border-t-8 border-t-teal-500">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-bold text-teal-700">Cuentas PUC de "{{ $item->name }}"</h3>
+                    <button type="button" onclick="document.getElementById('modal-puc-{{ $item->id }}').classList.add('hidden')" class="text-gray-400 hover:text-teal-600 text-2xl font-bold">&times;</button>
+                </div>
+                <form method="POST" action="{{ route('items.accounts', $item) }}" class="space-y-4">
+                    @csrf
+                    @method('PUT')
+                    @if($item->type === 'producto')
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700">Cuenta de inventario (compras)</label>
+                            <select name="inventory_account_id" class="mt-1 block w-full rounded-md border-teal-200 text-sm">
+                                <option value="">Sin asociación</option>
+                                @foreach($postingAccounts as $account)
+                                    <option value="{{ $account->id }}" @selected($item->inventory_account_id === $account->id)>{{ $account->code }} - {{ $account->name }}</option>
+                                @endforeach
+                            </select>
+                            <p class="mt-1 text-xs text-gray-400">Se usa al comprar este producto. Si la dejas vacía, se usa la cuenta de inventario general (1435).</p>
+                        </div>
+                    @endif
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700">Cuenta de ingreso (ventas)</label>
+                        <select name="income_account_id" class="mt-1 block w-full rounded-md border-teal-200 text-sm">
+                            <option value="">Sin asociación</option>
+                            @foreach($postingAccounts as $account)
+                                <option value="{{ $account->id }}" @selected($item->income_account_id === $account->id)>{{ $account->code }} - {{ $account->name }}</option>
+                            @endforeach
+                        </select>
+                        <p class="mt-1 text-xs text-gray-400">Se usa al vender este producto/servicio. Si la dejas vacía, se usa la cuenta de ingresos general (4135).</p>
+                    </div>
+                    <div class="flex justify-end space-x-2 pt-3 border-t border-teal-50">
+                        <button type="button" onclick="document.getElementById('modal-puc-{{ $item->id }}').classList.add('hidden')" class="px-4 py-2 bg-gray-100 text-gray-600 rounded-md text-sm font-medium">Cancelar</button>
+                        <button type="submit" class="px-4 py-2 bg-teal-600 text-white rounded-md text-sm font-medium hover:bg-teal-700 shadow-sm">Guardar</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    @endforeach
 
     <!-- VENTANA FLOTANTE MODAL (Blanca con bordes rosa) -->
     <div id="modal-crear" class="fixed inset-0 bg-gray-900 bg-opacity-40 hidden z-50 flex items-center justify-center">

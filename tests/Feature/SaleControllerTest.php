@@ -37,6 +37,51 @@ class SaleControllerTest extends TestCase
         $this->assertSame(119_000.0, (float) $voucher->total_debit);
     }
 
+    public function test_sale_splits_income_lines_by_each_items_own_puc_account(): void
+    {
+        $this->authenticateWithCompany();
+        $this->createAccount('1305', 'Clientes', 1);
+        $this->createAccount('4135', 'Comercio al por mayor y al por menor', 4, 'credit');
+        $serviceIncomeAccount = $this->createAccount('4155-TEST', 'Servicios de consultoría', 4, 'credit');
+
+        $productWithoutAccount = $this->createProduct();
+        $serviceWithAccount = Item::create([
+            'type' => 'producto',
+            'name' => 'Servicio con cuenta propia',
+            'code' => 'SKU-VTA-002',
+            'sale_price' => 200,
+            'purchase_price' => 100,
+            'stock' => 10,
+            'min_stock' => 1,
+            'income_account_id' => $serviceIncomeAccount->id,
+        ]);
+
+        $payload = [
+            'invoice_number' => 'VTA-TEST-002',
+            'customer_name' => 'Cliente de prueba',
+            'sale_date' => now()->toDateString(),
+            'subtotal' => 300_000,
+            'iva_total' => 0,
+            'discount_total' => 0,
+            'withholding_concept' => 'none',
+            'retention_base' => 0,
+            'retention_total' => 0,
+            'total' => 300_000,
+            'items' => [
+                ['item_id' => $productWithoutAccount->id, 'quantity' => 1, 'unit_price' => 100_000, 'iva_percentage' => 0, 'discount_percentage' => 0],
+                ['item_id' => $serviceWithAccount->id, 'quantity' => 1, 'unit_price' => 200_000, 'iva_percentage' => 0, 'discount_percentage' => 0],
+            ],
+        ];
+
+        $this->post(route('sales.store'), $payload)->assertRedirect(route('sales.index'));
+
+        $sale = Sale::query()->where('invoice_number', 'VTA-TEST-002')->firstOrFail();
+        $voucher = AccountingVoucher::query()->with('lines')->findOrFail($sale->accounting_voucher_id);
+
+        $this->assertSame((float) $voucher->total_debit, (float) $voucher->total_credit);
+        $this->assertTrue($voucher->lines->contains(fn ($line) => $line->chart_of_account_id === $serviceIncomeAccount->id && (float) $line->credit === 200_000.0));
+    }
+
     public function test_sale_explains_which_account_is_missing_when_it_cannot_be_accounted(): void
     {
         $this->authenticateWithCompany();

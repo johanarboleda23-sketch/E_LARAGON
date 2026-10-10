@@ -42,6 +42,44 @@ class AccountingEntryService
     }
 
     /**
+     * Resuelve (y crea automáticamente si no existe) la subcuenta auxiliar de retención bajo
+     * $rootCode correspondiente a la tarifa exacta aplicada, para que cada porcentaje de
+     * retención en ventas (1355) quede separado en su propia cuenta auxiliar y no se mezclen
+     * distintos porcentajes en una sola cuenta genérica.
+     */
+    private function resolveRetentionAccountId(string $rootCode, float $rate): ?int
+    {
+        $suffix = str_pad((string) round($rate * 1000), 3, '0', STR_PAD_LEFT);
+        $code = $rootCode.$suffix;
+
+        $existing = ChartOfAccount::query()->where('code', $code)->where('active', true)->value('id');
+        if ($existing) {
+            return $existing;
+        }
+
+        $root = ChartOfAccount::query()->where('code', $rootCode)->first();
+        if (! $root) {
+            // No existe la cuenta raíz: caemos al resolutor genérico para no bloquear la causación.
+            return $this->resolvePostingAccountId($rootCode);
+        }
+
+        $percentageLabel = rtrim(rtrim(number_format($rate * 100, 2), '0'), '.');
+
+        return ChartOfAccount::create([
+            'company_id' => $root->company_id,
+            'parent_id' => $root->id,
+            'code' => $code,
+            'name' => 'Retención en ventas '.$percentageLabel.'%',
+            'class' => $root->class,
+            'nature' => $root->nature,
+            'account_type' => $root->account_type,
+            'allows_posting' => true,
+            'has_due_date' => $root->has_due_date,
+            'active' => true,
+        ])->id;
+    }
+
+    /**
      * Causa automáticamente una compra. Devuelve el comprobante generado, o null junto con
      * un motivo legible (vía $skipReason) cuando falta alguna cuenta PUC o forma de pago.
      */
@@ -187,13 +225,17 @@ class AccountingEntryService
         }
 
         if ((float) $sale->retention_total > 0) {
-            $retentionAccountId = $this->resolvePostingAccountId('1355');
+            $rate = (float) (config('colombia_withholdings.concepts.'.$sale->withholding_concept.'.rate') ?? 0);
+            $retentionAccountId = $rate > 0
+                ? $this->resolveRetentionAccountId('1355', $rate)
+                : $this->resolvePostingAccountId('1355');
             if (! $retentionAccountId) {
                 $skipReason = 'Falta la cuenta PUC 1355 (Anticipo de impuestos y contribuciones) para contabilizar la retención que te practicó el cliente.';
 
                 return null;
             }
-            $lines->push(['chart_of_account_id' => $retentionAccountId, 'detail' => 'Retención en la fuente practicada por el cliente', 'debit' => (float) $sale->retention_total, 'credit' => 0]);
+            $percentageLabel = $rate > 0 ? ' ('.rtrim(rtrim(number_format($rate * 100, 2), '0'), '.').'%)' : '';
+            $lines->push(['chart_of_account_id' => $retentionAccountId, 'detail' => 'Retención en la fuente practicada por el cliente'.$percentageLabel, 'debit' => (float) $sale->retention_total, 'credit' => 0]);
         }
 
         $voucher = $this->post([

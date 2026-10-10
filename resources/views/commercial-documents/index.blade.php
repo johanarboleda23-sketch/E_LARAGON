@@ -356,6 +356,10 @@
             calculateTotals();
         }
 
+        function fmt(n) {
+            return (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
         function calculateTotals() {
             let subtotal = 0;
             let discountTotal = 0;
@@ -369,18 +373,18 @@
                 const lineSubtotal = quantity * unitPrice;
                 const discount = lineSubtotal * discountPercentage / 100;
                 const iva = (lineSubtotal - discount) * ivaPercentage / 100;
-                row.querySelector('.line-total').textContent = '$' + (lineSubtotal - discount + iva).toFixed(2);
+                row.querySelector('.line-total').textContent = '$' + fmt(lineSubtotal - discount + iva);
                 subtotal += lineSubtotal;
                 discountTotal += discount;
                 ivaTotal += iva;
             });
 
-            document.getElementById('subtotal').textContent = '$' + subtotal.toFixed(2);
-            document.getElementById('iva-total').textContent = '$' + ivaTotal.toFixed(2);
-            document.getElementById('grand-total').textContent = '$' + (subtotal - discountTotal + ivaTotal).toFixed(2);
+            document.getElementById('subtotal').textContent = '$' + fmt(subtotal);
+            document.getElementById('iva-total').textContent = '$' + fmt(ivaTotal);
+            document.getElementById('grand-total').textContent = '$' + fmt(subtotal - discountTotal + ivaTotal);
             const discountElement = document.getElementById('discount-total');
             if (discountElement) {
-                discountElement.textContent = '$' + discountTotal.toFixed(2);
+                discountElement.textContent = '$' + fmt(discountTotal);
             }
         }
 

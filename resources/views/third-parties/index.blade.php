@@ -1,5 +1,16 @@
 <x-app-layout>
-<x-slot name="header"><h2 class="text-xl font-bold text-gray-800">Registro de terceros</h2></x-slot>
+<x-slot name="header"><div class="flex items-center justify-between"><h2 class="text-xl font-bold text-gray-800">Registro de terceros</h2><div class="flex gap-2"><a href="{{ route('third-parties.template') }}" class="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-gray-700">⬇ Descargar plantilla</a><button type="button" onclick="document.getElementById('third-party-import-modal').classList.remove('hidden')" class="rounded-lg bg-[#227c70] px-3 py-2 text-xs font-bold text-white">⇧ Migrar terceros</button></div></div></x-slot>
+<div id="third-party-import-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 p-4" onclick="if(event.target===this) this.classList.add('hidden')">
+    <div class="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+        <div class="mb-3 flex items-start justify-between"><h3 class="text-lg font-bold text-gray-800">Migrar terceros desde Excel</h3><button type="button" onclick="document.getElementById('third-party-import-modal').classList.add('hidden')" class="text-gray-400">✕</button></div>
+        <p class="mb-3 text-xs text-gray-500">Usa nuestra plantilla (botón "Descargar plantilla") para indicar si cada tercero es cliente, proveedor y/o empleado, junto con su documento, correo y teléfono. Máximo 500 registros por archivo.</p>
+        <form method="POST" action="{{ route('third-parties.import') }}" enctype="multipart/form-data" class="space-y-3">
+            @csrf
+            <input type="file" name="file" accept=".xlsx,.csv,.txt" required class="w-full rounded border-gray-300 text-sm">
+            <button class="w-full rounded bg-[#227c70] px-3 py-2 text-sm font-bold text-white">Migrar terceros</button>
+        </form>
+    </div>
+</div>
 <div class="min-h-screen bg-gray-50 p-5"><div class="mx-auto grid max-w-7xl gap-5 lg:grid-cols-[340px_1fr]">
 <section class="rounded-xl bg-white p-5 shadow-sm"><h3 class="mb-4 font-bold">Nuevo tercero</h3>@if(session('success'))<div class="mb-3 rounded bg-emerald-50 p-2 text-sm text-emerald-700">{{ session('success') }}</div>@endif
 <form method="POST" action="{{ route('third-parties.store') }}" class="space-y-3">@csrf<input name="name" required placeholder="Nombre o razón social" class="w-full rounded border-gray-300 text-sm"><input name="document" placeholder="Documento / NIT" class="w-full rounded border-gray-300 text-sm"><input name="email" type="email" placeholder="Correo" class="w-full rounded border-gray-300 text-sm"><input name="phone" placeholder="Teléfono" class="w-full rounded border-gray-300 text-sm"><select name="type" class="w-full rounded border-gray-300 text-sm"><option value="natural">Persona natural</option><option value="juridica">Persona jurídica</option></select><div class="space-y-2 text-sm"><label class="block"><input type="checkbox" name="is_customer" value="1"> CLIENTE</label><label class="block"><input type="checkbox" name="is_supplier" value="1"> PROVEEDOR</label><label class="block"><input type="checkbox" name="is_employee" value="1"> EMPLEADO</label></div><button class="w-full rounded bg-pink-600 px-3 py-2 text-sm font-bold text-white">Guardar tercero</button></form></section>

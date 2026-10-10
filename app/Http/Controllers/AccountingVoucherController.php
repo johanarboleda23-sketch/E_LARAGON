@@ -8,9 +8,12 @@ use App\Models\CommercialDocument;
 use App\Models\Company;
 use App\Models\ThirdParty;
 use App\Services\AccountingEntryService;
+use App\Support\SpreadsheetReader;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rule;
+use Throwable;
 
 class AccountingVoucherController extends Controller
 {
@@ -229,5 +232,110 @@ class AccountingVoucherController extends Controller
         });
 
         return back()->with('success', 'Comprobante enviado al correo del tercero.');
+    }
+
+    public function importTemplate(): Response
+    {
+        $rows = [
+            ['Fecha', 'Tercero/Proveedor', 'Concepto', 'Valor del servicio', 'Cuenta gasto (código PUC)', 'Cuenta por pagar (código PUC)', 'IVA %', 'Cuenta IVA descontable (código PUC)', 'Retención %', 'Cuenta retención por pagar (código PUC)'],
+            [now()->toDateString(), 'Contratista Ejemplo S.A.S.', 'Servicios de consultoría', '1000000', '513530', '220525', '19', '240805', '11', '236540'],
+        ];
+
+        $content = collect($rows)
+            ->map(fn (array $row) => collect($row)->map(fn ($value) => '"'.str_replace('"', '""', (string) $value).'"')->implode(';'))
+            ->implode("\r\n");
+
+        return response("\xEF\xBB\xBF".$content, 200, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="plantilla-migracion-comprobantes.csv"',
+        ]);
+    }
+
+    public function import(Request $request)
+    {
+        $data = $request->validate([
+            'file' => ['required', 'file', 'mimes:xlsx,csv,txt', 'max:10240'],
+        ]);
+
+        $rows = SpreadsheetReader::rows($data['file']->getRealPath(), $data['file']->getClientOriginalExtension());
+        array_shift($rows);
+
+        abort_if(count($rows) > 500, 422, 'La plantilla admite máximo 500 registros por carga.');
+
+        $created = 0;
+        $errors = [];
+
+        foreach ($rows as $index => $row) {
+            $rowNumber = $index + 2;
+            $date = trim((string) ($row[0] ?? ''));
+            $thirdParty = trim((string) ($row[1] ?? ''));
+            $concept = trim((string) ($row[2] ?? ''));
+            $amount = (float) str_replace(',', '', (string) ($row[3] ?? 0));
+            $expenseCode = trim((string) ($row[4] ?? ''));
+            $payableCode = trim((string) ($row[5] ?? ''));
+            $ivaRate = (float) ($row[6] ?? 0);
+            $ivaCode = trim((string) ($row[7] ?? ''));
+            $retentionRate = (float) ($row[8] ?? 0);
+            $retentionCode = trim((string) ($row[9] ?? ''));
+
+            if ($date === '' || $amount <= 0 || $expenseCode === '' || $payableCode === '') {
+                $errors[] = "Fila {$rowNumber}: datos incompletos, se omitió.";
+
+                continue;
+            }
+
+            try {
+                $expenseAccountId = $this->findPostingAccount($expenseCode);
+                $payableAccountId = $this->findPostingAccount($payableCode);
+                $ivaAccountId = $ivaRate > 0 ? $this->findPostingAccount($ivaCode) : null;
+                $retentionAccountId = $retentionRate > 0 ? $this->findPostingAccount($retentionCode) : null;
+
+                $ivaAmount = round($amount * $ivaRate / 100, 2);
+                $retentionAmount = round($amount * $retentionRate / 100, 2);
+
+                $lines = collect([
+                    ['chart_of_account_id' => $expenseAccountId, 'detail' => $concept, 'debit' => $amount, 'credit' => 0],
+                ]);
+                if ($ivaAmount > 0) {
+                    $lines->push(['chart_of_account_id' => $ivaAccountId, 'detail' => 'IVA descontable', 'debit' => $ivaAmount, 'credit' => 0]);
+                }
+                $lines->push(['chart_of_account_id' => $payableAccountId, 'detail' => 'Cuenta por pagar '.$thirdParty, 'debit' => 0, 'credit' => round($amount + $ivaAmount - $retentionAmount, 2)]);
+                if ($retentionAmount > 0) {
+                    $lines->push(['chart_of_account_id' => $retentionAccountId, 'detail' => 'Retención en la fuente por pagar', 'debit' => 0, 'credit' => $retentionAmount]);
+                }
+
+                $this->accountingEntryService->post([
+                    'voucher_type' => 'ajuste_contable',
+                    'consecutive' => 'SERV-'.now()->format('YmdHis').'-'.$rowNumber,
+                    'voucher_date' => $date,
+                    'third_party' => $thirdParty,
+                    'description' => 'Causación de servicio migrada: '.$concept,
+                ], $lines);
+
+                $created++;
+            } catch (Throwable $e) {
+                $errors[] = "Fila {$rowNumber}: ".$e->getMessage();
+            }
+        }
+
+        $message = "Migración completada: {$created} comprobantes creados.";
+        if ($errors !== []) {
+            $message .= ' Errores: '.implode(' | ', array_slice($errors, 0, 5)).(count($errors) > 5 ? ' (y '.(count($errors) - 5).' más)' : '');
+        }
+
+        return back()->with('success', $message);
+    }
+
+    private function findPostingAccount(string $code): int
+    {
+        $accountId = ChartOfAccount::query()
+            ->where('code', $code)
+            ->where('active', true)
+            ->where('allows_posting', true)
+            ->value('id');
+
+        abort_unless($accountId, 422, "La cuenta PUC {$code} no existe o no permite contabilización directa.");
+
+        return $accountId;
     }
 }

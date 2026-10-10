@@ -8,6 +8,7 @@ use App\Models\CommercialDocument;
 use App\Models\Company;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Tests\TestCase;
 
 class AccountingVoucherControllerTest extends TestCase
@@ -17,6 +18,79 @@ class AccountingVoucherControllerTest extends TestCase
     public function test_guest_cannot_open_the_accounting_form(): void
     {
         $this->get(route('accounting.vouchers.index'))->assertRedirect(route('login'));
+    }
+
+    public function test_typed_route_filters_the_list_and_generates_the_right_consecutive(): void
+    {
+        $company = $this->authenticateWithCompany();
+        AccountingVoucher::create([
+            'company_id' => $company->id,
+            'consecutive' => 'EG-1',
+            'voucher_type' => 'egreso',
+            'voucher_date' => now()->toDateString(),
+            'third_party' => 'Proveedor',
+            'total_debit' => 50000,
+            'total_credit' => 50000,
+        ]);
+        AccountingVoucher::create([
+            'company_id' => $company->id,
+            'consecutive' => 'RC-1',
+            'voucher_type' => 'recibo_caja',
+            'voucher_date' => now()->toDateString(),
+            'third_party' => 'Cliente',
+            'total_debit' => 70000,
+            'total_credit' => 70000,
+        ]);
+
+        $response = $this->get(route('accounting.vouchers.index.typed', 'egreso'));
+
+        $response->assertOk();
+        $response->assertSee('EG-1');
+        $response->assertDontSee('RC-1');
+    }
+
+    public function test_bulk_import_template_can_be_downloaded(): void
+    {
+        $this->authenticateWithCompany();
+
+        $response = $this->get(route('accounting.vouchers.import-template'));
+
+        $response->assertOk();
+        $response->assertSee('Cuenta gasto (código PUC)', false);
+    }
+
+    public function test_bulk_import_creates_a_balanced_voucher_per_service_row(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $this->createAccount('513530', 'Honorarios', 5);
+        $this->createAccount('220525', 'Cuentas por pagar servicios', 2, 'credit');
+        $this->createAccount('240805', 'IVA descontable', 1);
+        $this->createAccount('236540', 'Retención por pagar', 2, 'credit');
+
+        $csv = "Fecha;Tercero;Concepto;Valor;CuentaGasto;CuentaPorPagar;IVA%;CuentaIVA;Retencion%;CuentaRetencion\r\n"
+            .now()->toDateString().";Contratista S.A.S.;Servicios de consultoría;1000000;513530;220525;19;240805;11;236540\r\n";
+        $file = UploadedFile::fake()->createWithContent('servicios.csv', $csv);
+
+        $response = $this->post(route('accounting.vouchers.import'), ['file' => $file]);
+
+        $response->assertRedirect();
+        $this->assertDatabaseCount('accounting_vouchers', 1);
+        $voucher = AccountingVoucher::query()->with('lines')->firstOrFail();
+        $this->assertSame((float) $voucher->total_debit, (float) $voucher->total_credit);
+        $this->assertSame(1_190_000.0, (float) $voucher->total_debit);
+        $this->assertCount(4, $voucher->lines);
+    }
+
+    public function test_bulk_import_rejects_more_than_500_rows(): void
+    {
+        $this->authenticateWithCompany();
+        $rows = ['Fecha;Tercero;Concepto;Valor;CuentaGasto;CuentaPorPagar;IVA%;CuentaIVA;Retencion%;CuentaRetencion'];
+        for ($i = 0; $i < 501; $i++) {
+            $rows[] = now()->toDateString().";Contratista {$i};Servicio;100000;513530;220525;0;;0;";
+        }
+        $file = UploadedFile::fake()->createWithContent('servicios.csv', implode("\r\n", $rows));
+
+        $this->post(route('accounting.vouchers.import'), ['file' => $file])->assertStatus(422);
     }
 
     public function test_social_security_voucher_shows_operator_link_only_when_configured(): void
@@ -162,6 +236,18 @@ class AccountingVoucherControllerTest extends TestCase
             'subtotal' => 100,
             'iva_total' => 19,
             'total' => 119,
+        ]);
+    }
+
+    private function createAccount(string $code, string $name, int $class, string $nature = 'debit'): ChartOfAccount
+    {
+        return ChartOfAccount::create([
+            'code' => $code,
+            'name' => $name,
+            'class' => $class,
+            'nature' => $nature,
+            'allows_posting' => true,
+            'active' => true,
         ]);
     }
 

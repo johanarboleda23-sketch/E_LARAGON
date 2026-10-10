@@ -139,6 +139,8 @@ Route::middleware(['auth', 'company'])->group(function () {
     Route::middleware('module:third-parties')->group(function () {
         Route::get('/terceros', [ThirdPartyController::class, 'index'])->name('third-parties.index');
         Route::post('/terceros', [ThirdPartyController::class, 'store'])->name('third-parties.store');
+        Route::get('/terceros/plantilla', [ThirdPartyController::class, 'template'])->name('third-parties.template');
+        Route::post('/terceros/migrar', [ThirdPartyController::class, 'import'])->name('third-parties.import');
         Route::patch('/terceros/{thirdParty}/estado', [ThirdPartyController::class, 'toggleActive'])->name('third-parties.toggle-active');
         Route::post('/contratos-empleado', [ThirdPartyController::class, 'storeContract'])->name('employee-contracts.store');
         Route::patch('/contratos-empleado/{contract}/estado', [ThirdPartyController::class, 'toggleContract'])->name('employee-contracts.toggle-active');
@@ -214,6 +216,14 @@ Route::middleware(['auth', 'company'])->group(function () {
     Route::middleware('module:accounting-vouchers')->group(function () {
         Route::get('/comprobantes', [AccountingVoucherController::class, 'index'])->name('accounting.vouchers.index');
         Route::post('/comprobantes', [AccountingVoucherController::class, 'store'])->name('accounting.vouchers.store');
+        Route::get('/comprobantes/plantilla-migracion', [AccountingVoucherController::class, 'importTemplate'])->name('accounting.vouchers.import-template');
+        Route::post('/comprobantes/migrar', [AccountingVoucherController::class, 'import'])->name('accounting.vouchers.import');
+        Route::get('/comprobantes/tipo/{voucherType}', [AccountingVoucherController::class, 'index'])
+            ->where('voucherType', implode('|', array_keys(AccountingVoucherController::VOUCHER_TYPES)))
+            ->name('accounting.vouchers.index.typed');
+        Route::post('/comprobantes/tipo/{voucherType}', [AccountingVoucherController::class, 'store'])
+            ->where('voucherType', implode('|', array_keys(AccountingVoucherController::VOUCHER_TYPES)))
+            ->name('accounting.vouchers.store.typed');
         Route::delete('/comprobantes/{voucher}', [AccountingVoucherController::class, 'destroy'])->name('accounting.vouchers.destroy');
         Route::get('/comprobantes/{voucher}/contabilizacion', [AccountingVoucherController::class, 'accounting'])->name('accounting.vouchers.accounting');
         Route::get('/comprobantes/{voucher}/estado-cuenta', [AccountingVoucherController::class, 'statement'])->name('accounting.vouchers.statement');

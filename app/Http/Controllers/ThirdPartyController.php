@@ -4,7 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Models\EmployeeContract;
 use App\Models\ThirdParty;
+use App\Support\SpreadsheetReader;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 
 class ThirdPartyController extends Controller
 {
@@ -78,5 +80,85 @@ class ThirdPartyController extends Controller
         $contract->update(['active' => ! $contract->active]);
 
         return back()->with('success', 'Estado del contrato actualizado.');
+    }
+
+    public function template(): Response
+    {
+        $rows = [
+            ['Tipo persona (natural/juridica)', 'Nombre', 'Documento', 'Correo', 'Teléfono', 'Es cliente (si/no)', 'Es proveedor (si/no)', 'Es empleado (si/no)'],
+            ['natural', 'Juan Pérez', '123456789', 'juan@example.com', '3001234567', 'si', 'no', 'no'],
+            ['juridica', 'Proveedores ACME S.A.S.', '900123456', 'contacto@acme.com', '6012345678', 'no', 'si', 'no'],
+        ];
+
+        $content = collect($rows)
+            ->map(fn (array $row) => collect($row)->map(fn ($value) => '"'.str_replace('"', '""', (string) $value).'"')->implode(';'))
+            ->implode("\r\n");
+
+        return response("\xEF\xBB\xBF".$content, 200, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="plantilla-terceros.csv"',
+        ]);
+    }
+
+    public function import(Request $request)
+    {
+        $data = $request->validate([
+            'file' => ['required', 'file', 'mimes:xlsx,csv,txt', 'max:10240'],
+        ]);
+
+        $rows = SpreadsheetReader::rows($data['file']->getRealPath(), $data['file']->getClientOriginalExtension());
+        array_shift($rows);
+
+        abort_if(count($rows) > 500, 422, 'La plantilla admite máximo 500 registros por carga.');
+
+        $created = 0;
+        $updated = 0;
+        $skipped = 0;
+
+        foreach ($rows as $row) {
+            $type = strtolower(trim((string) ($row[0] ?? '')));
+            $name = trim((string) ($row[1] ?? ''));
+
+            if ($name === '' || ! in_array($type, ['natural', 'juridica'], true)) {
+                $skipped++;
+
+                continue;
+            }
+
+            $document = trim((string) ($row[2] ?? '')) ?: null;
+            $attributes = [
+                'type' => $type,
+                'name' => $name,
+                'document' => $document,
+                'email' => trim((string) ($row[3] ?? '')) ?: null,
+                'phone' => trim((string) ($row[4] ?? '')) ?: null,
+                'is_customer' => $this->parseBoolean($row[5] ?? null),
+                'is_supplier' => $this->parseBoolean($row[6] ?? null),
+                'is_employee' => $this->parseBoolean($row[7] ?? null),
+                'active' => true,
+            ];
+
+            if (! $attributes['is_customer'] && ! $attributes['is_supplier'] && ! $attributes['is_employee']) {
+                $skipped++;
+
+                continue;
+            }
+
+            $thirdParty = $document ? ThirdParty::query()->where('document', $document)->first() : null;
+            if ($thirdParty) {
+                $thirdParty->update($attributes);
+                $updated++;
+            } else {
+                ThirdParty::create($attributes);
+                $created++;
+            }
+        }
+
+        return back()->with('success', "Migración de terceros completada: {$created} creados, {$updated} actualizados, {$skipped} omitidos por datos incompletos.");
+    }
+
+    private function parseBoolean(mixed $value): bool
+    {
+        return in_array(strtolower(trim((string) $value)), ['si', 'sí', 'yes', '1', 'true'], true);
     }
 }

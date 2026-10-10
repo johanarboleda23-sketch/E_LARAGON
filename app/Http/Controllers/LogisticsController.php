@@ -196,6 +196,8 @@ class LogisticsController extends Controller
 
     public function deliverStop(Request $request, DeliveryStop $stop): RedirectResponse
     {
+        abort_if($stop->status === 'delivered', 422, 'Esta entrega ya fue confirmada por el conductor y no se puede modificar.');
+
         $data = $request->validate([
             'status' => ['required', 'string', 'in:delivered,failed'],
             'notes' => ['nullable', 'string', 'max:1000'],

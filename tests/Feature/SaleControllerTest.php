@@ -82,6 +82,55 @@ class SaleControllerTest extends TestCase
         $this->assertTrue($voucher->lines->contains(fn ($line) => $line->chart_of_account_id === $serviceIncomeAccount->id && (float) $line->credit === 200_000.0));
     }
 
+    public function test_sale_retention_is_posted_to_its_own_1355_subaccount_per_percentage(): void
+    {
+        $this->authenticateWithCompany();
+        $item = $this->createProduct();
+        $this->createAccount('1305', 'Clientes', 1);
+        $this->createAccount('4135', 'Comercio al por mayor y al por menor', 4, 'credit');
+        $this->createAccount('1355', 'Anticipo de impuestos y contribuciones', 1);
+
+        $payload = $this->salePayload($item, 300_000);
+        $payload['withholding_concept'] = 'professional_fee_10';
+        $payload['retention_base'] = 300_000;
+        $payload['retention_total'] = 30_000;
+        $payload['total'] = 270_000;
+
+        $response = $this->post(route('sales.store'), $payload);
+        $response->assertRedirect(route('sales.index'));
+
+        $sale = Sale::query()->where('invoice_number', 'VTA-TEST-001')->firstOrFail();
+        $this->assertSame(30_000.0, (float) $sale->retention_total);
+
+        $retentionAccount = ChartOfAccount::query()->where('code', '1355100')->firstOrFail();
+        $this->assertSame('Retención en ventas 10%', $retentionAccount->name);
+
+        $voucher = AccountingVoucher::query()->with('lines')->findOrFail($sale->accounting_voucher_id);
+        $this->assertTrue($voucher->lines->contains(fn ($line) => $line->chart_of_account_id === $retentionAccount->id && (float) $line->debit === 30_000.0));
+
+        // Una segunda venta con una tarifa distinta (4%) debe usar otra subcuenta diferente.
+        $item2 = Item::create([
+            'type' => 'producto',
+            'name' => 'Producto dos',
+            'code' => 'SKU-VTA-003',
+            'sale_price' => 200,
+            'purchase_price' => 100,
+            'stock' => 10,
+            'min_stock' => 1,
+        ]);
+        $payload2 = $this->salePayload($item2, 200_000);
+        $payload2['invoice_number'] = 'VTA-TEST-003';
+        $payload2['withholding_concept'] = 'service_declarante';
+        $payload2['retention_base'] = 200_000;
+        $payload2['retention_total'] = 8_000;
+        $payload2['total'] = 192_000;
+
+        $this->post(route('sales.store'), $payload2)->assertRedirect(route('sales.index'));
+
+        $otherRetentionAccount = ChartOfAccount::query()->where('code', '1355040')->firstOrFail();
+        $this->assertNotSame($retentionAccount->id, $otherRetentionAccount->id);
+    }
+
     public function test_sale_explains_which_account_is_missing_when_it_cannot_be_accounted(): void
     {
         $this->authenticateWithCompany();

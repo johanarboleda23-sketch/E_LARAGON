@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\ChartOfAccount;
+use App\Support\SpreadsheetReader;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -118,68 +119,6 @@ class ChartOfAccountController extends Controller
      */
     private function rowsFromFile(string $path, string $extension): array
     {
-        if (strtolower($extension) === 'xlsx') {
-            return $this->rowsFromXlsx($path);
-        }
-
-        $handle = fopen($path, 'r');
-        $rows = [];
-        $firstLine = fgets($handle);
-        $delimiter = str_contains((string) $firstLine, ';') ? ';' : ',';
-        if ($firstLine !== false) {
-            $rows[] = str_getcsv($firstLine, $delimiter);
-        }
-
-        while (($row = fgetcsv($handle, escape: '\\')) !== false) {
-            if (count($row) === 1 && str_contains($row[0], $delimiter)) {
-                $row = str_getcsv($row[0], $delimiter);
-            }
-            $rows[] = $row;
-        }
-
-        fclose($handle);
-
-        return $rows;
-    }
-
-    /**
-     * @return array<int, array<int, string>>
-     */
-    private function rowsFromXlsx(string $path): array
-    {
-        $archive = new \ZipArchive;
-        abort_unless($archive->open($path) === true, 422, 'No se pudo abrir el archivo Excel.');
-
-        $sharedStrings = [];
-        if (($sharedXml = $archive->getFromName('xl/sharedStrings.xml')) !== false) {
-            $shared = simplexml_load_string($sharedXml);
-            foreach ($shared->si as $string) {
-                $sharedStrings[] = implode('', array_map('strval', $string->xpath('.//*[local-name()="t"]') ?: []));
-            }
-        }
-
-        $sheetXml = $archive->getFromName('xl/worksheets/sheet1.xml');
-        $archive->close();
-        abort_unless($sheetXml !== false, 422, 'El archivo Excel no contiene una hoja válida.');
-
-        $sheet = simplexml_load_string($sheetXml);
-        $namespaces = $sheet->getNamespaces(true);
-        $uri = $namespaces[''] ?? $namespaces['x'] ?? null;
-        $sheetData = $uri ? $sheet->children($uri)->sheetData : $sheet->sheetData;
-
-        $rows = [];
-        foreach ($sheetData->children($uri) as $sheetRow) {
-            $row = [];
-            foreach ($sheetRow->children($uri) as $cell) {
-                $value = (string) ($uri ? $cell->children($uri)->v : $cell->v);
-                if ((string) ($cell['t'] ?? '') === 's') {
-                    $value = $sharedStrings[(int) $value] ?? '';
-                }
-                $row[] = $value;
-            }
-            $rows[] = $row;
-        }
-
-        return $rows;
+        return SpreadsheetReader::rows($path, $extension);
     }
 }

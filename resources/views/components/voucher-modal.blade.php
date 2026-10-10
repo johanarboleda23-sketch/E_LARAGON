@@ -31,6 +31,7 @@
 </div>
 
 <script>
+    function voucherModalFmt(n) { return (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
     function openVoucherModal(voucherId) {
         if (!voucherId) return;
         const modal = document.getElementById('voucher-modal');
@@ -55,9 +56,9 @@
             .then((data) => {
                 title.textContent = `Comprobante ${data.consecutive}`;
                 subtitle.textContent = `${data.voucher_type.toUpperCase()} · ${data.voucher_date}${data.third_party ? ' · ' + data.third_party : ''}`;
-                linesBody.innerHTML = data.lines.map((line) => `<tr class="border-b"><td class="py-2">${line.account}</td><td class="py-2">${line.detail ?? ''}</td><td class="py-2 text-right">${line.debit ? '$' + line.debit.toFixed(2) : ''}</td><td class="py-2 text-right">${line.credit ? '$' + line.credit.toFixed(2) : ''}</td></tr>`).join('');
-                totalDebit.textContent = '$' + data.total_debit.toFixed(2);
-                totalCredit.textContent = '$' + data.total_credit.toFixed(2);
+                linesBody.innerHTML = data.lines.map((line) => `<tr class="border-b"><td class="py-2">${line.account}</td><td class="py-2">${line.detail ?? ''}</td><td class="py-2 text-right">${line.debit ? '$' + voucherModalFmt(line.debit) : ''}</td><td class="py-2 text-right">${line.credit ? '$' + voucherModalFmt(line.credit) : ''}</td></tr>`).join('');
+                totalDebit.textContent = '$' + voucherModalFmt(data.total_debit);
+                totalCredit.textContent = '$' + voucherModalFmt(data.total_credit);
             })
             .catch((error) => {
                 title.textContent = 'Asiento contable';

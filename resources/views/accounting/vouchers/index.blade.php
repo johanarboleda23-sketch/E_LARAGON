@@ -35,12 +35,14 @@
                             <select name="voucher_type" required class="w-full rounded-md border-gray-300 text-sm">
                                 <option value="egreso" @selected(old('voucher_type', $voucherPrefill['voucher_type'] ?? request('type')) === 'egreso')>Egreso / Gasto</option>
                                 <option value="recibo_caja" @selected(old('voucher_type', $voucherPrefill['voucher_type'] ?? request('type')) === 'recibo_caja')>Recibo de caja</option>
-                                <option value="ajuste_contable" @selected(old('voucher_type') === 'ajuste_contable')>Ajuste contable</option>
-                                <option value="nomina" @selected(old('voucher_type') === 'nomina')>Nómina</option>
-                                <option value="seguridad_social" @selected(old('voucher_type') === 'seguridad_social')>Pago de seguridad social</option>
-                                <option value="provision_empleados" @selected(old('voucher_type') === 'provision_empleados')>Provisión de empleados</option>
-                                <option value="nota_credito_cliente" @selected(old('voucher_type', $voucherPrefill['voucher_type'] ?? null) === 'nota_credito_cliente')>Nota crédito cliente</option>
-                                <option value="nota_debito_proveedor" @selected(old('voucher_type', $voucherPrefill['voucher_type'] ?? null) === 'nota_debito_proveedor')>Nota débito proveedor</option>
+                                <option value="ajuste_contable" @selected(old('voucher_type', request('type')) === 'ajuste_contable')>Ajuste contable</option>
+                                <option value="nomina" @selected(old('voucher_type', request('type')) === 'nomina')>Nómina</option>
+                                <option value="seguridad_social" @selected(old('voucher_type', request('type')) === 'seguridad_social')>Pago de seguridad social</option>
+                                <option value="provision_empleados" @selected(old('voucher_type', request('type')) === 'provision_empleados')>Provisión de empleados</option>
+                                <option value="nota_credito_cliente" @selected(old('voucher_type', $voucherPrefill['voucher_type'] ?? request('type')) === 'nota_credito_cliente')>Nota crédito cliente</option>
+                                <option value="nota_credito_proveedor" @selected(old('voucher_type', request('type')) === 'nota_credito_proveedor')>Nota crédito proveedor</option>
+                                <option value="nota_debito_cliente" @selected(old('voucher_type', request('type')) === 'nota_debito_cliente')>Nota débito cliente</option>
+                                <option value="nota_debito_proveedor" @selected(old('voucher_type', $voucherPrefill['voucher_type'] ?? request('type')) === 'nota_debito_proveedor')>Nota débito proveedor</option>
                             </select>
                         </div>
                         <div>
@@ -148,7 +150,8 @@
             lineIndex++;
         }
         function removeLine(button) { if (document.querySelectorAll('.voucher-line').length > 1) button.closest('tr').remove(); updateTotals(); }
-        function updateTotals() { document.getElementById('total-debit').textContent = '$' + [...document.querySelectorAll('.debit')].reduce((sum, input) => sum + Number(input.value || 0), 0).toFixed(2); document.getElementById('total-credit').textContent = '$' + [...document.querySelectorAll('.credit')].reduce((sum, input) => sum + Number(input.value || 0), 0).toFixed(2); }
+        function fmt(n) { return (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+        function updateTotals() { document.getElementById('total-debit').textContent = '$' + fmt([...document.querySelectorAll('.debit')].reduce((sum, input) => sum + Number(input.value || 0), 0)); document.getElementById('total-credit').textContent = '$' + fmt([...document.querySelectorAll('.credit')].reduce((sum, input) => sum + Number(input.value || 0), 0)); }
         document.addEventListener('input', updateTotals);
         document.querySelector('[name="voucher_type"]').addEventListener('change', (event) => {
             const supplierTypes = ['egreso', 'seguridad_social', 'provision_empleados', 'nota_debito_proveedor'];
@@ -161,4 +164,40 @@
         updateTotals();
     </script>
     <x-voucher-modal />
+
+    {{-- Botones flotantes de acceso rápido a los comprobantes más usados --}}
+    <div class="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-3">
+        <div id="voucher-fab-menu" class="hidden flex-col items-end gap-2">
+            <a href="{{ route('accounting.vouchers.index.typed', 'egreso') }}" class="flex items-center gap-2 rounded-full bg-[#b65338] px-4 py-2.5 text-sm font-bold text-white shadow-lg">💸 Egreso</a>
+            <a href="{{ route('accounting.vouchers.index.typed', 'recibo_caja') }}" class="flex items-center gap-2 rounded-full bg-[#227c70] px-4 py-2.5 text-sm font-bold text-white shadow-lg">🧾 Recibo de caja</a>
+            <a href="{{ route('accounting.vouchers.index') }}" class="flex items-center gap-2 rounded-full bg-[#192522] px-4 py-2.5 text-sm font-bold text-white shadow-lg">📑 Comprobante contable</a>
+            <div class="rounded-xl bg-white p-2 shadow-lg">
+                <label class="block px-2 pb-1 text-[10px] font-bold uppercase tracking-wide text-gray-400">Otro tipo de comprobante</label>
+                <select onchange="if(this.value) window.location = '{{ route('accounting.vouchers.index') }}'.concat('?type=', this.value)" class="w-48 rounded-md border-gray-300 text-xs">
+                    <option value="">Seleccionar…</option>
+                    @foreach(\App\Http\Controllers\AccountingVoucherController::VOUCHER_TYPES as $key => $label)
+                        <option value="{{ $key }}">{{ $label }}</option>
+                    @endforeach
+                </select>
+            </div>
+            <button type="button" onclick="document.getElementById('voucher-import-modal').classList.remove('hidden')" class="flex items-center gap-2 rounded-full bg-amber-600 px-4 py-2.5 text-sm font-bold text-white shadow-lg">⇧ Migrar causación de servicios</button>
+        </div>
+        <button type="button" onclick="document.getElementById('voucher-fab-menu').classList.toggle('hidden');document.getElementById('voucher-fab-menu').classList.toggle('flex')" class="flex h-14 w-14 items-center justify-center rounded-full bg-pink-600 text-2xl font-bold text-white shadow-xl hover:bg-pink-700">+</button>
+    </div>
+
+    <div id="voucher-import-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 p-4" onclick="if(event.target===this) this.classList.add('hidden')">
+        <div class="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl">
+            <div class="mb-3 flex items-start justify-between">
+                <h3 class="text-lg font-bold text-gray-800">Migrar causación de servicios</h3>
+                <button type="button" onclick="document.getElementById('voucher-import-modal').classList.add('hidden')" class="text-gray-400">✕</button>
+            </div>
+            <p class="mb-3 text-xs text-gray-500">Sube hasta 500 servicios a la vez con nuestra plantilla: por cada fila se genera un comprobante con partida doble perfecta (gasto + IVA descontable como débito, cuenta por pagar e impuestos a cargo como crédito).</p>
+            <a href="{{ route('accounting.vouchers.import-template') }}" class="mb-3 inline-block rounded-md border border-gray-200 px-3 py-2 text-xs font-bold text-gray-700">⬇ Descargar plantilla</a>
+            <form method="POST" action="{{ route('accounting.vouchers.import') }}" enctype="multipart/form-data" class="space-y-3">
+                @csrf
+                <input type="file" name="file" accept=".xlsx,.csv,.txt" required class="w-full rounded border-gray-300 text-sm">
+                <button class="w-full rounded bg-amber-600 px-3 py-2 text-sm font-bold text-white">Migrar servicios</button>
+            </form>
+        </div>
+    </div>
 </x-app-layout>

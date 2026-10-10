@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Models\Company;
+use App\Models\DeliveryRoute;
+use App\Models\DeliveryStop;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -38,6 +40,54 @@ class LogisticsControllerTest extends TestCase
         ])->assertRedirect();
 
         $this->assertDatabaseHas('delivery_routes', ['code' => 'RUTA-001']);
+    }
+
+    public function test_driver_can_confirm_a_delivery_with_a_timestamp(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $stop = $this->createStop($company);
+
+        $this->post(route('logistics.stops.deliver', $stop), ['status' => 'delivered'])->assertRedirect();
+
+        $stop->refresh();
+        $this->assertSame('delivered', $stop->status);
+        $this->assertNotNull($stop->delivered_at);
+    }
+
+    public function test_a_confirmed_delivery_is_locked_and_cannot_be_changed_again(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $stop = $this->createStop($company);
+        $this->post(route('logistics.stops.deliver', $stop), ['status' => 'delivered'])->assertRedirect();
+        $stop->refresh();
+        $confirmedAt = $stop->delivered_at;
+
+        $this->post(route('logistics.stops.deliver', $stop), ['status' => 'failed'])->assertStatus(422);
+
+        $stop->refresh();
+        $this->assertSame('delivered', $stop->status);
+        $this->assertTrue($confirmedAt->equalTo($stop->delivered_at));
+    }
+
+    private function createStop(Company $company): DeliveryStop
+    {
+        $route = DeliveryRoute::create([
+            'company_id' => $company->id,
+            'code' => 'RUTA-001',
+            'vehicle_plate' => 'ABC123',
+            'driver_name' => 'Juan Pérez',
+            'route_date' => now()->toDateString(),
+            'status' => 'planned',
+        ]);
+
+        return DeliveryStop::create([
+            'delivery_route_id' => $route->id,
+            'sequence' => 1,
+            'customer_name' => 'Cliente de prueba',
+            'address' => 'Calle 123',
+            'difficulty_score' => 50,
+            'status' => 'pending',
+        ]);
     }
 
     private function authenticateWithCompany(): Company

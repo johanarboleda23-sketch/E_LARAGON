@@ -42,9 +42,9 @@
                     @forelse ($documents as $document)
                         @php
                             $consecutive = $document->consecutive ?? $document->invoice_number ?? $document->id;
-                            $party = $document->third_party_name ?? $document->customer_name ?? $document->provider ?? ($document->supplier->name ?? '');
-                            $date = $document->document_date ?? $document->sale_date ?? $document->purchase_date ?? null;
-                            $total = $document->total ?? $document->total_pagar ?? 0;
+                            $party = $document->third_party_name ?? $document->customer_name ?? $document->provider ?? $document->third_party ?? ($document->supplier->name ?? '');
+                            $date = $document->document_date ?? $document->sale_date ?? $document->purchase_date ?? $document->voucher_date ?? null;
+                            $total = $document->total ?? $document->total_pagar ?? $document->total_debit ?? 0;
                         @endphp
                         <tr>
                             <td class="p-3"><input type="checkbox" class="doc-check" name="ids[]" value="{{ $document->id }}"></td>

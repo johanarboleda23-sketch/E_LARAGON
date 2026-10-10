@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Mail\CommercialDocumentMail;
+use App\Models\AccountingVoucher;
 use App\Models\CommercialDocument;
 use App\Models\Purchase;
 use App\Models\Sale;
@@ -11,10 +12,10 @@ use App\Models\ThirdParty;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\Response;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rule;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use ZipArchive;
 
 class BulkOperationController extends Controller
@@ -22,9 +23,17 @@ class BulkOperationController extends Controller
     private const FAMILIES = [
         'quotations' => ['label' => 'Cotizaciones', 'source' => 'commercial_document', 'document_type' => 'quotation'],
         'sales_orders' => ['label' => 'Órdenes de venta', 'source' => 'commercial_document', 'document_type' => 'sales_order'],
+        'purchase_orders' => ['label' => 'Órdenes de compra', 'source' => 'commercial_document', 'document_type' => 'purchase_order'],
+        'remissions' => ['label' => 'Remisiones', 'source' => 'commercial_document', 'document_type' => 'remission'],
+        'customer_credit_notes' => ['label' => 'Notas crédito clientes', 'source' => 'commercial_document', 'document_type' => 'customer_credit_note'],
+        'supplier_debit_notes' => ['label' => 'Notas débito proveedores', 'source' => 'commercial_document', 'document_type' => 'supplier_debit_note'],
         'sales' => ['label' => 'Facturas de venta', 'source' => 'sale'],
+        'pos' => ['label' => 'Ventas POS', 'source' => 'pos_sale'],
         'purchases' => ['label' => 'Facturas de compra', 'source' => 'purchase'],
         'support_documents' => ['label' => 'Documentos soporte', 'source' => 'support_document'],
+        'expense_vouchers' => ['label' => 'Egresos', 'source' => 'accounting_voucher', 'voucher_type' => 'egreso'],
+        'cash_receipt_vouchers' => ['label' => 'Recibos de caja', 'source' => 'accounting_voucher', 'voucher_type' => 'recibo_caja'],
+        'all_vouchers' => ['label' => 'Todos los comprobantes contables', 'source' => 'accounting_voucher'],
     ];
 
     public function index(Request $request): View
@@ -57,7 +66,7 @@ class BulkOperationController extends Controller
         ]);
     }
 
-    public function download(Request $request): Response
+    public function download(Request $request): BinaryFileResponse
     {
         $data = $request->validate([
             'family' => ['required', 'string', Rule::in(array_keys(self::FAMILIES))],
@@ -133,6 +142,13 @@ class BulkOperationController extends Controller
                 ->latest('id')
                 ->when(! $ids, fn ($query) => $query->limit(50))
                 ->get(),
+            'pos_sale' => Sale::query()
+                ->with('details.item')
+                ->where('invoice_number', 'like', 'POS-%')
+                ->when($ids, fn ($query) => $query->whereIn('id', $ids))
+                ->latest('id')
+                ->when(! $ids, fn ($query) => $query->limit(50))
+                ->get(),
             'purchase' => Purchase::query()
                 ->when($ids, fn ($query) => $query->whereIn('id', $ids))
                 ->latest('id')
@@ -140,6 +156,13 @@ class BulkOperationController extends Controller
                 ->get(),
             'support_document' => SupportDocument::query()
                 ->with('supplier')
+                ->when($ids, fn ($query) => $query->whereIn('id', $ids))
+                ->latest('id')
+                ->when(! $ids, fn ($query) => $query->limit(50))
+                ->get(),
+            'accounting_voucher' => AccountingVoucher::query()
+                ->with('lines.account')
+                ->when($configuration['voucher_type'] ?? null, fn ($query, $voucherType) => $query->where('voucher_type', $voucherType))
                 ->when($ids, fn ($query) => $query->whereIn('id', $ids))
                 ->latest('id')
                 ->when(! $ids, fn ($query) => $query->limit(50))
@@ -154,6 +177,7 @@ class BulkOperationController extends Controller
             $document instanceof Sale => $document->invoice_number,
             $document instanceof Purchase => $document->invoice_number,
             $document instanceof SupportDocument => $document->consecutive,
+            $document instanceof AccountingVoucher => $document->consecutive,
             default => (string) $document->id,
         };
 
@@ -170,6 +194,9 @@ class BulkOperationController extends Controller
                 ->where('name', $document->provider)
                 ->value('email'),
             $document instanceof SupportDocument => $document->supplier?->email,
+            $document instanceof AccountingVoucher => ThirdParty::query()
+                ->where('name', $document->third_party)
+                ->value('email'),
             default => null,
         };
     }
@@ -200,6 +227,14 @@ class BulkOperationController extends Controller
         if ($document instanceof SupportDocument) {
             $body = "Documento soporte {$document->consecutive}\nConcepto: {$document->concept}\nTotal: {$document->total}";
             Mail::raw($body, fn ($message) => $message->to($email)->subject('Documento soporte '.$document->consecutive));
+
+            return;
+        }
+
+        if ($document instanceof AccountingVoucher) {
+            $voucherLabel = AccountingVoucherController::VOUCHER_TYPES[$document->voucher_type] ?? 'Comprobante contable';
+            $body = "{$voucherLabel}: {$document->consecutive}\nTercero: {$document->third_party}\nTotal débito: {$document->total_debit}\nTotal crédito: {$document->total_credit}";
+            Mail::raw($body, fn ($message) => $message->to($email)->subject($voucherLabel.' '.$document->consecutive));
         }
     }
 
@@ -210,6 +245,7 @@ class BulkOperationController extends Controller
             $document instanceof Sale => $this->csvRowsForSale($document),
             $document instanceof Purchase => $this->csvRowsForPurchase($document),
             $document instanceof SupportDocument => $this->csvRowsForSupportDocument($document),
+            $document instanceof AccountingVoucher => $this->csvRowsForAccountingVoucher($document),
             default => [],
         };
 
@@ -266,6 +302,25 @@ class BulkOperationController extends Controller
             ['Subtotal', number_format($document->subtotal, 2, '.', '')],
             ['Total', number_format($document->total, 2, '.', '')],
         ];
+    }
+
+    private function csvRowsForAccountingVoucher(AccountingVoucher $document): array
+    {
+        $voucherLabel = AccountingVoucherController::VOUCHER_TYPES[$document->voucher_type] ?? 'Comprobante contable';
+        $rows = [[$voucherLabel, $document->consecutive], ['Tercero', $document->third_party], ['Cuenta', 'Detalle', 'Débito', 'Crédito']];
+
+        foreach ($document->lines as $line) {
+            $rows[] = [
+                ($line->account->code ?? '').' '.($line->account->name ?? ''),
+                $line->detail,
+                number_format($line->debit, 2, '.', ''),
+                number_format($line->credit, 2, '.', ''),
+            ];
+        }
+
+        $rows[] = ['', 'Totales', number_format($document->total_debit, 2, '.', ''), number_format($document->total_credit, 2, '.', '')];
+
+        return $rows;
     }
 
     private function csvCell(mixed $value): string

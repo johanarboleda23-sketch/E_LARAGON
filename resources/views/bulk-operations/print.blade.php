@@ -24,10 +24,11 @@
 
     @foreach ($documents as $document)
         @php
+            $isVoucher = $document instanceof \App\Models\AccountingVoucher;
             $consecutive = $document->consecutive ?? $document->invoice_number ?? $document->id;
-            $party = $document->third_party_name ?? $document->customer_name ?? $document->provider ?? ($document->supplier->name ?? '');
-            $date = $document->document_date ?? $document->sale_date ?? $document->purchase_date ?? null;
-            $total = $document->total ?? $document->total_pagar ?? 0;
+            $party = $document->third_party_name ?? $document->customer_name ?? $document->provider ?? $document->third_party ?? ($document->supplier->name ?? '');
+            $date = $document->document_date ?? $document->sale_date ?? $document->purchase_date ?? $document->voucher_date ?? null;
+            $total = $document->total ?? $document->total_pagar ?? $document->total_debit ?? 0;
             $lines = $document->lines ?? $document->details ?? collect();
         @endphp
         <section class="document">
@@ -35,21 +36,39 @@
             <p><strong>Tercero:</strong> {{ $party }} — <strong>Fecha:</strong> {{ $date?->format('d/m/Y') }}</p>
 
             @if ($lines->isNotEmpty())
-                <table>
-                    <thead><tr><th>Detalle</th><th class="numeric">Cantidad</th><th class="numeric">Total</th></tr></thead>
-                    <tbody>
-                        @foreach ($lines as $line)
-                            <tr>
-                                <td>{{ $line->description ?? $line->item->name ?? '' }}</td>
-                                <td class="numeric">{{ $line->quantity }}</td>
-                                <td class="numeric">${{ number_format($line->line_total, 2) }}</td>
-                            </tr>
-                        @endforeach
-                    </tbody>
-                </table>
+                @if ($isVoucher)
+                    <table>
+                        <thead><tr><th>Cuenta</th><th>Detalle</th><th class="numeric">Débito</th><th class="numeric">Crédito</th></tr></thead>
+                        <tbody>
+                            @foreach ($lines as $line)
+                                <tr>
+                                    <td>{{ $line->account->code ?? '' }} {{ $line->account->name ?? '' }}</td>
+                                    <td>{{ $line->detail }}</td>
+                                    <td class="numeric">${{ number_format($line->debit, 2) }}</td>
+                                    <td class="numeric">${{ number_format($line->credit, 2) }}</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                    <p class="total">Total débito: ${{ number_format($document->total_debit, 2) }} — Total crédito: ${{ number_format($document->total_credit, 2) }}</p>
+                @else
+                    <table>
+                        <thead><tr><th>Detalle</th><th class="numeric">Cantidad</th><th class="numeric">Total</th></tr></thead>
+                        <tbody>
+                            @foreach ($lines as $line)
+                                <tr>
+                                    <td>{{ $line->description ?? $line->item->name ?? '' }}</td>
+                                    <td class="numeric">{{ $line->quantity }}</td>
+                                    <td class="numeric">${{ number_format($line->line_total, 2) }}</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                    <p class="total">Total: ${{ number_format($total, 2) }}</p>
+                @endif
+            @else
+                <p class="total">Total: ${{ number_format($total, 2) }}</p>
             @endif
-
-            <p class="total">Total: ${{ number_format($total, 2) }}</p>
         </section>
     @endforeach
 </body>

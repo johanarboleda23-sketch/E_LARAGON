@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\AccountingVoucherLine;
 use App\Models\CommercialDocument;
+use App\Models\PaymentMethod;
 use App\Models\PayrollRun;
 use App\Models\Purchase;
 use App\Models\Sale;
@@ -109,8 +110,41 @@ class ReportController extends Controller
     public function index(Request $request)
     {
         $report = $this->data($request);
+        $report['cashAndBanks'] = $this->cashAndBankBalances();
 
         return view('reports.index', $report);
+    }
+
+    /**
+     * Calcula el saldo contable (débitos - créditos) de cada forma de pago con cuenta PUC asociada,
+     * para mostrarlo en el panel flotante de Caja/Bancos.
+     *
+     * @return array<int, array{name: string, bank_name: ?string, account_number: ?string, is_cash: bool, balance: float}>
+     */
+    private function cashAndBankBalances(): array
+    {
+        return PaymentMethod::query()
+            ->whereNotNull('chart_of_account_id')
+            ->with('account')
+            ->orderByDesc('is_cash')
+            ->orderBy('name')
+            ->get()
+            ->map(function ($paymentMethod) {
+                $balance = (float) AccountingVoucherLine::query()
+                    ->where('chart_of_account_id', $paymentMethod->chart_of_account_id)
+                    ->selectRaw('COALESCE(SUM(debit), 0) - COALESCE(SUM(credit), 0) as balance')
+                    ->value('balance');
+
+                return [
+                    'name' => $paymentMethod->name,
+                    'bank_name' => $paymentMethod->bank_name,
+                    'account_number' => $paymentMethod->account_number,
+                    'is_cash' => $paymentMethod->is_cash,
+                    'balance' => $balance,
+                ];
+            })
+            ->values()
+            ->all();
     }
 
     public function excel(Request $request)

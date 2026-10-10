@@ -102,4 +102,31 @@
 			</div>
 		</div>
 	</div>
+
+	<button type="button" onclick="document.getElementById('cash-and-banks-panel').classList.toggle('hidden')" class="fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-full bg-[#227c70] px-5 py-3.5 text-sm font-bold text-white shadow-lg shadow-[#227c70]/30 hover:bg-[#1a5f55]">
+		🏦 Caja / Bancos
+	</button>
+
+	<div id="cash-and-banks-panel" class="fixed bottom-24 right-6 z-40 hidden w-80 max-w-[90vw] rounded-2xl border border-[#d7dfd8] bg-white p-4 shadow-2xl">
+		<div class="flex items-center justify-between">
+			<h3 class="text-sm font-black text-[#192522]">Saldos de caja y bancos</h3>
+			<button type="button" onclick="document.getElementById('cash-and-banks-panel').classList.add('hidden')" class="text-xs font-bold text-gray-400">✕</button>
+		</div>
+		<div class="mt-3 max-h-80 space-y-2 overflow-y-auto">
+			@forelse($cashAndBanks as $row)
+				<div class="rounded-lg border border-[#e6ede8] p-3">
+					<p class="text-xs font-bold text-[#192522]">
+						@if($row['is_cash'])
+							💵 {{ $row['name'] }}
+						@else
+							🏦 {{ $row['account_number'] ? $row['account_number'].' ' : '' }}{{ $row['bank_name'] ?: $row['name'] }}
+						@endif
+					</p>
+					<p class="mt-1 text-sm font-black {{ $row['balance'] >= 0 ? 'text-[#227c70]' : 'text-red-600' }}">${{ number_format($row['balance'], 2) }}</p>
+				</div>
+			@empty
+				<p class="p-2 text-xs text-gray-500">Asocia formas de pago a una cuenta PUC en Administración para verlas aquí.</p>
+			@endforelse
+		</div>
+	</div>
 </x-app-layout>

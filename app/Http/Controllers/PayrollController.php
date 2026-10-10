@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Company;
 use App\Models\EmployeeContract;
 use App\Models\PayrollLine;
 use App\Models\PayrollRun;
@@ -38,8 +39,9 @@ class PayrollController extends Controller
             ->latest()
             ->take(20)
             ->get();
+        $socialSecurityOperator = Company::find(session('company_id'));
 
-        return view('payroll.index', compact('employees', 'runs', 'socialSecurityErrors'));
+        return view('payroll.index', compact('employees', 'runs', 'socialSecurityErrors', 'socialSecurityOperator'));
     }
 
     public function calculate(Request $request)

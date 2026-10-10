@@ -24,6 +24,7 @@ use App\Http\Controllers\RegulationController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\SaleController;
 use App\Http\Controllers\SupportDocumentController;
+use App\Http\Controllers\TaxDraftController;
 use App\Http\Controllers\ThirdPartyController;
 use Illuminate\Support\Facades\Route;
 
@@ -75,11 +76,14 @@ Route::middleware(['auth', 'company'])->group(function () {
     Route::get('/reportes/pdf', [ReportController::class, 'pdf'])->name('reports.pdf');
     Route::get('/indicadores-financieros', [FinancialDashboardController::class, 'index'])->name('financial-dashboard.index');
     Route::get('/normativa', [RegulationController::class, 'index'])->name('regulations.index');
+    Route::get('/impuestos', [TaxDraftController::class, 'index'])->name('tax-drafts.index');
+    Route::get('/impuestos/{type}', [TaxDraftController::class, 'show'])->name('tax-drafts.show');
 
     Route::middleware('module:purchases')->group(function () {
         Route::post('/purchases/import-xml', [PurchaseController::class, 'importXML'])->name('purchases.import-xml');
         Route::post('/purchases/{purchase}/contabilizar', [PurchaseController::class, 'account'])->name('purchases.account');
         Route::post('/purchases/{purchase}/correo', [PurchaseController::class, 'email'])->name('purchases.email');
+        Route::get('/purchases/cartera', [PurchaseController::class, 'payables'])->name('purchases.payables');
         Route::get('/purchases/{purchase}/estado-cartera', [PurchaseController::class, 'statement'])->name('purchases.statement');
         Route::post('/purchases/{purchase}/abonos', [PaymentController::class, 'storeForPurchase'])->name('purchases.payments.store');
         Route::resource('purchases', PurchaseController::class)->withTrashed(['show']);
@@ -187,6 +191,8 @@ Route::middleware(['auth', 'company'])->group(function () {
     Route::delete('/admin/payment-methods/{paymentMethod}', [AdminController::class, 'destroyPaymentMethod'])->name('admin.payment-methods.destroy');
     Route::post('/admin/puc/seed', [AdminController::class, 'seedChartOfAccounts'])->name('admin.puc.seed');
     Route::post('/admin/factus', [AdminController::class, 'updateFactusCredential'])->name('admin.factus.update');
+    Route::post('/admin/seguridad-social', [AdminController::class, 'updateSocialSecuritySettings'])->name('admin.social-security.update');
+    Route::post('/admin/impuestos', [AdminController::class, 'updateTaxSettings'])->name('admin.tax-settings.update');
 
     Route::middleware('module:pos')->group(function () {
         Route::get('/pos', [PosController::class, 'index'])->name('pos.index');

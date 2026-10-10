@@ -64,7 +64,7 @@
                     <button type="button" onclick="editInvoice()" class="btn-white">Editar</button>
                     <button type="button" onclick="clearInvoice()" class="btn-white">Eliminar</button>
                     <button type="button" onclick="showCreditNote()" class="btn-pink-light">Notas Crédito / Débito</button>
-                    <button type="button" onclick="focusReceivable()" class="btn-white" style="border-color:#bfdbfe; color:#1d4ed8;">Estado Cartera (C x P)</button>
+                    <a href="{{ route('purchases.payables') }}" target="_blank" class="btn-white" style="border-color:#bfdbfe; color:#1d4ed8; text-decoration:none; display:inline-block;">Estado Cartera (C x P)</a>
                     @php($latestPurchaseVoucherId = optional($recentPurchases->first())->accounting_voucher_id)
                     @if($latestPurchaseVoucherId)
                         <a href="{{ route('accounting.vouchers.accounting', $latestPurchaseVoucherId) }}" target="_blank" class="btn-white" style="border-color:#e9d5ff; color:#6b21a8; text-decoration:none; display:inline-block;">Ver contabilización</a>

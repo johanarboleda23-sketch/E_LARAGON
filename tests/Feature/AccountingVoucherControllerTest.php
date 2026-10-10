@@ -19,6 +19,33 @@ class AccountingVoucherControllerTest extends TestCase
         $this->get(route('accounting.vouchers.index'))->assertRedirect(route('login'));
     }
 
+    public function test_social_security_voucher_shows_operator_link_only_when_configured(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $voucher = AccountingVoucher::create([
+            'company_id' => $company->id,
+            'consecutive' => 'SS-1',
+            'voucher_type' => 'seguridad_social',
+            'voucher_date' => now()->toDateString(),
+            'third_party' => 'Aportes seguridad social',
+            'total_debit' => 100000,
+            'total_credit' => 100000,
+        ]);
+
+        $this->get(route('accounting.vouchers.accounting', $voucher))
+            ->assertOk()
+            ->assertDontSee('Ir a Enlace Operativo');
+
+        $company->update([
+            'social_security_operator_name' => 'Enlace Operativo',
+            'social_security_operator_url' => 'https://www.enlaceoperativo.com',
+        ]);
+
+        $this->get(route('accounting.vouchers.accounting', $voucher))
+            ->assertOk()
+            ->assertSee('https://www.enlaceoperativo.com');
+    }
+
     public function test_note_opens_a_prefilled_accounting_voucher(): void
     {
         $this->authenticateWithCompany();

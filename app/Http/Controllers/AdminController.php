@@ -77,7 +77,11 @@ class AdminController extends Controller
         $this->authorizeAdmin($request);
         $data = $request->validate([
             'chart_of_account_id' => ['nullable', 'integer', 'exists:chart_of_accounts,id'],
+            'bank_name' => ['nullable', 'string', 'max:255'],
+            'account_number' => ['nullable', 'string', 'max:100'],
+            'is_cash' => ['sometimes', 'boolean'],
         ]);
+        $data['is_cash'] = $request->boolean('is_cash');
 
         $paymentMethod->update($data);
 
@@ -90,8 +94,12 @@ class AdminController extends Controller
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255', Rule::unique('payment_methods', 'name')->where('company_id', session('company_id'))],
             'chart_of_account_id' => ['nullable', 'integer', 'exists:chart_of_accounts,id'],
+            'bank_name' => ['nullable', 'string', 'max:255'],
+            'account_number' => ['nullable', 'string', 'max:100'],
+            'is_cash' => ['sometimes', 'boolean'],
         ]);
         $data['is_editable'] = true;
+        $data['is_cash'] = $request->boolean('is_cash');
 
         PaymentMethod::create($data);
 
@@ -135,5 +143,31 @@ class AdminController extends Controller
         FactusCredential::updateOrCreate(['company_id' => $company->id], $data + ['active' => true]);
 
         return back()->with('success', 'Credenciales de Factus guardadas.');
+    }
+
+    public function updateSocialSecuritySettings(Request $request)
+    {
+        $this->authorizeAdmin($request);
+        $data = $request->validate([
+            'social_security_operator_name' => ['nullable', 'string', 'max:255'],
+            'social_security_operator_url' => ['nullable', 'url', 'max:255'],
+        ]);
+        $company = $request->user()->companies()->where('companies.id', session('company_id'))->firstOrFail();
+        $company->update($data);
+
+        return back()->with('success', 'Operador de seguridad social actualizado.');
+    }
+
+    public function updateTaxSettings(Request $request)
+    {
+        $this->authorizeAdmin($request);
+        $data = $request->validate([
+            'ica_rate_per_thousand' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'income_tax_rate_percentage' => ['nullable', 'numeric', 'min:0', 'max:100'],
+        ]);
+        $company = $request->user()->companies()->where('companies.id', session('company_id'))->firstOrFail();
+        $company->update($data);
+
+        return back()->with('success', 'Tarifas de impuestos actualizadas.');
     }
 }

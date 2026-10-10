@@ -328,6 +328,21 @@ class PurchaseControllerTest extends TestCase
             ->assertSee($purchase->invoice_number);
     }
 
+    public function test_payables_shows_only_providers_with_pending_balance(): void
+    {
+        $this->authenticateWithCompany();
+        $item = $this->createProduct();
+        $this->post(route('purchases.store'), $this->purchasePayload($item, 100_000))
+            ->assertRedirect(route('purchases.index'));
+        $purchase = Purchase::query()->where('invoice_number', 'DAV-RET-001')->firstOrFail();
+
+        $response = $this->get(route('purchases.payables'));
+
+        $response->assertOk();
+        $response->assertSee($purchase->provider);
+        $response->assertSee(route('purchases.statement', $purchase->id));
+    }
+
     public function test_email_sends_the_purchase_invoice(): void
     {
         Mail::fake();

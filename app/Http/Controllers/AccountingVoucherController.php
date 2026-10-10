@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\AccountingVoucher;
 use App\Models\ChartOfAccount;
 use App\Models\CommercialDocument;
+use App\Models\Company;
 use App\Models\ThirdParty;
 use App\Services\AccountingEntryService;
 use Illuminate\Http\Request;
@@ -179,8 +180,9 @@ class AccountingVoucherController extends Controller
     public function accounting(AccountingVoucher $voucher)
     {
         $voucher->load('lines.account', 'creator');
+        $company = Company::find(session('company_id'));
 
-        return view('accounting.vouchers.accounting', compact('voucher'));
+        return view('accounting.vouchers.accounting', compact('voucher', 'company'));
     }
 
     /**

@@ -89,6 +89,7 @@
                     ['name' => 'Órdenes de compra', 'hint' => 'Pedidos a proveedores', 'route' => 'commercial-documents.purchase-orders', 'icon' => '📋'],
                     ['name' => 'Arqueo de caja', 'hint' => 'Cuadre de caja general y menor', 'route' => 'cash-register.index', 'icon' => '🧾'],
                     ['name' => 'TRM y monedas', 'hint' => 'Tasas de cambio y conversor', 'route' => 'currency.index', 'icon' => '💱'],
+                    ['name' => 'Borradores de impuestos', 'hint' => 'Renta, retención, IVA e ICA', 'route' => 'tax-drafts.index', 'icon' => '🧮'],
                 ];
             @endphp
 

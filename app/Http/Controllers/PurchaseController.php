@@ -429,6 +429,31 @@ class PurchaseController extends Controller
             : 'No se pudo contabilizar: '.($skipReason ?? 'configura las cuentas PUC necesarias.'));
     }
 
+    public function payables()
+    {
+        $providers = Purchase::query()
+            ->with('payments')
+            ->get()
+            ->groupBy('provider')
+            ->map(function ($documents, $provider) {
+                $balance = $documents->sum(fn (Purchase $document) => $document->balanceDue((float) $document->total_pagar));
+
+                return [
+                    'provider' => $provider,
+                    'invoice_count' => $documents->count(),
+                    'balance' => $balance,
+                    'sample_id' => $documents->first()->id,
+                ];
+            })
+            ->filter(fn (array $row) => $row['balance'] > 0)
+            ->sortByDesc('balance')
+            ->values();
+
+        $totalBalance = $providers->sum('balance');
+
+        return view('purchases.payables', compact('providers', 'totalBalance'));
+    }
+
     public function statement(Purchase $purchase)
     {
         $documents = Purchase::withTrashed()

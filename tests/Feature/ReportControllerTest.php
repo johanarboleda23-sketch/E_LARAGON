@@ -6,6 +6,7 @@ use App\Models\AccountingVoucher;
 use App\Models\AccountingVoucherLine;
 use App\Models\ChartOfAccount;
 use App\Models\Company;
+use App\Models\PaymentMethod;
 use App\Models\Purchase;
 use App\Models\Sale;
 use App\Models\User;
@@ -20,6 +21,51 @@ class ReportControllerTest extends TestCase
     public function test_guest_is_redirected_to_login(): void
     {
         $this->get(route('reports.index'))->assertRedirect(route('login'));
+    }
+
+    public function test_index_shows_cash_and_bank_balances_from_linked_payment_methods(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $account = ChartOfAccount::create([
+            'company_id' => $company->id,
+            'code' => '111005',
+            'name' => 'Bancolombia ahorros',
+            'account_type' => 'activo',
+            'class' => '1',
+            'nature' => 'debito',
+            'allows_posting' => true,
+        ]);
+        PaymentMethod::create([
+            'company_id' => $company->id,
+            'name' => 'Bancolombia',
+            'bank_name' => 'Bancolombia',
+            'account_number' => '1020459855',
+            'chart_of_account_id' => $account->id,
+            'is_editable' => true,
+        ]);
+        $voucher = AccountingVoucher::create([
+            'company_id' => $company->id,
+            'consecutive' => 'RC-1',
+            'voucher_type' => 'recibo_caja',
+            'voucher_date' => now()->toDateString(),
+            'third_party' => 'Cliente',
+            'total_debit' => 500000,
+            'total_credit' => 500000,
+        ]);
+        $voucher->lines()->create([
+            'company_id' => $company->id,
+            'chart_of_account_id' => $account->id,
+            'detail' => 'Abono',
+            'debit' => 500000,
+            'credit' => 0,
+        ]);
+
+        $response = $this->get(route('reports.index', $this->validFilters('all')));
+
+        $response->assertOk();
+        $response->assertSee('1020459855');
+        $response->assertSee('Bancolombia');
+        $response->assertSee(number_format(500000, 2));
     }
 
     public function test_report_lists_only_purchases_from_the_active_company(): void

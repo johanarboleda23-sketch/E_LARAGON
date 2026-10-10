@@ -20,6 +20,40 @@ class PayrollControllerTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_index_shows_the_social_security_operator_link_when_configured(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $company->update([
+            'social_security_operator_name' => 'Enlace Operativo',
+            'social_security_operator_url' => 'https://www.enlaceoperativo.com',
+        ]);
+
+        $this->get(route('payroll.index'))
+            ->assertOk()
+            ->assertSee('https://www.enlaceoperativo.com');
+    }
+
+    public function test_index_renders_with_and_without_existing_runs(): void
+    {
+        $this->authenticateWithCompany();
+
+        $this->get(route('payroll.index'))->assertOk();
+
+        $employee = $this->createEmployee();
+        $this->createContract($employee, riskClass: 1, epsName: 'Sura EPS', afpName: 'Protección', compensationFundName: 'Comfama');
+        $this->post(route('payroll.calculate'), [
+            'period' => '2026-10',
+            'payment_date' => '2026-10-31',
+            'employees' => [
+                ['third_party_id' => $employee->id, 'salary' => 2000000.0],
+            ],
+        ])->assertSessionHasNoErrors();
+
+        $this->get(route('payroll.index'))
+            ->assertOk()
+            ->assertSee('2026-10');
+    }
+
     public function test_calculate_derives_arl_and_parafiscals_from_the_employee_contract(): void
     {
         $this->authenticateWithCompany();

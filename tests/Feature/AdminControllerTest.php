@@ -66,6 +66,34 @@ class AdminControllerTest extends TestCase
         $this->assertSame(4, $credential->invoice_numbering_range_id);
     }
 
+    public function test_admin_can_configure_the_social_security_operator(): void
+    {
+        $company = $this->authenticateWithCompany();
+
+        $this->post(route('admin.social-security.update'), [
+            'social_security_operator_name' => 'Enlace Operativo',
+            'social_security_operator_url' => 'https://www.enlaceoperativo.com',
+        ])->assertRedirect();
+
+        $company->refresh();
+        $this->assertSame('Enlace Operativo', $company->social_security_operator_name);
+        $this->assertSame('https://www.enlaceoperativo.com', $company->social_security_operator_url);
+    }
+
+    public function test_admin_can_configure_tax_rates(): void
+    {
+        $company = $this->authenticateWithCompany();
+
+        $this->post(route('admin.tax-settings.update'), [
+            'ica_rate_per_thousand' => 6.9,
+            'income_tax_rate_percentage' => 35,
+        ])->assertRedirect();
+
+        $company->refresh();
+        $this->assertSame(6.9, (float) $company->ica_rate_per_thousand);
+        $this->assertSame(35.0, (float) $company->income_tax_rate_percentage);
+    }
+
     public function test_admin_can_create_a_new_payment_method_with_an_account(): void
     {
         $company = $this->authenticateWithCompany();

@@ -66,6 +66,11 @@
                     @else
                         <p class="mt-7 rounded-lg border border-white/20 px-4 py-2.5 text-center text-xs text-[#b9c9c1]">Calcula una nómina para preparar la planilla.</p>
                     @endif
+                    @if($socialSecurityOperator?->social_security_operator_url)
+                        <a href="{{ $socialSecurityOperator->social_security_operator_url }}" target="_blank" class="mt-3 block rounded-lg border border-white/20 px-4 py-2.5 text-center text-sm font-bold text-white">↗ Ir a {{ $socialSecurityOperator->social_security_operator_name ?? 'Enlace Operativo' }}</a>
+                    @else
+                        <a href="{{ route('admin.index') }}" class="mt-3 block rounded-lg border border-white/20 px-4 py-2.5 text-center text-xs text-[#b9c9c1]">Configura tu operador de PILA en Administración</a>
+                    @endif
                     @if($runs->isNotEmpty())
                         <form method="POST" action="{{ route('payroll.social-security.errors.import', $runs->first()) }}" enctype="multipart/form-data" class="mt-3 grid gap-2">
                             @csrf
@@ -86,7 +91,49 @@
                 </aside>
             </div>
 
-            <section id="historial" class="mt-5 rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm sm:p-6"><div class="flex items-center justify-between gap-3"><div><p class="text-[11px] font-bold uppercase tracking-[0.18em] text-[#d96b4c]">03 / Historial</p><h2 class="mt-1 text-xl font-black text-[#192522]">Últimas nóminas</h2></div><span class="rounded-full bg-[#edf7f4] px-3 py-1 text-xs font-bold text-[#227c70]">{{ $runs->count() }} periodos</span></div><div class="mt-5 grid gap-3 md:grid-cols-2 lg:grid-cols-3">@forelse($runs as $run)<article class="rounded-xl border border-[#d7dfd8] bg-[#f8faf8] p-4"><div class="flex justify-between gap-3"><span class="font-black text-[#192522]">{{ $run->period }}</span><span class="text-xs font-bold text-[#227c70]">{{ ucfirst($run->status) }}</span></div><p class="mt-2 text-xs text-[#71807a]">Pago: {{ $run->payment_date->format('d/m/Y') }}</p><p class="mt-3 text-sm font-bold text-[#192522]">Neto: ${{ number_format($run->total_net, 2) }}</p><a href="{{ route('payroll.show', $run) }}" class="mt-2 inline-block text-xs font-bold text-[#227c70]">Ver nómina</a>@if($run->accounting_voucher_id)<a href="{{ route('accounting.vouchers.accounting', $run->accounting_voucher_id) }}" target="_blank" class="mt-2 ml-3 inline-block text-xs font-bold text-[#227c70]">Ver contabilización</a>@else<form method="POST" action="{{ route('payroll.account', $run) }}" class="mt-2 ml-3 inline-block" onsubmit="return confirm('¿Contabilizar esta nómina ahora?')">@csrf<button type="submit" class="text-xs font-bold text-[#b65338]">Contabilizar ahora</button></form>@endif@foreach($run->lines as $line)<div class="mt-3 flex items-center justify-between border-t border-[#d7dfd8] pt-3 text-xs"><span>{{ $line->employee?->name }}</span>@if($line->employee?->email)<form method="POST" action="{{ route('payroll.email', $line) }}">@csrf<button class="font-bold text-[#227c70]">Enviar desprendible</button></form>@endif</div>@endforeach</article>@empty<p class="text-sm text-[#71807a]">Aún no hay nóminas calculadas.</p>@endforelse</div></section>
+            <section id="historial" class="mt-5 rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm sm:p-6">
+                <div class="flex items-center justify-between gap-3">
+                    <div>
+                        <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-[#d96b4c]">03 / Historial</p>
+                        <h2 class="mt-1 text-xl font-black text-[#192522]">Últimas nóminas</h2>
+                    </div>
+                    <span class="rounded-full bg-[#edf7f4] px-3 py-1 text-xs font-bold text-[#227c70]">{{ $runs->count() }} periodos</span>
+                </div>
+                <div class="mt-5 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+                    @forelse($runs as $run)
+                        <article class="rounded-xl border border-[#d7dfd8] bg-[#f8faf8] p-4">
+                            <div class="flex justify-between gap-3">
+                                <span class="font-black text-[#192522]">{{ $run->period }}</span>
+                                <span class="text-xs font-bold text-[#227c70]">{{ ucfirst($run->status) }}</span>
+                            </div>
+                            <p class="mt-2 text-xs text-[#71807a]">Pago: {{ $run->payment_date->format('d/m/Y') }}</p>
+                            <p class="mt-3 text-sm font-bold text-[#192522]">Neto: ${{ number_format($run->total_net, 2) }}</p>
+                            <a href="{{ route('payroll.show', $run) }}" class="mt-2 inline-block text-xs font-bold text-[#227c70]">Ver nómina</a>
+                            @if($run->accounting_voucher_id)
+                                <a href="{{ route('accounting.vouchers.accounting', $run->accounting_voucher_id) }}" target="_blank" class="mt-2 ml-3 inline-block text-xs font-bold text-[#227c70]">Ver contabilización</a>
+                            @else
+                                <form method="POST" action="{{ route('payroll.account', $run) }}" class="mt-2 ml-3 inline-block" onsubmit="return confirm('¿Contabilizar esta nómina ahora?')">
+                                    @csrf
+                                    <button type="submit" class="text-xs font-bold text-[#b65338]">Contabilizar ahora</button>
+                                </form>
+                            @endif
+                            @foreach($run->lines as $line)
+                                <div class="mt-3 flex items-center justify-between border-t border-[#d7dfd8] pt-3 text-xs">
+                                    <span>{{ $line->employee?->name }}</span>
+                                    @if($line->employee?->email)
+                                        <form method="POST" action="{{ route('payroll.email', $line) }}">
+                                            @csrf
+                                            <button class="font-bold text-[#227c70]">Enviar desprendible</button>
+                                        </form>
+                                    @endif
+                                </div>
+                            @endforeach
+                        </article>
+                    @empty
+                        <p class="text-sm text-[#71807a]">Aún no hay nóminas calculadas.</p>
+                    @endforelse
+                </div>
+            </section>
 
             <div class="sr-only" id="novedades">Novedades</div><div class="sr-only" id="prestaciones">Prestaciones</div><div class="sr-only" id="contabilizacion">Contabilización</div><div class="sr-only" id="desprendibles">Desprendibles</div><div class="sr-only" id="configuracion">Configuración</div>
         </div>

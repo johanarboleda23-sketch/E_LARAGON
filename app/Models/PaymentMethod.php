@@ -10,7 +10,7 @@ class PaymentMethod extends Model
 {
     use BelongsToCompany;
 
-    protected $fillable = ['name', 'is_editable', 'chart_of_account_id'];
+    protected $fillable = ['name', 'is_editable', 'chart_of_account_id', 'bank_name', 'account_number', 'is_cash'];
 
     public function account(): BelongsTo
     {

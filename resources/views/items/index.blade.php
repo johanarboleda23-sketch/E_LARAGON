@@ -3,6 +3,9 @@
         <div class="flex justify-between items-center">
             <h2 class="font-semibold text-xl text-pink-700 leading-tight">{{ __('Inventario') }}</h2>
             <div class="space-x-2">
+                <a href="{{ route('costs.index') }}" class="inline-flex items-center px-4 py-2 bg-teal-100 border border-teal-300 rounded-md font-semibold text-xs text-teal-700 uppercase tracking-widest hover:bg-teal-200">
+                    💹 Costos y márgenes
+                </a>
                 <a href="{{ route('items.create') }}" class="inline-flex items-center px-4 py-2 bg-pink-100 border border-pink-300 rounded-md font-semibold text-xs text-pink-700 uppercase tracking-widest hover:bg-pink-200">
                     + Página Nueva
                 </a>

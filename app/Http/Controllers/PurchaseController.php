@@ -252,6 +252,7 @@ class PurchaseController extends Controller
                     'stock_after' => $item->stock,
                     'reason' => $movementReason,
                 ]);
+                $item->recalculateAverageCost();
             }
         }
     }
@@ -263,6 +264,8 @@ class PurchaseController extends Controller
     private function reverseDetailsAndStock(Purchase $purchase): void
     {
         $purchase->loadMissing('details.item');
+
+        $affectedItemIds = [];
 
         foreach ($purchase->details as $detail) {
             if ($detail->purchase_line_type === 'producto' && $detail->item) {
@@ -280,11 +283,16 @@ class PurchaseController extends Controller
                         'stock_after' => $item->stock,
                         'reason' => 'Reversión por edición de factura '.$purchase->invoice_number,
                     ]);
+                    $affectedItemIds[] = $item->id;
                 }
             }
         }
 
         $purchase->details()->delete();
+
+        foreach (array_unique($affectedItemIds) as $itemId) {
+            Item::find($itemId)?->recalculateAverageCost();
+        }
 
         if ($purchase->accounting_voucher_id) {
             $oldVoucher = $purchase->accountingVoucher;
@@ -440,8 +448,15 @@ class PurchaseController extends Controller
 
     public function destroy(Purchase $purchase)
     {
+        $purchase->loadMissing('details.item');
+        $affectedItemIds = $purchase->details->where('purchase_line_type', 'producto')->pluck('item_id')->filter()->unique();
+
         $purchase->update(['deleted_by' => auth()->id()]);
         $purchase->delete();
+
+        foreach ($affectedItemIds as $itemId) {
+            Item::find($itemId)?->recalculateAverageCost();
+        }
 
         return redirect()->route('purchases.index')->with('success', 'Factura eliminada y conservada en el historial.');
     }

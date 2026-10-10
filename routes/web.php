@@ -7,6 +7,7 @@ use App\Http\Controllers\BulkOperationController;
 use App\Http\Controllers\ChartOfAccountController;
 use App\Http\Controllers\CommercialDocumentController;
 use App\Http\Controllers\CompanyController;
+use App\Http\Controllers\CostController;
 use App\Http\Controllers\CurrencyController;
 use App\Http\Controllers\DocumentLookupController;
 use App\Http\Controllers\ItemController;
@@ -183,6 +184,8 @@ Route::middleware(['auth', 'company'])->group(function () {
         Route::resource('items', ItemController::class)->except('show');
         Route::post('/items/{item}/stock', [ItemController::class, 'adjustStock'])->name('items.stock');
         Route::put('/items/{item}/cuentas-puc', [ItemController::class, 'updateAccounts'])->name('items.accounts');
+        Route::get('/costos', [CostController::class, 'index'])->name('costs.index');
+        Route::put('/costos/{item}', [CostController::class, 'update'])->name('costs.update');
     });
 
     Route::get('/comprobantes/{voucher}/json', [AccountingVoucherController::class, 'json'])->name('accounting.vouchers.json');

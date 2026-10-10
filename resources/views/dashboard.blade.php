@@ -80,6 +80,7 @@
                     ['name' => 'Reportes financieros', 'hint' => 'Excel y PDF', 'route' => 'reports.index', 'icon' => '📈'],
                     ['name' => 'Terceros', 'hint' => 'Clientes, proveedores, empleados', 'route' => 'third-parties.index', 'icon' => '🧑‍🤝‍🧑'],
                     ['name' => 'Inventario', 'hint' => 'Productos y stock', 'route' => 'items.index', 'icon' => '📦'],
+                    ['name' => 'Costos y márgenes', 'hint' => 'Costo promedio y precio sugerido', 'route' => 'costs.index', 'icon' => '💹'],
                     ['name' => 'Punto de venta', 'hint' => 'Ventas rápidas (POS)', 'route' => 'pos.index', 'icon' => '🛒'],
                     ['name' => 'Cotizaciones', 'hint' => 'Ofertas a clientes', 'route' => 'commercial-documents.quotations', 'icon' => '📝'],
                     ['name' => 'Órdenes de venta', 'hint' => 'Pedidos confirmados', 'route' => 'commercial-documents.sales-orders', 'icon' => '🗂️'],

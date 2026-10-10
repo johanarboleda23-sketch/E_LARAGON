@@ -87,6 +87,7 @@
                     ['name' => 'Órdenes de venta', 'hint' => 'Pedidos confirmados', 'route' => 'commercial-documents.sales-orders', 'icon' => '🗂️'],
                     ['name' => 'Remisiones', 'hint' => 'Entregas sin factura', 'route' => 'commercial-documents.remissions', 'icon' => '📦'],
                     ['name' => 'Órdenes de compra', 'hint' => 'Pedidos a proveedores', 'route' => 'commercial-documents.purchase-orders', 'icon' => '📋'],
+                    ['name' => 'Arqueo de caja', 'hint' => 'Cuadre de caja general y menor', 'route' => 'cash-register.index', 'icon' => '🧾'],
                     ['name' => 'TRM y monedas', 'hint' => 'Tasas de cambio y conversor', 'route' => 'currency.index', 'icon' => '💱'],
                 ];
             @endphp

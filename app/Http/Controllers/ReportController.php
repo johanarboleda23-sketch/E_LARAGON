@@ -49,19 +49,19 @@ class ReportController extends Controller
         $rows = collect();
 
         if (in_array($type, ['all', 'purchases'], true)) {
-            Purchase::whereBetween('purchase_date', [$from, $to])->get()->each(fn ($item) => $rows->push(['date' => $item->purchase_date->toDateString(), 'type' => 'Compra', 'document' => $item->invoice_number, 'third_party' => $item->provider, 'total' => $item->total_pagar]));
+            Purchase::whereDate('purchase_date', '>=', $from)->whereDate('purchase_date', '<=', $to)->get()->each(fn ($item) => $rows->push(['date' => $item->purchase_date->toDateString(), 'type' => 'Compra', 'document' => $item->invoice_number, 'third_party' => $item->provider, 'total' => $item->total_pagar]));
         }
         if (in_array($type, ['all', 'sales'], true)) {
-            Sale::whereBetween('sale_date', [$from, $to])->get()->each(fn ($item) => $rows->push(['date' => $item->sale_date->toDateString(), 'type' => 'Venta', 'document' => $item->invoice_number, 'third_party' => $item->customer_name, 'total' => $item->total]));
+            Sale::whereDate('sale_date', '>=', $from)->whereDate('sale_date', '<=', $to)->get()->each(fn ($item) => $rows->push(['date' => $item->sale_date->toDateString(), 'type' => 'Venta', 'document' => $item->invoice_number, 'third_party' => $item->customer_name, 'total' => $item->total]));
         }
         if (in_array($type, ['all', 'support'], true)) {
-            SupportDocument::whereBetween('document_date', [$from, $to])->with('supplier')->get()->each(fn ($item) => $rows->push(['date' => $item->document_date->toDateString(), 'type' => 'Documento soporte', 'document' => $item->consecutive, 'third_party' => $item->supplier->name, 'total' => $item->total]));
+            SupportDocument::whereDate('document_date', '>=', $from)->whereDate('document_date', '<=', $to)->with('supplier')->get()->each(fn ($item) => $rows->push(['date' => $item->document_date->toDateString(), 'type' => 'Documento soporte', 'document' => $item->consecutive, 'third_party' => $item->supplier->name, 'total' => $item->total]));
         }
         if (in_array($type, ['all', 'payroll'], true)) {
-            PayrollRun::whereBetween('payment_date', [$from, $to])->get()->each(fn ($item) => $rows->push(['date' => $item->payment_date->toDateString(), 'type' => 'Nómina', 'document' => $item->period, 'third_party' => 'Empleados', 'total' => $item->total_net]));
+            PayrollRun::whereDate('payment_date', '>=', $from)->whereDate('payment_date', '<=', $to)->get()->each(fn ($item) => $rows->push(['date' => $item->payment_date->toDateString(), 'type' => 'Nómina', 'document' => $item->period, 'third_party' => 'Empleados', 'total' => $item->total_net]));
         }
         if (in_array($type, ['all', 'commercial'], true)) {
-            CommercialDocument::whereBetween('document_date', [$from, $to])->get()->each(fn ($item) => $rows->push([
+            CommercialDocument::whereDate('document_date', '>=', $from)->whereDate('document_date', '<=', $to)->get()->each(fn ($item) => $rows->push([
                 'date' => $item->document_date->toDateString(),
                 'type' => CommercialDocument::TYPES[$item->document_type] ?? $item->document_type,
                 'document' => $item->consecutive,
@@ -71,7 +71,7 @@ class ReportController extends Controller
         }
         if ($type === 'accounting') {
             AccountingVoucherLine::whereHas('voucher', function ($query) use ($from, $to, $thirdParty) {
-                $query->whereBetween('voucher_date', [$from, $to]);
+                $query->whereDate('voucher_date', '>=', $from)->whereDate('voucher_date', '<=', $to);
                 if ($thirdParty) {
                     $query->where('third_party', 'like', '%'.$thirdParty.'%');
                 }
@@ -88,7 +88,7 @@ class ReportController extends Controller
                 ]));
         }
         if ($type === 'taxes') {
-            Purchase::whereBetween('purchase_date', [$from, $to])->get()->each(function ($item) use (&$rows) {
+            Purchase::whereDate('purchase_date', '>=', $from)->whereDate('purchase_date', '<=', $to)->get()->each(function ($item) use (&$rows) {
                 if ($item->iva_total > 0) {
                     $rows->push(['date' => $item->purchase_date->toDateString(), 'type' => 'IVA descontable (compra)', 'document' => $item->invoice_number, 'third_party' => $item->provider, 'total' => $item->iva_total]);
                 }
@@ -96,7 +96,7 @@ class ReportController extends Controller
                     $rows->push(['date' => $item->purchase_date->toDateString(), 'type' => 'Retención en la fuente practicada', 'document' => $item->invoice_number, 'third_party' => $item->provider, 'total' => $item->retefuente]);
                 }
             });
-            Sale::whereBetween('sale_date', [$from, $to])->get()->each(function ($item) use (&$rows) {
+            Sale::whereDate('sale_date', '>=', $from)->whereDate('sale_date', '<=', $to)->get()->each(function ($item) use (&$rows) {
                 if ($item->iva_total > 0) {
                     $rows->push(['date' => $item->sale_date->toDateString(), 'type' => 'IVA generado (venta)', 'document' => $item->invoice_number, 'third_party' => $item->customer_name, 'total' => $item->iva_total]);
                 }

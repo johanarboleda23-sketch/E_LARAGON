@@ -4,6 +4,7 @@ use App\Http\Controllers\AccountingVoucherController;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\BankReconciliationController;
 use App\Http\Controllers\BulkOperationController;
+use App\Http\Controllers\CashRegisterController;
 use App\Http\Controllers\ChartOfAccountController;
 use App\Http\Controllers\CommercialDocumentController;
 use App\Http\Controllers\CompanyController;
@@ -113,6 +114,12 @@ Route::middleware(['auth', 'company'])->group(function () {
     Route::middleware('module:currency')->group(function () {
         Route::get('/monedas', [CurrencyController::class, 'index'])->name('currency.index');
         Route::post('/monedas', [CurrencyController::class, 'store'])->name('currency.store');
+    });
+
+    Route::middleware('module:cash-register')->group(function () {
+        Route::get('/arqueo-de-caja', [CashRegisterController::class, 'index'])->name('cash-register.index');
+        Route::post('/arqueo-de-caja/abrir', [CashRegisterController::class, 'open'])->name('cash-register.open');
+        Route::post('/arqueo-de-caja/{cashRegisterSession}/cerrar', [CashRegisterController::class, 'close'])->name('cash-register.close');
     });
 
     Route::middleware('module:payroll')->group(function () {

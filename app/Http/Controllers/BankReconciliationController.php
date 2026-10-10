@@ -236,14 +236,16 @@ class BankReconciliationController extends Controller
         return response()->json([
             'sales' => Sale::query()
                 ->where('total', $statement->amount)
-                ->whereBetween('sale_date', [$dateFrom, $dateTo])
+                ->whereDate('sale_date', '>=', $dateFrom->toDateString())
+                ->whereDate('sale_date', '<=', $dateTo->toDateString())
                 ->latest('id')
                 ->limit(5)
                 ->get(['id', 'invoice_number', 'customer_name', 'sale_date', 'total'])
                 ->all(),
             'purchases' => Purchase::query()
                 ->where('total_pagar', $statement->amount)
-                ->whereBetween('purchase_date', [$dateFrom, $dateTo])
+                ->whereDate('purchase_date', '>=', $dateFrom->toDateString())
+                ->whereDate('purchase_date', '<=', $dateTo->toDateString())
                 ->latest('id')
                 ->limit(5)
                 ->get(['id', 'invoice_number', 'provider', 'purchase_date', 'total_pagar'])

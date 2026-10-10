@@ -26,6 +26,7 @@ class RolePermissions
         'logistics' => ['auxiliar'],
         'numbering-resolutions' => ['contador'],
         'currency' => ['contador', 'auxiliar'],
+        'cash-register' => ['contador', 'auxiliar', 'vendedor'],
     ];
 
     public static function canWrite(?string $role, string $module): bool

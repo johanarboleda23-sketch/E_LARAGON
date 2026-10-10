@@ -18,7 +18,7 @@
 </head>
 <body>
     <h1>Editar documento soporte</h1>
-    <p class="hint">Solo se editan los datos del encabezado. Para corregir valores ya contabilizados, usa una nota crédito/débito.</p>
+    <p class="hint">Al guardar, si ya estaba contabilizado se revierte el asiento anterior y se genera uno nuevo con los valores corregidos.</p>
     <form method="POST" action="{{ route('support-documents.update', $document) }}">
         @csrf
         @method('PUT')
@@ -38,6 +38,23 @@
 
         <label>Concepto</label>
         <input type="text" name="concept" value="{{ old('concept', $document->concept) }}" required>
+
+        <label>Subtotal</label>
+        <input type="number" step="0.01" min="0" name="subtotal" value="{{ old('subtotal', $document->subtotal) }}" required>
+
+        <label>IVA</label>
+        <input type="number" step="0.01" min="0" name="iva_total" value="{{ old('iva_total', $document->iva_total) }}" required>
+
+        <label>Concepto de retención</label>
+        <select name="withholding_concept" required>
+            @foreach($withholdings['concepts'] as $key => $concept)
+                <option value="{{ $key }}" @selected(old('withholding_concept', $document->withholding_concept) === $key)>{{ $concept['label'] }}</option>
+            @endforeach
+        </select>
+
+        <label style="display:flex;align-items:center;gap:6px;flex-direction:row;text-transform:none;font-size:13px;color:#374151;">
+            <input type="checkbox" name="skip_dian" value="1" style="width:auto;" @checked($document->skip_dian)> No enviar a la DIAN (uso interno)
+        </label>
 
         @if($errors->any())
             <p style="color:#b91c1c;margin-top:14px;">{{ $errors->first() }}</p>

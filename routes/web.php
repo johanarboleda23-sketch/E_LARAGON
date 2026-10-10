@@ -14,6 +14,7 @@ use App\Http\Controllers\FinancialDashboardController;
 use App\Http\Controllers\ItemController;
 use App\Http\Controllers\LogisticsController;
 use App\Http\Controllers\NumberingResolutionController;
+use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\PayrollController;
 use App\Http\Controllers\PosController;
 use App\Http\Controllers\ProfileController;
@@ -79,6 +80,7 @@ Route::middleware(['auth', 'company'])->group(function () {
         Route::post('/purchases/{purchase}/contabilizar', [PurchaseController::class, 'account'])->name('purchases.account');
         Route::post('/purchases/{purchase}/correo', [PurchaseController::class, 'email'])->name('purchases.email');
         Route::get('/purchases/{purchase}/estado-cartera', [PurchaseController::class, 'statement'])->name('purchases.statement');
+        Route::post('/purchases/{purchase}/abonos', [PaymentController::class, 'storeForPurchase'])->name('purchases.payments.store');
         Route::resource('purchases', PurchaseController::class)->withTrashed(['show']);
     });
 
@@ -92,6 +94,7 @@ Route::middleware(['auth', 'company'])->group(function () {
         Route::get('/ventas/{sale}/xml', [SaleController::class, 'xml'])->name('sales.xml');
         Route::post('/ventas/{sale}/contabilizar', [SaleController::class, 'account'])->name('sales.account');
         Route::get('/ventas/{sale}/estado-cartera', [SaleController::class, 'statement'])->name('sales.statement');
+        Route::post('/ventas/{sale}/abonos', [PaymentController::class, 'storeForSale'])->name('sales.payments.store');
     });
 
     Route::middleware('module:support-documents')->group(function () {
@@ -104,6 +107,7 @@ Route::middleware(['auth', 'company'])->group(function () {
         Route::post('/documentos-soporte/{document}/correo', [SupportDocumentController::class, 'email'])->name('support-documents.email');
         Route::post('/documentos-soporte/{document}/contabilizar', [SupportDocumentController::class, 'account'])->name('support-documents.account');
         Route::get('/documentos-soporte/{document}/estado-cartera', [SupportDocumentController::class, 'statement'])->name('support-documents.statement');
+        Route::post('/documentos-soporte/{document}/abonos', [PaymentController::class, 'storeForSupportDocument'])->name('support-documents.payments.store');
     });
 
     Route::middleware('module:currency')->group(function () {

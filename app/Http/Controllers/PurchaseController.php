@@ -433,11 +433,12 @@ class PurchaseController extends Controller
     {
         $documents = Purchase::withTrashed()
             ->where('provider', $purchase->provider)
+            ->with('payments')
             ->orderBy('purchase_date')
             ->orderBy('id')
             ->get();
 
-        $balance = $documents->sum(fn (Purchase $document) => $document->trashed() ? 0 : (float) $document->total_pagar);
+        $balance = $documents->sum(fn (Purchase $document) => $document->trashed() ? 0 : $document->balanceDue((float) $document->total_pagar));
 
         return view('purchases.statement', [
             'provider' => $purchase->provider,

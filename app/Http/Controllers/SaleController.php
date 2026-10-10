@@ -81,7 +81,7 @@ class SaleController extends Controller
             return back()->withErrors(['invoice_number' => $e->getMessage()])->withInput();
         }
 
-        $sale = DB::transaction(function () use ($data, $invoiceNumber) {
+        $sale = DB::transaction(function () use ($data, $invoiceNumber, $request) {
             $sale = Sale::create([
                 'invoice_number' => $invoiceNumber,
                 'customer_name' => $data['customer_name'],
@@ -95,39 +95,11 @@ class SaleController extends Controller
                 'retention_base' => $data['retention_base'],
                 'retention_total' => $data['retention_total'],
                 'total' => $data['total'],
+                'skip_dian' => $request->boolean('skip_dian'),
                 'created_by' => auth()->id(),
             ]);
 
-            foreach ($data['items'] as $itemData) {
-                $item = Item::lockForUpdate()->findOrFail($itemData['item_id']);
-                $quantity = (int) $itemData['quantity'];
-                if ($item->stock < $quantity) {
-                    abort(422, "Stock insuficiente para {$item->name}.");
-                }
-                $lineSubtotal = $quantity * (float) $itemData['unit_price'];
-                $discount = $lineSubtotal * ((float) ($itemData['discount_percentage'] ?? 0) / 100);
-                $lineTotal = $lineSubtotal - $discount;
-                SaleDetail::create([
-                    'sale_id' => $sale->id,
-                    'item_id' => $item->id,
-                    'quantity' => $quantity,
-                    'unit_price' => $itemData['unit_price'],
-                    'iva_percentage' => $itemData['iva_percentage'],
-                    'discount_percentage' => $itemData['discount_percentage'] ?? 0,
-                    'line_total' => $lineTotal,
-                ]);
-                $stockBefore = $item->stock;
-                $item->decrement('stock', $quantity);
-                $item->refresh();
-                InventoryMovement::create([
-                    'item_id' => $item->id,
-                    'type' => 'salida',
-                    'quantity' => $quantity,
-                    'stock_before' => $stockBefore,
-                    'stock_after' => $item->stock,
-                    'reason' => 'Venta '.$sale->invoice_number,
-                ]);
-            }
+            $this->syncDetailsAndStock($sale, $data['items']);
 
             return $sale;
         });
@@ -136,16 +108,95 @@ class SaleController extends Controller
         $accountingVoucher = $this->accountingEntryService->postSale($sale, $skipReason);
 
         $factusSkipReason = null;
-        $sentToDian = $this->factusService->sendSaleInvoice($sale, session('company_id'), $factusSkipReason);
+        $sentToDian = $sale->skip_dian ? false : $this->factusService->sendSaleInvoice($sale, session('company_id'), $factusSkipReason);
 
         $message = $accountingVoucher
             ? '¡Factura de venta guardada, stock actualizado y contabilizada!'
             : '¡Factura de venta guardada y stock actualizado! No se contabilizó automáticamente: '.($skipReason ?? 'configura las cuentas PUC necesarias.');
-        $message .= $sentToDian
-            ? ' Enviada a la DIAN a través de Factus.'
-            : ' No se envió a la DIAN: '.($factusSkipReason ?? 'error desconocido.');
+        $message .= $sale->skip_dian
+            ? ' Marcada como factura interna: no se envía a la DIAN.'
+            : ($sentToDian
+                ? ' Enviada a la DIAN a través de Factus.'
+                : ' No se envió a la DIAN: '.($factusSkipReason ?? 'error desconocido.'));
 
         return redirect()->route('sales.index')->with('success', $message);
+    }
+
+    /**
+     * Crea los renglones de la venta y aplica la salida de inventario correspondiente.
+     *
+     * @param  array<int, array<string, mixed>>  $items
+     */
+    private function syncDetailsAndStock(Sale $sale, array $items, ?string $movementReason = null): void
+    {
+        $movementReason ??= 'Venta '.$sale->invoice_number;
+
+        foreach ($items as $itemData) {
+            $item = Item::lockForUpdate()->findOrFail($itemData['item_id']);
+            $quantity = (int) $itemData['quantity'];
+            if ($item->stock < $quantity) {
+                abort(422, "Stock insuficiente para {$item->name}.");
+            }
+            $lineSubtotal = $quantity * (float) $itemData['unit_price'];
+            $discount = $lineSubtotal * ((float) ($itemData['discount_percentage'] ?? 0) / 100);
+            $lineTotal = $lineSubtotal - $discount;
+            SaleDetail::create([
+                'sale_id' => $sale->id,
+                'item_id' => $item->id,
+                'quantity' => $quantity,
+                'unit_price' => $itemData['unit_price'],
+                'iva_percentage' => $itemData['iva_percentage'],
+                'discount_percentage' => $itemData['discount_percentage'] ?? 0,
+                'line_total' => $lineTotal,
+            ]);
+            $stockBefore = $item->stock;
+            $item->decrement('stock', $quantity);
+            $item->refresh();
+            InventoryMovement::create([
+                'item_id' => $item->id,
+                'type' => 'salida',
+                'quantity' => $quantity,
+                'stock_before' => $stockBefore,
+                'stock_after' => $item->stock,
+                'reason' => $movementReason,
+            ]);
+        }
+    }
+
+    /**
+     * Revierte el stock y la contabilización previos de una venta antes de editarla.
+     */
+    private function reverseDetailsAndStock(Sale $sale): void
+    {
+        $sale->loadMissing('details.item');
+
+        foreach ($sale->details as $detail) {
+            if ($detail->item) {
+                $item = Item::lockForUpdate()->find($detail->item->id);
+                if ($item) {
+                    $stockBefore = $item->stock;
+                    $item->increment('stock', $detail->quantity);
+                    $item->refresh();
+                    InventoryMovement::create([
+                        'item_id' => $item->id,
+                        'type' => 'entrada',
+                        'quantity' => $detail->quantity,
+                        'stock_before' => $stockBefore,
+                        'stock_after' => $item->stock,
+                        'reason' => 'Reversión por edición de factura '.$sale->invoice_number,
+                    ]);
+                }
+            }
+        }
+
+        $sale->details()->delete();
+
+        if ($sale->accounting_voucher_id) {
+            $oldVoucher = $sale->accountingVoucher;
+            $sale->update(['accounting_voucher_id' => null]);
+            $oldVoucher?->lines()->delete();
+            $oldVoucher?->delete();
+        }
     }
 
     public function email(Request $request, Sale $sale)
@@ -170,7 +221,18 @@ class SaleController extends Controller
 
     public function edit(Sale $sale)
     {
-        return view('sales.edit', compact('sale'));
+        $sale->load('details.item');
+        $items = Item::where('type', 'producto')->orderBy('name')->get();
+        $productOptions = $items->map(fn (Item $item) => [
+            'id' => $item->id,
+            'name' => $item->name,
+            'price' => $item->sale_price,
+            'stock' => $item->stock,
+        ])->values();
+        $customers = ThirdParty::where('is_customer', true)->where('active', true)->orderBy('name')->get();
+        $withholdings = config('colombia_withholdings');
+
+        return view('sales.edit', compact('sale', 'items', 'productOptions', 'customers', 'withholdings'));
     }
 
     public function update(Request $request, Sale $sale)
@@ -181,22 +243,61 @@ class SaleController extends Controller
             'customer_document' => 'nullable|string|max:100',
             'customer_email' => 'nullable|email|max:255',
             'sale_date' => 'required|date',
+            'subtotal' => 'required|numeric|min:0',
+            'iva_total' => 'required|numeric|min:0',
+            'discount_total' => 'required|numeric|min:0',
+            'withholding_concept' => 'required|string|in:'.implode(',', array_keys(config('colombia_withholdings.concepts'))),
+            'retention_base' => 'required|numeric|min:0',
+            'retention_total' => 'required|numeric|min:0',
+            'total' => 'required|numeric|min:0',
+            'items' => 'required|array|min:1',
+            'items.*.item_id' => 'required|exists:items,id',
+            'items.*.quantity' => 'required|integer|min:1',
+            'items.*.unit_price' => 'required|numeric|min:0',
+            'items.*.iva_percentage' => 'required|numeric|min:0',
+            'items.*.discount_percentage' => 'nullable|numeric|min:0|max:100',
         ]);
 
-        $sale->update($data);
+        DB::transaction(function () use ($data, $sale, $request): void {
+            $this->reverseDetailsAndStock($sale);
 
-        return redirect()->route('sales.show', $sale)->with('success', 'Factura actualizada correctamente.');
+            $sale->update([
+                'invoice_number' => $data['invoice_number'],
+                'customer_name' => $data['customer_name'],
+                'customer_document' => $data['customer_document'] ?? null,
+                'customer_email' => $data['customer_email'] ?? null,
+                'sale_date' => $data['sale_date'],
+                'subtotal' => $data['subtotal'],
+                'iva_total' => $data['iva_total'],
+                'discount_total' => $data['discount_total'],
+                'withholding_concept' => $data['withholding_concept'],
+                'retention_base' => $data['retention_base'],
+                'retention_total' => $data['retention_total'],
+                'total' => $data['total'],
+                'skip_dian' => $request->boolean('skip_dian'),
+            ]);
+
+            $this->syncDetailsAndStock($sale, $data['items'], 'Edición de factura '.$data['invoice_number']);
+        });
+
+        $skipReason = null;
+        $accountingVoucher = $this->accountingEntryService->postSale($sale->fresh(), $skipReason);
+
+        return redirect()->route('sales.show', $sale)->with('success', $accountingVoucher
+            ? '¡Factura actualizada, stock recalculado y vuelta a contabilizar correctamente!'
+            : '¡Factura actualizada y stock recalculado! No se contabilizó automáticamente: '.($skipReason ?? 'configura las cuentas PUC necesarias.'));
     }
 
     public function statement(Sale $sale)
     {
         $documents = Sale::query()
             ->where('customer_name', $sale->customer_name)
+            ->with('payments')
             ->orderBy('sale_date')
             ->orderBy('id')
             ->get();
 
-        $balance = $documents->sum(fn (Sale $document) => (float) $document->total);
+        $balance = $documents->sum(fn (Sale $document) => $document->balanceDue((float) $document->total));
 
         return view('sales.statement', [
             'customer' => $sale->customer_name,

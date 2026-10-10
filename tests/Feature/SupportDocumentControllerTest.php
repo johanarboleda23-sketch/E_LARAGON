@@ -123,9 +123,14 @@ class SupportDocumentControllerTest extends TestCase
             'document_date' => now()->toDateString(),
             'third_party_id' => $supplier->id,
             'concept' => 'Concepto actualizado',
+            'subtotal' => 1_500_000,
+            'iva_total' => 0,
+            'withholding_concept' => 'none',
         ])->assertRedirect(route('support-documents.show', $document));
 
-        $this->assertSame('Concepto actualizado', $document->fresh()->concept);
+        $document->refresh();
+        $this->assertSame('Concepto actualizado', $document->concept);
+        $this->assertSame(1_500_000.0, (float) $document->subtotal);
     }
 
     public function test_statement_lists_all_documents_from_the_same_supplier(): void

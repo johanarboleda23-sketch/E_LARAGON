@@ -46,10 +46,11 @@ class FinancialDashboardController extends Controller
         $netProfit = round($grossProfit - $operatingExpenses, 2);
         $netMargin = $totalSales > 0 ? round($netProfit / $totalSales * 100, 2) : null;
 
-        // Cartera: suma de documentos emitidos en el periodo. No reflejan abonos/pagos porque el
-        // sistema aún no registra pagos parciales; representan el total facturado.
-        $receivables = $totalSalesWithTax;
-        $payables = (float) Purchase::whereDate('purchase_date', '>=', $from)->whereDate('purchase_date', '<=', $to)->sum('total_pagar');
+        // Cartera: saldo pendiente REAL (total facturado menos abonos registrados), sin
+        // importar el periodo filtrado, porque es un saldo a hoy (como un balance), no un
+        // movimiento del periodo.
+        $receivables = (float) Sale::with('payments')->get()->sum(fn (Sale $sale) => $sale->balanceDue((float) $sale->total));
+        $payables = (float) Purchase::with('payments')->get()->sum(fn (Purchase $purchase) => $purchase->balanceDue((float) $purchase->total_pagar));
 
         // Inventario valorizado al costo promedio actual.
         $inventoryValue = (float) Item::where('type', 'producto')->get()

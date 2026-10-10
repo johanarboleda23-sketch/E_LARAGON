@@ -38,8 +38,9 @@ class SupportDocumentController extends Controller
     public function edit(SupportDocument $document)
     {
         $suppliers = ThirdParty::where('is_supplier', true)->where('active', true)->orderBy('name')->get();
+        $withholdings = config('colombia_withholdings');
 
-        return view('support-documents.edit', compact('document', 'suppliers'));
+        return view('support-documents.edit', compact('document', 'suppliers', 'withholdings'));
     }
 
     public function update(Request $request, SupportDocument $document)
@@ -49,23 +50,48 @@ class SupportDocumentController extends Controller
             'document_date' => 'required|date',
             'third_party_id' => 'required|exists:third_parties,id',
             'concept' => 'required|string|max:255',
+            'subtotal' => 'required|numeric|min:0',
+            'iva_total' => 'required|numeric|min:0',
+            'withholding_concept' => 'required|string|in:'.implode(',', array_keys(config('colombia_withholdings.concepts'))),
         ]);
+
+        $concept = config('colombia_withholdings.concepts.'.$data['withholding_concept']);
+        $base = $concept['base_on'] === 'iva' ? $data['iva_total'] : $data['subtotal'];
+        $minimum = $concept['base_uvt'] * config('colombia_withholdings.uvt');
+        $retention = $base >= $minimum ? round($base * $concept['rate'], 2) : 0;
+        $data['retention_total'] = $retention;
+        $data['total'] = round($data['subtotal'] + $data['iva_total'] - $retention, 2);
+        $data['skip_dian'] = $request->boolean('skip_dian');
+
+        // Si ya estaba contabilizado, se revierte el asiento anterior para volver a generarlo con
+        // los valores corregidos (igual que al editar una compra o una venta).
+        if ($document->accounting_voucher_id) {
+            $oldVoucher = $document->accountingVoucher;
+            $document->update(['accounting_voucher_id' => null]);
+            $oldVoucher?->lines()->delete();
+            $oldVoucher?->delete();
+        }
 
         $document->update($data);
 
-        return redirect()->route('support-documents.show', $document)->with('success', 'Documento actualizado correctamente.');
+        $skipReason = null;
+        $accountingVoucher = $this->accountingEntryService->postSupportDocument($document->fresh(), $skipReason);
+
+        return redirect()->route('support-documents.show', $document)->with('success', $accountingVoucher
+            ? '¡Documento actualizado y vuelto a contabilizar correctamente!'
+            : '¡Documento actualizado! No se contabilizó automáticamente: '.($skipReason ?? 'configura las cuentas PUC necesarias.'));
     }
 
     public function statement(SupportDocument $document)
     {
         $documents = SupportDocument::query()
-            ->with('supplier')
+            ->with(['supplier', 'payments'])
             ->where('third_party_id', $document->third_party_id)
             ->orderBy('document_date')
             ->orderBy('id')
             ->get();
 
-        $balance = $documents->sum(fn (SupportDocument $item) => (float) $item->total);
+        $balance = $documents->sum(fn (SupportDocument $item) => $item->balanceDue((float) $item->total));
 
         return view('support-documents.statement', [
             'supplier' => $document->supplier,
@@ -110,6 +136,7 @@ class SupportDocumentController extends Controller
         $data['company_id'] = session('company_id');
         $data['created_by'] = auth()->id();
         $data['status'] = 'draft';
+        $data['skip_dian'] = $request->boolean('skip_dian');
 
         try {
             $data['consecutive'] = NumberingResolution::allocateNext('support_document') ?? $data['consecutive'];
@@ -123,14 +150,16 @@ class SupportDocumentController extends Controller
         $accountingVoucher = $this->accountingEntryService->postSupportDocument($document, $skipReason);
 
         $factusSkipReason = null;
-        $sentToDian = $this->factusService->sendSupportDocumentInvoice($document, session('company_id'), $factusSkipReason);
+        $sentToDian = $document->skip_dian ? false : $this->factusService->sendSupportDocumentInvoice($document, session('company_id'), $factusSkipReason);
 
         $message = $accountingVoucher
             ? 'Documento soporte guardado y contabilizado correctamente.'
             : 'Documento soporte guardado correctamente. No se contabilizó automáticamente: '.($skipReason ?? 'configura las cuentas PUC necesarias.');
-        $message .= $sentToDian
-            ? ' Enviado a la DIAN a través de Factus.'
-            : ' No se envió a la DIAN: '.($factusSkipReason ?? 'error desconocido.');
+        $message .= $document->skip_dian
+            ? ' Marcado como documento interno: no se envía a la DIAN.'
+            : ($sentToDian
+                ? ' Enviado a la DIAN a través de Factus.'
+                : ' No se envió a la DIAN: '.($factusSkipReason ?? 'error desconocido.'));
 
         return back()->with('success', $message);
     }

@@ -147,23 +147,53 @@ class SaleControllerTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_edit_and_update_change_the_sale_header(): void
+    public function test_sale_marked_with_skip_dian_never_calls_factus_even_with_credentials(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $item = $this->createProduct();
+        $this->createFactusCredential($company);
+        Http::fake();
+
+        $payload = $this->salePayload($item, 100_000);
+        $payload['skip_dian'] = 1;
+
+        $response = $this->post(route('sales.store'), $payload)->assertRedirect(route('sales.index'));
+
+        $sale = Sale::query()->where('invoice_number', 'VTA-TEST-001')->firstOrFail();
+        $this->assertTrue((bool) $sale->skip_dian);
+        $this->assertNull($sale->factus_status);
+        $response->assertSessionHas('success', fn (string $message) => str_contains($message, 'Marcada como factura interna'));
+        Http::assertNothingSent();
+    }
+
+    public function test_edit_and_update_change_the_sale_header_and_line_items(): void
     {
         $this->authenticateWithCompany();
         $item = $this->createProduct();
         $this->post(route('sales.store'), $this->salePayload($item, 100_000))
             ->assertRedirect(route('sales.index'));
         $sale = Sale::query()->where('invoice_number', 'VTA-TEST-001')->firstOrFail();
+        $this->assertSame(9, $item->fresh()->stock);
 
         $this->get(route('sales.edit', $sale))->assertOk()->assertSee('VTA-TEST-001');
 
-        $this->put(route('sales.update', $sale), [
-            'invoice_number' => 'VTA-TEST-001-B',
-            'customer_name' => 'Cliente actualizado',
-            'sale_date' => now()->toDateString(),
-        ])->assertRedirect(route('sales.show', $sale));
+        $updatePayload = $this->salePayload($item, 50_000);
+        $updatePayload['invoice_number'] = 'VTA-TEST-001-B';
+        $updatePayload['customer_name'] = 'Cliente actualizado';
+        $updatePayload['sale_date'] = now()->toDateString();
+        $updatePayload['items'][0]['quantity'] = 3;
 
-        $this->assertSame('Cliente actualizado', $sale->fresh()->customer_name);
+        $this->put(route('sales.update', $sale), $updatePayload)
+            ->assertRedirect(route('sales.show', $sale));
+
+        $sale->refresh();
+        $this->assertSame('VTA-TEST-001-B', $sale->invoice_number);
+        $this->assertSame('Cliente actualizado', $sale->customer_name);
+        $this->assertSame(1, $sale->details()->count());
+        $this->assertSame(3, $sale->details()->first()->quantity);
+
+        // Stock inicial 10: -1 por la venta original, +1 al revertir, -3 por la nueva cantidad = 7.
+        $this->assertSame(7, $item->fresh()->stock);
     }
 
     public function test_statement_lists_all_sales_from_the_same_customer(): void

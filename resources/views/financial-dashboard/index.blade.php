@@ -52,11 +52,11 @@
                     <p class="mt-1 text-xl font-black text-[#b65338]">${{ number_format($operatingExpenses, 0) }}</p>
                 </div>
                 <div class="rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm">
-                    <p class="text-[10px] font-bold uppercase tracking-wider text-[#8b9992]">Cartera clientes (facturado)</p>
+                    <p class="text-[10px] font-bold uppercase tracking-wider text-[#8b9992]">Cartera clientes (saldo pendiente)</p>
                     <p class="mt-1 text-xl font-black text-[#192522]">${{ number_format($receivables, 0) }}</p>
                 </div>
                 <div class="rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm">
-                    <p class="text-[10px] font-bold uppercase tracking-wider text-[#8b9992]">Cartera proveedores (facturado)</p>
+                    <p class="text-[10px] font-bold uppercase tracking-wider text-[#8b9992]">Cartera proveedores (saldo pendiente)</p>
                     <p class="mt-1 text-xl font-black text-[#192522]">${{ number_format($payables, 0) }}</p>
                 </div>
                 <div class="rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm">
@@ -87,7 +87,7 @@
             </section>
 
             <p class="text-xs text-[#71807a]">
-                * La utilidad bruta usa el costo promedio <strong>actual</strong> de cada producto vendido (no se guarda el costo histórico por venta), por lo que es una aproximación útil para ver la tendencia. Las carteras de clientes/proveedores muestran el total facturado en el periodo; el sistema aún no registra abonos o pagos parciales.
+                * La utilidad bruta usa el costo promedio <strong>actual</strong> de cada producto vendido (no se guarda el costo histórico por venta), por lo que es una aproximación útil para ver la tendencia. Las carteras de clientes/proveedores muestran el saldo pendiente real a hoy (total facturado menos abonos registrados).
             </p>
         </div>
     </div>

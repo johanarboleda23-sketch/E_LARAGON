@@ -3,11 +3,13 @@
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToCompany;
+use App\Models\Concerns\HasPayments;
 use Illuminate\Database\Eloquent\Model;
 
 class SupportDocument extends Model
 {
     use BelongsToCompany;
+    use HasPayments;
 
     protected $guarded = [];
 

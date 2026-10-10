@@ -10,6 +10,7 @@ use App\Http\Controllers\CompanyController;
 use App\Http\Controllers\CostController;
 use App\Http\Controllers\CurrencyController;
 use App\Http\Controllers\DocumentLookupController;
+use App\Http\Controllers\FinancialDashboardController;
 use App\Http\Controllers\ItemController;
 use App\Http\Controllers\LogisticsController;
 use App\Http\Controllers\NumberingResolutionController;
@@ -70,6 +71,7 @@ Route::middleware(['auth', 'company'])->group(function () {
     Route::get('/reportes', [ReportController::class, 'index'])->name('reports.index');
     Route::get('/reportes/excel', [ReportController::class, 'excel'])->name('reports.excel');
     Route::get('/reportes/pdf', [ReportController::class, 'pdf'])->name('reports.pdf');
+    Route::get('/indicadores-financieros', [FinancialDashboardController::class, 'index'])->name('financial-dashboard.index');
     Route::get('/normativa', [RegulationController::class, 'index'])->name('regulations.index');
 
     Route::middleware('module:purchases')->group(function () {

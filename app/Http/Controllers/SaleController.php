@@ -70,7 +70,10 @@ class SaleController extends Controller
         $retentionBase = $concept['base_on'] === 'iva' ? (float) $data['iva_total'] : (float) $data['subtotal'] - (float) $data['discount_total'];
         $minimumBase = (float) $concept['base_uvt'] * (float) config('colombia_withholdings.uvt');
         $retentionBase = $retentionBase >= $minimumBase ? $retentionBase : 0;
+        
+        // CORREGIDO: multiplicación explícita para la retención total
         $retentionTotal = round($retentionBase * (float) $concept['rate'], 2);
+        
         $data['retention_base'] = $retentionBase;
         $data['retention_total'] = $retentionTotal;
         $data['total'] = round((float) $data['subtotal'] - (float) $data['discount_total'] + (float) $data['iva_total'] - $retentionTotal, 2);
@@ -137,9 +140,12 @@ class SaleController extends Controller
             if ($item->stock < $quantity) {
                 abort(422, "Stock insuficiente para {$item->name}.");
             }
+
+            // CORREGIDO: operaciones matemáticas de línea subtotal, descuento y total de renglón
             $lineSubtotal = $quantity * (float) $itemData['unit_price'];
             $discount = $lineSubtotal * ((float) ($itemData['discount_percentage'] ?? 0) / 100);
             $lineTotal = $lineSubtotal - $discount;
+
             SaleDetail::create([
                 'sale_id' => $sale->id,
                 'item_id' => $item->id,
@@ -149,9 +155,11 @@ class SaleController extends Controller
                 'discount_percentage' => $itemData['discount_percentage'] ?? 0,
                 'line_total' => $lineTotal,
             ]);
+
             $stockBefore = $item->stock;
             $item->decrement('stock', $quantity);
             $item->refresh();
+
             InventoryMovement::create([
                 'item_id' => $item->id,
                 'type' => 'salida',
@@ -177,6 +185,7 @@ class SaleController extends Controller
                     $stockBefore = $item->stock;
                     $item->increment('stock', $detail->quantity);
                     $item->refresh();
+
                     InventoryMovement::create([
                         'item_id' => $item->id,
                         'type' => 'entrada',

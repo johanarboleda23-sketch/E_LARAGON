@@ -23,6 +23,9 @@
             @if(session('success'))
                 <div class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{{ session('success') }}</div>
             @endif
+            @if($errors->any())
+                <div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{{ $errors->first() }}</div>
+            @endif
 
             <!-- 1. CAPTURAR LOTE DE RUTAS -->
             <section class="rounded-2xl border border-[#d7dfd8] bg-white p-6 shadow-sm flex flex-wrap items-center justify-between gap-4">
@@ -35,8 +38,8 @@
                     <select name="route_id" class="rounded-lg border-[#cbd6cf] text-xs font-bold text-[#192522] focus:ring-[#227c70]">
                         <option value="">-- Seleccionar Lote / Ruta --</option>
                         @foreach($routes as$route)
-                            <option value="{{ $route->id }}" {{ (string)$selectedRouteId === (string)$route->id ? 'selected' : '' }}>
-                                Ruta #{{ $route->id }} - {{$route->driver_name ?? 'Sin Conductor' }} ({{ $route->route_date }})
+                            <option value="{{ $route->id }}" {{ (string)($selectedRouteId ?? '') === (string)$route->id ? 'selected' : '' }}>
+                                Ruta #{{ $route->id }} - {{$route->driver_name ?? 'Sin Conductor' }} ({{ $route->route_date ?? '' }})
                             </option>
                         @endforeach
                     </select>
@@ -76,7 +79,7 @@
                                         <td class="p-3">
                                             <select name="stops[{{ $stop->id }}][payment_action]" onchange="calculateTotals()" class="settlement-type w-full rounded-lg border-[#cbd6cf] text-xs font-bold">
                                                 @foreach($settlementActions as $key =>$label)
-                                                    <option value="{{ $key }}" {{ $stop->payment_action === $key ? 'selected' : '' }}>{{ $label }}</option>
+                                                    <option value="{{ $key }}" {{ ($stop->payment_action ?? '') === $key ? 'selected' : '' }}>{{ $label }}</option>
                                                 @endforeach
                                             </select>
                                         </td>
@@ -167,8 +170,8 @@
             const table = document.getElementById('expensesTable').querySelector('tbody');
             const row = document.createElement('tr');
             row.innerHTML = `
-                <td class="p-2"><input type="text" name="expenses[${expenseIndex}][concept]" placeholder="Escribe el concepto del gasto..." class="w-full rounded-lg border-[#cbd6cf] text-xs" required></td>
-                <td class="p-2 text-right"><input type="number" step="0.01" min="0.01" name="expenses[${expenseIndex}][amount]" oninput="calculateTotals()" placeholder="0.00" class="expense-amount w-28 text-right rounded-lg border-[#cbd6cf] text-xs font-bold" required></td>
+                <td class="p-2"><input type="text" name="expenses[\${expenseIndex}][concept]" placeholder="Escribe el concepto del gasto..." class="w-full rounded-lg border-[#cbd6cf] text-xs" required></td>
+                <td class="p-2 text-right"><input type="number" step="0.01" min="0.01" name="expenses[\${expenseIndex}][amount]" oninput="calculateTotals()" placeholder="0.00" class="expense-amount w-28 text-right rounded-lg border-[#cbd6cf] text-xs font-bold" required></td>
                 <td class="p-2 text-center"><button type="button" onclick="removeExpenseRow(this)" class="text-red-600 font-bold hover:underline">X</button></td>
             `;
             table.appendChild(row);
@@ -201,23 +204,24 @@
             });
 
             const expectedCash = (totalCash - totalBank) - totalExpenses;
-            const countedCash = parseFloat(document.getElementById('inputCountedCash').value || 0);
+            const countedCash = parseFloat(document.getElementById('inputCountedCash')?.value || 0);
             const difference = countedCash - expectedCash;
 
-            document.getElementById('lblTotalCash').innerText = '$' + totalCash.toFixed(2);
-            document.getElementById('lblTotalBank').innerText = '-$' + totalBank.toFixed(2);
-            document.getElementById('lblTotalExpenses').innerText = '-$' + totalExpenses.toFixed(2);
-            document.getElementById('lblExpectedCash').innerText = '$' + expectedCash.toFixed(2);
+            if (document.getElementById('lblTotalCash')) document.getElementById('lblTotalCash').innerText = '$' + totalCash.toFixed(2);
+            if (document.getElementById('lblTotalBank')) document.getElementById('lblTotalBank').innerText = '-$' + totalBank.toFixed(2);
+            if (document.getElementById('lblTotalExpenses')) document.getElementById('lblTotalExpenses').innerText = '-$' + totalExpenses.toFixed(2);
+            if (document.getElementById('lblExpectedCash')) document.getElementById('lblExpectedCash').innerText = '$' + expectedCash.toFixed(2);
 
             const lblDiff = document.getElementById('lblDifference');
-            lblDiff.innerText = (difference >= 0 ? '+' : '') + '$' + difference.toFixed(2);
-
-            if (Math.abs(difference) < 0.01) {
-                lblDiff.className = 'rounded-lg px-4 py-2 text-base font-black bg-emerald-500 text-white';
-            } else if (difference < 0) {
-                lblDiff.className = 'rounded-lg px-4 py-2 text-base font-black bg-red-600 text-white';
-            } else {
-                lblDiff.className = 'rounded-lg px-4 py-2 text-base font-black bg-blue-600 text-white';
+            if (lblDiff) {
+                lblDiff.innerText = (difference >= 0 ? '+' : '') + '$' + difference.toFixed(2);
+                if (Math.abs(difference) < 0.01) {
+                    lblDiff.className = 'rounded-lg px-4 py-2 text-base font-black bg-emerald-500 text-white';
+                } else if (difference < 0) {
+                    lblDiff.className = 'rounded-lg px-4 py-2 text-base font-black bg-red-600 text-white';
+                } else {
+                    lblDiff.className = 'rounded-lg px-4 py-2 text-base font-black bg-blue-600 text-white';
+                }
             }
         }
 
@@ -232,7 +236,7 @@
                 const typeText = select ? select.options[select.selectedIndex].text : '';
                 const paid = row.querySelector('.settlement-amount')?.value || '0.00';
 
-                html += `<tr><td>${client}</td><td>${val}</td><td>${typeText}</td><td>$${paid}</td></tr>`;
+                html += `<tr><td>\${client}</td><td>\${val}</td><td>\${typeText}</td><td>$\${paid}</td></tr>`;
             });
 
             html += '<tr><td colspan="4"></td></tr><tr><th colspan="4" style="background-color: #b65338; color: white;">GASTOS REGISTRADOS</th></tr>';
@@ -241,24 +245,24 @@
                 const concept = row.querySelector('input[type="text"]')?.value || '';
                 const amount = row.querySelector('.expense-amount')?.value || '0.00';
                 if (concept !== '') {
-                    html += `<tr><td colspan="3">${concept}</td><td>$${amount}</td></tr>`;
+                    html += `<tr><td colspan="3">\${concept}</td><td>$\${amount}</td></tr>`;
                 }
             });
 
             html += `<tr><td colspan="4"></td></tr>
-                <tr><th colspan="3">TOTAL EFECTIVO</th><td>${document.getElementById('lblTotalCash').innerText}</td></tr>
-                <tr><th colspan="3">MENOS BANCOS</th><td>${document.getElementById('lblTotalBank').innerText}</td></tr>
-                <tr><th colspan="3">MENOS GASTOS</th><td>${document.getElementById('lblTotalExpenses').innerText}</td></tr>
-                <tr><th colspan="3" style="background-color: #fff8df;">EFECTIVO ESPERADO</th><td style="background-color: #fff8df; font-weight: bold;">${document.getElementById('lblExpectedCash').innerText}</td></tr>
-                <tr><th colspan="3">EFECTIVO CONTADO</th><td>$${document.getElementById('inputCountedCash').value || '0.00'}</td></tr>
-                <tr><th colspan="3">DIFERENCIA</th><td style="font-weight: bold;">${document.getElementById('lblDifference').innerText}</td></tr>`;
+                <tr><th colspan="3">TOTAL EFECTIVO</th><td>\${document.getElementById('lblTotalCash')?.innerText || '$0.00'}</td></tr>
+                <tr><th colspan="3">MENOS BANCOS</th><td>\${document.getElementById('lblTotalBank')?.innerText || '$0.00'}</td></tr>
+                <tr><th colspan="3">MENOS GASTOS</th><td>\${document.getElementById('lblTotalExpenses')?.innerText || '$0.00'}</td></tr>
+                <tr><th colspan="3" style="background-color: #fff8df;">EFECTIVO ESPERADO</th><td style="background-color: #fff8df; font-weight: bold;">\${document.getElementById('lblExpectedCash')?.innerText || '$0.00'}</td></tr>
+                <tr><th colspan="3">EFECTIVO CONTADO</th><td>$\${document.getElementById('inputCountedCash')?.value || '0.00'}</td></tr>
+                <tr><th colspan="3">DIFERENCIA</th><td style="font-weight: bold;">\${document.getElementById('lblDifference')?.innerText || '$0.00'}</td></tr>`;
 
             html += '</tbody></table>';
 
             const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8;' });
             const link = document.createElement('a');
             link.href = URL.createObjectURL(blob);
-            link.download = `Liquidacion_Caja_${new Date().toISOString().slice(0, 10)}.xls`;
+            link.download = `Liquidacion_Caja_\${new Date().toISOString().slice(0, 10)}.xls`;
             link.click();
         }
 

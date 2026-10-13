@@ -35,7 +35,7 @@ class CashRegisterController extends Controller
         'direct_exchange'  => 'CAMBIO MANO A MANO',
     ];
 
-    public function index(Request $request)
+   public function index(Request $request)
     {
         $fundType = $request->query('fund_type', 'general');
         $selectedRouteId = $request->query('route_id');
@@ -52,22 +52,33 @@ class CashRegisterController extends Controller
             ->take(15)
             ->get();
 
-        // Cargar rutas del día (evitamos errores si no existen usando collect si fuera nulo)
-        $routes = class_exists(DeliveryRoute::class) 
-            ? DeliveryRoute::whereDate('route_date', $today)->orderBy('id', 'desc')->get()
-            : collect();
+        // Obtener IDs de las rutas de hoy
+        $todayRouteIds = DeliveryRoute::whereDate('route_date', $today)->pluck('id');
 
+        // Cargar listado de rutas para el desplegable
+        $routes = DeliveryRoute::whereIn('id', $todayRouteIds)->orderBy('id', 'desc')->get();
+
+        // Filtrar paradas de forma directa sin dependencias fallidas de relaciones
         $deliveryStopsQuery = DeliveryStop::query()
-            ->with(['sale.customer', 'route'])
+            ->with(['sale.customer'])
             ->whereNotNull('sale_id');
 
         if ($selectedRouteId) {
             $deliveryStopsQuery->where('delivery_route_id', $selectedRouteId);
         } else {
-            $deliveryStopsQuery->whereHas('route', fn ($q) => $q->whereDate('route_date', $today));
+            $deliveryStopsQuery->whereIn('delivery_route_id', $todayRouteIds);
         }
 
         $deliveryStops = $deliveryStopsQuery->get();
+
+        $manualMovements = CashRegisterMovement::query()
+            ->with('sale')
+            ->whereNull('delivery_stop_id')
+            ->whereDate('created_at', $today)
+            ->latest()
+            ->get();
+
+        $todayExpenses = CashRegisterExpense::whereDate('expense_date', $today)->latest()->get();
 
         return view('cash-register.index', [
             'fundType'          => $fundType,
@@ -77,10 +88,11 @@ class CashRegisterController extends Controller
             'routes'            => $routes,
             'selectedRouteId'   => $selectedRouteId,
             'deliveryStops'     => $deliveryStops,
-            'todayExpenses'     => CashRegisterExpense::whereDate('expense_date', $today)->latest()->get(),
+            'manualMovements'   => $manualMovements,
+            'todayExpenses'     => $todayExpenses,
             'expenseCategories' => CashRegisterExpense::CATEGORIES ?? [],
+            'paymentActions'    => DeliveryStop::PAYMENT_ACTIONS ?? [],
             'settlementActions' => self::SETTLEMENT_ACTIONS,
             'denominations'     => self::DENOMINATIONS,
         ]);
     }
-}

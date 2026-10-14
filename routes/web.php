@@ -121,14 +121,9 @@ Route::middleware(['auth', 'company'])->group(function () {
     });
 
     Route::middleware('module:cash-register')->group(function () {
-        Route::post('/arqueo-de-caja/parada/{stop}/liquidar', [CashRegisterController::class, 'processStopSettlement'])->name('cash-register.settle-stop');
         Route::get('/arqueo-de-caja', [CashRegisterController::class, 'index'])->name('cash-register.index');
         Route::post('/arqueo-de-caja/abrir', [CashRegisterController::class, 'open'])->name('cash-register.open');
         Route::post('/arqueo-de-caja/{cashRegisterSession}/cerrar', [CashRegisterController::class, 'close'])->name('cash-register.close');
-        Route::post('/arqueo-de-caja/{cashRegisterSession}/base', [CashRegisterController::class, 'updateBase'])->name('cash-register.update-base');
-        Route::post('/arqueo-de-caja/facturas', [CashRegisterController::class, 'addInvoiceMovement'])->name('cash-register.movements.invoice');
-        Route::post('/arqueo-de-caja/cartera', [CashRegisterController::class, 'addCollectionMovement'])->name('cash-register.movements.collection');
-        Route::post('/arqueo-de-caja/gastos', [CashRegisterController::class, 'addExpense'])->name('cash-register.expenses.store');
     });
 
     Route::middleware('module:payroll')->group(function () {
@@ -167,12 +162,6 @@ Route::middleware(['auth', 'company'])->group(function () {
         Route::post('/logistica/rutas/{route}/paradas/importar', [LogisticsController::class, 'importStops'])->name('logistics.stops.import');
         Route::post('/logistica/rutas/{route}/paradas', [LogisticsController::class, 'storeStop'])->name('logistics.stops.store');
         Route::post('/logistica/paradas/{stop}/entregar', [LogisticsController::class, 'deliverStop'])->name('logistics.stops.deliver');
-        Route::post('/logistica/paradas/{stop}/factura', [LogisticsController::class, 'attachSale'])->name('logistics.stops.attach-sale');
-        Route::delete('/logistica/paradas/{stop}/factura', [LogisticsController::class, 'detachSale'])->name('logistics.stops.detach-sale');
-        Route::post('/logistica/paradas/{stop}/accion', [LogisticsController::class, 'recordAction'])->name('logistics.stops.action');
-        Route::post('/logistica/paradas/{stop}/devolucion-parcial', [LogisticsController::class, 'recordPartialReturn'])->name('logistics.stops.partial-return');
-        Route::post('/logistica/paradas/{stop}/cruce-productos', [LogisticsController::class, 'recordProductExchange'])->name('logistics.stops.product-exchange');
-        Route::post('/logistica/paradas/{stop}/cobro-cartera', [LogisticsController::class, 'recordCollection'])->name('logistics.stops.collection');
     });
 
     Route::middleware('module:bank-reconciliation')->group(function () {

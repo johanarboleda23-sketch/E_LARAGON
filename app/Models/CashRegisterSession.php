@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Models\Concerns\BelongsToCompany;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class CashRegisterSession extends Model
 {
@@ -32,6 +33,16 @@ class CashRegisterSession extends Model
         return $this->belongsTo(User::class, 'closed_by');
     }
 
+    public function movements(): HasMany
+    {
+        return $this->hasMany(CashRegisterMovement::class);
+    }
+
+    public function expenses(): HasMany
+    {
+        return $this->hasMany(CashRegisterExpense::class);
+    }
+
     public function isOpen(): bool
     {
         return $this->status === 'open';
@@ -57,8 +68,14 @@ class CashRegisterSession extends Model
             ->whereDate('voucher_date', '<=', $cutoff->toDateString())
             ->sum('total_debit');
 
-        $this->cash_in = $cashIn;
-        $this->cash_out = $cashOut;
-        $this->expected_cash = round((float) $this->opening_balance + $cashIn - $cashOut, 2);
+        $movementCashIn = (float) $this->movements()
+            ->whereIn('payment_method', ['cash', '1105'])
+            ->where('movement_type', 'collection')
+            ->sum('amount');
+        $expenseTotal = (float) $this->expenses()->sum('amount');
+
+        $this->cash_in = $cashIn + $movementCashIn;
+        $this->cash_out = $cashOut + $expenseTotal;
+        $this->expected_cash = round((float) $this->opening_balance + $cashIn + $movementCashIn - $cashOut - $expenseTotal, 2);
     }
 }

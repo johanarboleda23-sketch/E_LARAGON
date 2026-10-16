@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class DeliveryStop extends Model
 {
@@ -30,5 +31,15 @@ class DeliveryStop extends Model
     public function thirdParty(): BelongsTo
     {
         return $this->belongsTo(ThirdParty::class);
+    }
+
+    public function sale(): BelongsTo
+    {
+        return $this->belongsTo(Sale::class);
+    }
+
+    public function returns(): HasMany
+    {
+        return $this->hasMany(DeliveryStopReturn::class);
     }
 }

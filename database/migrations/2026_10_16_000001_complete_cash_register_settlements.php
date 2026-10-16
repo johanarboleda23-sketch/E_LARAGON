@@ -117,40 +117,10 @@ return new class extends Migration
         }
     }
 
+    /**
+     * This migration reconciles pre-existing schema and cannot safely identify which columns it owns.
+     */
     public function down(): void
     {
-        Schema::dropIfExists('delivery_stop_returns');
-
-        Schema::table('cash_register_expenses', function (Blueprint $table) {
-            $table->dropConstrainedForeignId('cash_register_session_id');
-            $table->dropConstrainedForeignId('accounting_voucher_id');
-            $table->dropConstrainedForeignId('company_id');
-            $table->dropConstrainedForeignId('created_by');
-            $table->dropColumn(['category', 'concept', 'amount']);
-        });
-
-        Schema::table('cash_register_movements', function (Blueprint $table) {
-            $table->dropConstrainedForeignId('cash_register_session_id');
-            $table->dropConstrainedForeignId('delivery_stop_id');
-            $table->dropConstrainedForeignId('sale_id');
-            $table->dropConstrainedForeignId('payment_id');
-            $table->dropConstrainedForeignId('accounting_voucher_id');
-            $table->dropConstrainedForeignId('company_id');
-            $table->dropConstrainedForeignId('created_by');
-            $table->dropColumn(['movement_type', 'payment_method', 'amount', 'notes']);
-        });
-
-        Schema::table('cash_register_sessions', function (Blueprint $table) {
-            $table->dropColumn([
-                'bill_100000', 'bill_50000', 'bill_20000', 'bill_10000', 'bill_5000',
-                'bill_2000', 'bill_1000', 'coin_1000', 'coin_500', 'coin_200', 'coin_100', 'coin_50',
-            ]);
-        });
-
-        Schema::table('delivery_stops', function (Blueprint $table) {
-            $table->dropConstrainedForeignId('sale_id');
-            $table->dropConstrainedForeignId('company_id');
-            $table->dropColumn(['payment_action', 'collected_amount', 'payment_method']);
-        });
     }
 };

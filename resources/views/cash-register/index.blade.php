@@ -1,268 +1,491 @@
 <x-app-layout>
     <x-slot name="header">
-        <div class="flex items-center justify-between">
+        <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
                 <p class="text-[11px] font-bold uppercase tracking-[0.2em] text-[#d96b4c]">Tesorería & Logística</p>
-                <h2 class="mt-1 text-xl font-black text-[#192522]">Liquidación de Caja y Lotes de Rutas</h2>
+                <h2 class="mt-1 text-xl font-black text-[#192522]">Arqueo de caja y lotes de despacho</h2>
             </div>
-            <div class="flex gap-2">
-                <button type="button" onclick="exportToExcel()" class="rounded-lg bg-[#227c70] px-3 py-2 text-xs font-bold text-white hover:bg-[#1a5f55]">
-                    📊 Exportar a Excel
-                </button>
-                <button type="button" onclick="window.print()" class="rounded-lg bg-[#192522] px-3 py-2 text-xs font-bold text-white hover:bg-black">
-                    🖨️ Imprimir / PDF
-                </button>
-                <a href="{{ route('dashboard') }}" class="rounded-lg border border-[#d7dfd8] bg-white px-3 py-2 text-xs font-bold text-[#227c70]">⌂ Tablero</a>
-            </div>
+            <a href="{{ route('dashboard') }}" class="rounded-lg border border-[#d7dfd8] bg-white px-3 py-2 text-xs font-bold text-[#227c70]">⌂ Tablero</a>
         </div>
     </x-slot>
 
     <div class="min-h-screen bg-[#f3f5f1] px-4 py-8 sm:px-8">
-        <div class="mx-auto max-w-6xl space-y-6">
-
-            @if(session('success'))
+        <div class="mx-auto max-w-7xl space-y-6">
+            @if (session('success'))
                 <div class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{{ session('success') }}</div>
             @endif
+            @if ($errors->any())
+                <div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{{ $errors->first() }}</div>
+            @endif
 
-            <!-- 1. CAPTURAR LOTE DE RUTAS -->
-            <section class="rounded-2xl border border-[#d7dfd8] bg-white p-6 shadow-sm flex flex-wrap items-center justify-between gap-4">
-                <div>
-                    <h3 class="text-sm font-black uppercase tracking-wider text-[#227c70]">📥 Capturar Lote de Rutas</h3>
-                    <p class="text-xs text-[#71807a]">Selecciona el lote o ruta programada para cargar los clientes y facturas a liquidar.</p>
-                </div>
-                <form method="GET" action="{{ route('cash-register.index') }}" class="flex items-center gap-2">
+            <section class="flex flex-wrap items-end justify-between gap-4 rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm">
+                <form method="GET" action="{{ route('cash-register.index') }}" class="flex flex-wrap items-end gap-3">
                     <input type="hidden" name="fund_type" value="{{ $fundType }}">
-                    <select name="route_id" class="rounded-lg border-[#cbd6cf] text-xs font-bold text-[#192522] focus:ring-[#227c70]">
-                        <option value="">-- Seleccionar Lote / Ruta --</option>
-                        @foreach($routes as$route)
-                            <option value="{{ $route->id }}" {{ (string)$selectedRouteId === (string)$route->id ? 'selected' : '' }}>
-                                Ruta #{{ $route->id }} - {{$route->driver_name ?? 'Sin Conductor' }} ({{ $route->route_date }})
-                            </option>
-                        @endforeach
-                    </select>
-                    <button type="submit" class="rounded-lg bg-[#227c70] px-4 py-2 text-xs font-bold text-white hover:bg-[#1a5f55]">
-                        Capturar Lote
-                    </button>
+                    <label class="grid gap-1 text-xs font-bold text-[#52635b]">
+                        Lote / ruta
+                        <select name="route_id" class="min-w-64 rounded-lg border-[#cbd6cf] text-sm">
+                            <option value="">Selecciona lote</option>
+                            @foreach ($routes as $route)
+                                <option value="{{ $route->id }}" @selected((string) $selectedRouteId === (string) $route->id)>
+                                    {{ $route->code }} · {{ $route->driver_name }} · {{ $route->route_date->format('d/m/Y') }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </label>
+                    <button class="rounded-lg bg-[#227c70] px-4 py-2.5 text-xs font-bold text-white">Cargar lote</button>
                 </form>
+
+                @if ($openSession)
+                    <div class="rounded-xl bg-[#f8faf8] px-4 py-3 text-sm">
+                        <span class="font-bold text-[#71807a]">Base del día</span>
+                        <span class="ml-2 font-black text-[#192522]">${{ number_format($openSession->opening_balance, 2) }}</span>
+                        <span class="ml-3 rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">Caja abierta</span>
+                    </div>
+                @endif
             </section>
 
-            <!-- FORMULARIO PRINCIPAL DE LIQUIDACIÓN -->
-            <form action="{{ route('cash-register.settle-batch') }}" method="POST" id="settlementForm">
-                @csrf
+            @if (! $openSession)
+                <section class="rounded-2xl border border-[#d7dfd8] bg-white p-6 shadow-sm">
+                    <h3 class="text-sm font-black uppercase tracking-wider text-[#227c70]">Abrir caja y registrar base del día</h3>
+                    <form method="POST" action="{{ route('cash-register.open') }}" class="mt-4 flex flex-wrap items-end gap-3">
+                        @csrf
+                        <label class="grid gap-1 text-xs font-bold text-[#52635b]">
+                            Caja
+                            <select name="fund_type" class="rounded-lg border-[#cbd6cf] text-sm">
+                                @foreach ($fundTypes as $key => $label)
+                                    <option value="{{ $key }}" @selected($fundType === $key)>{{ $label }}</option>
+                                @endforeach
+                            </select>
+                        </label>
+                        <label class="grid gap-1 text-xs font-bold text-[#52635b]">
+                            Base inicial en efectivo
+                            <input type="number" name="opening_balance" min="0" step="0.01" value="{{ old('opening_balance', 0) }}" class="rounded-lg border-[#cbd6cf] text-sm" required>
+                        </label>
+                        <button class="rounded-lg bg-[#227c70] px-5 py-2.5 text-xs font-bold text-white">Abrir caja</button>
+                    </form>
+                </section>
+            @endif
 
-                <!-- 2. TABLA DE FACTURAS Y DESPLEGABLES -->
-                <section class="rounded-2xl border border-[#d7dfd8] bg-white p-6 shadow-sm space-y-4 mb-6">
-                    <h3 class="text-sm font-black uppercase tracking-wider text-[#227c70]">📑 Facturas por Cliente y Formas de Pago</h3>
-                    <div class="overflow-x-auto rounded-xl border border-[#e6ede8]">
-                        <table class="w-full text-left text-xs" id="settlementTable">
-                            <thead class="bg-[#192522] uppercase text-white">
-                                <tr>
-                                    <th class="p-3">Factura / Cliente</th>
-                                    <th class="p-3 text-right">Valor Facturado</th>
-                                    <th class="p-3">Tipo de Liquidación</th>
-                                    <th class="p-3 text-right">Monto Recaudado</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-[#e6ede8] bg-white">
-                                @forelse($deliveryStops as$stop)
-                                    <tr class="hover:bg-[#f8faf8]">
-                                        <td class="p-3 font-bold text-[#192522]">
-                                            {{ $stop->sale?->invoice_number ?? 'Parada #'.$stop->id }}<br>
-                                            <span class="text-[11px] font-normal text-[#71807a]">{{ $stop->sale?->customer?->name ?? 'Cliente General' }}</span>
-                                        </td>
-                                        <td class="p-3 text-right font-bold text-[#192522]">
-                                            ${{ number_format($stop->sale?->total ?? 0, 2) }}
-                                        </td>
-                                        <td class="p-3">
-                                            <select name="stops[{{ $stop->id }}][payment_action]" onchange="calculateTotals()" class="settlement-type w-full rounded-lg border-[#cbd6cf] text-xs font-bold">
-                                                @foreach($settlementActions as $key =>$label)
-                                                    <option value="{{ $key }}" {{ $stop->payment_action === $key ? 'selected' : '' }}>{{ $label }}</option>
-                                                @endforeach
-                                            </select>
-                                        </td>
-                                        <td class="p-3 text-right">
-                                            <input type="number" step="0.01" name="stops[{{ $stop->id }}][amount_paid]" 
-                                                   value="{{ $stop->collected_amount ?? $stop->sale?->total ?? 0 }}" 
-                                                   oninput="calculateTotals()" 
-                                                   class="settlement-amount w-28 text-right rounded-lg border-[#cbd6cf] text-xs font-bold">
-                                        </td>
+            @if ($selectedRoute)
+                <section class="flex flex-wrap items-end justify-between gap-4 rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm">
+                    <div>
+                        <h3 class="text-sm font-black uppercase tracking-wider text-[#227c70]">Lote {{ $selectedRoute->code }}</h3>
+                        <p class="mt-1 text-xs text-[#71807a]">{{ $selectedRoute->driver_name }} · {{ $selectedRoute->vehicle_plate }} · {{ $selectedRoute->route_date->format('d/m/Y') }}</p>
+                    </div>
+                    <div class="flex flex-wrap items-end gap-3">
+                        @if ($openSession)
+                            <form method="POST" action="{{ route('cash-register.attach-invoice', $selectedRoute) }}" class="flex flex-wrap items-end gap-2">
+                                @csrf
+                                <label class="grid gap-1 text-xs font-bold text-[#52635b]">
+                                    Anexar factura existente
+                                    <select name="sale_id" class="min-w-64 rounded-lg border-[#cbd6cf] text-sm" required>
+                                        <option value="">Selecciona factura</option>
+                                        @foreach ($availableSales as $sale)
+                                            <option value="{{ $sale->id }}">{{ $sale->invoice_number }} · {{ $sale->customer_name }} · ${{ number_format($sale->total, 2) }}</option>
+                                        @endforeach
+                                    </select>
+                                </label>
+                                <button class="rounded-lg border border-[#227c70] px-4 py-2.5 text-xs font-bold text-[#227c70]">Agregar factura</button>
+                            </form>
+                        @endif
+                        <form method="POST" action="{{ route('cash-register.reschedule', $selectedRoute) }}" class="flex items-end gap-2">
+                            @csrf
+                            @method('PATCH')
+                            <label class="grid gap-1 text-xs font-bold text-[#52635b]">
+                                Reprogramar toda la ruta
+                                <input type="date" name="route_date" id="routeDate" value="{{ $selectedRoute->route_date->toDateString() }}" class="rounded-lg border-[#cbd6cf] text-sm" required>
+                            </label>
+                            <button class="rounded-lg border border-[#cbd6cf] px-3 py-2.5 text-xs font-bold text-[#52635b]">Guardar fecha</button>
+                        </form>
+                    </div>
+                </section>
+            @endif
+
+            @if ($openSession)
+                @if ($selectedRoute)
+                <form action="{{ route('cash-register.settle-batch') }}" method="POST" id="settlementForm">
+                    @csrf
+                    <input type="hidden" name="route_id" value="{{ $selectedRoute->id }}">
+                    <input type="hidden" name="session_id" value="{{ $openSession->id }}">
+                    <input type="hidden" name="route_date" id="batchRouteDate" value="{{ $selectedRoute->route_date->toDateString() }}">
+                    <section class="space-y-4 rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm">
+                        <div class="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                                <h3 class="text-sm font-black uppercase tracking-wider text-[#227c70]">Facturas del lote y formas de pago</h3>
+                                <p class="mt-1 text-xs text-[#71807a]">Las devoluciones reponen inventario; quitar una factura solo la retira del lote.</p>
+                            </div>
+                            <button type="button" onclick="exportToExcel()" class="rounded-lg bg-[#192522] px-3 py-2 text-xs font-bold text-white">Exportar reporte</button>
+                        </div>
+                        <div class="overflow-x-auto rounded-xl border border-[#e6ede8]">
+                            <table class="w-full min-w-[1050px] text-left text-xs" id="settlementTable">
+                                <thead class="bg-[#192522] uppercase text-white">
+                                    <tr>
+                                        <th class="p-3">Factura / cliente / productos</th>
+                                        <th class="p-3 text-right">Valor</th>
+                                        <th class="p-3">Acción</th>
+                                        <th class="p-3">Forma de cobro</th>
+                                        <th class="p-3 text-right">Monto</th>
                                     </tr>
-                                @empty
-                                    <tr><td colspan="4" class="p-4 text-center text-gray-500">No hay facturas cargadas. Selecciona un lote de ruta arriba.</td></tr>
-                                @endforelse
+                                </thead>
+                                <tbody class="divide-y divide-[#e6ede8] bg-white">
+                                    @forelse ($deliveryStops as $stop)
+                                        <tr class="align-top hover:bg-[#f8faf8]">
+                                            <td class="p-3 font-bold text-[#192522]">
+                                                {{ $stop->sale?->invoice_number ?? 'Parada #'.$stop->id }}
+                                                <span class="font-normal text-[#71807a]">· {{ $stop->sale?->customer_name ?? $stop->customer_name }}</span>
+                                                @if ($stop->sale)
+                                                    <details class="mt-2 font-normal">
+                                                        <summary class="cursor-pointer text-[#227c70]">Productos y devolución parcial</summary>
+                                                        <div class="mt-2 grid gap-2">
+                                                            @foreach ($stop->sale->details as $detail)
+                                                                @php
+                                                                    $returnedQty = (int) $stop->returns->where('sale_detail_id', $detail->id)->sum('quantity');
+                                                                    $remainingQty = max(0, (int) $detail->quantity - $returnedQty);
+                                                                @endphp
+                                                                <label class="flex items-center justify-between gap-3 rounded-lg bg-[#f8faf8] p-2">
+                                                                    <span>{{ $detail->item?->name }} · disponibles para devolución: {{ $remainingQty }}</span>
+                                                                    <input type="number" name="stops[{{ $stop->id }}][return_quantities][{{ $detail->id }}]" min="0" max="{{ $remainingQty }}" value="0" data-unit-price="{{ $detail->unit_price }}" data-discount="{{ $detail->discount_percentage }}" data-tax="{{ $detail->iva_percentage }}" class="return-quantity w-20 rounded border-[#cbd6cf] text-xs" oninput="calculateTotals()">
+                                                                </label>
+                                                            @endforeach
+                                                            <div class="flex flex-wrap items-center gap-2">
+                                                                <select name="stops[{{ $stop->id }}][replacement_item_id]" onchange="calculateTotals()" class="max-w-64 rounded border-[#cbd6cf] text-xs">
+                                                                    <option value="">Producto para cruce</option>
+                                                                    @foreach ($availableItems as $item)
+                                                                        <option value="{{ $item->id }}" data-sale-price="{{ $item->sale_price }}">{{ $item->name }} · stock {{ $item->stock }} · ${{ number_format($item->sale_price, 2) }}</option>
+                                                                    @endforeach
+                                                                </select>
+                                                                <input type="number" name="stops[{{ $stop->id }}][replacement_quantity]" min="1" value="1" class="replacement-quantity w-20 rounded border-[#cbd6cf] text-xs" aria-label="Cantidad del producto de reemplazo" oninput="calculateTotals()">
+                                                            </div>
+                                                            <p class="text-xs font-bold text-[#8b6811]">Diferencia estimada del cruce: <span class="exchange-difference">$0.00</span></p>
+                                                        </div>
+                                                    </details>
+                                                @endif
+                                            </td>
+                                            <td class="p-3 text-right font-bold">${{ number_format($stop->sale?->total ?? 0, 2) }}</td>
+                                            <td class="p-3">
+                                                <select name="stops[{{ $stop->id }}][payment_action]" onchange="handleActionChange(this); calculateTotals()" class="settlement-type w-52 rounded-lg border-[#cbd6cf] text-xs font-bold" required>
+                                                    @foreach ($settlementActions as $key => $label)
+                                                        <option value="{{ $key }}" @selected(($stop->payment_action ?? '1305') === $key)>{{ $label }}</option>
+                                                    @endforeach
+                                                </select>
+                                            </td>
+                                            <td class="p-3">
+                                                <select name="stops[{{ $stop->id }}][collection_method]" onchange="calculateTotals()" class="settlement-method w-44 rounded-lg border-[#cbd6cf] text-xs">
+                                                    <option value="">Usar acción elegida</option>
+                                                    <option value="1105">1105 Efectivo</option>
+                                                    <option value="1120">1120 Banco</option>
+                                                </select>
+                                            </td>
+                                            <td class="p-3 text-right">
+                                                <input type="number" step="0.01" min="0" name="stops[{{ $stop->id }}][amount_paid]" value="{{ $stop->collected_amount ?? 0 }}" oninput="calculateTotals()" class="settlement-amount w-32 rounded-lg border-[#cbd6cf] text-right text-xs font-bold">
+                                            </td>
+                                        </tr>
+                                    @empty
+                                        <tr><td colspan="5" class="p-6 text-center text-gray-500">Este lote todavía no tiene facturas.</td></tr>
+                                    @endforelse
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="rounded-xl border border-[#e6ede8] p-4">
+                            <div class="flex flex-wrap items-center justify-between gap-3">
+                                <div>
+                                    <h4 class="text-sm font-black text-[#b65338]">Gastos y salidas de efectivo</h4>
+                                    <p class="text-xs text-[#71807a]">Combustible, pagos a proveedores, traslados internos u otros.</p>
+                                </div>
+                                <button type="button" onclick="addExpenseRow()" class="rounded-lg bg-[#b65338] px-3 py-2 text-xs font-bold text-white">Agregar gasto</button>
+                            </div>
+                            <div class="mt-3 grid gap-2" id="expensesList">
+                                @foreach ($openSession->expenses as $index => $expense)
+                                    <div class="expense-row grid gap-2 sm:grid-cols-[12rem_1fr_10rem_auto]">
+                                        <select name="expenses[{{ $index }}][category]" class="expense-category rounded-lg border-[#cbd6cf] text-xs">
+                                            <option value="combustible" @selected($expense->category === 'combustible')>Combustible</option>
+                                            <option value="proveedor" @selected($expense->category === 'proveedor')>Pago a proveedor</option>
+                                            <option value="transferencia" @selected($expense->category === 'transferencia')>Traslado interno a banco</option>
+                                            <option value="otro" @selected($expense->category === 'otro')>Otro gasto</option>
+                                        </select>
+                                        <input type="text" name="expenses[{{ $index }}][concept]" value="{{ $expense->concept }}" placeholder="Concepto / proveedor" class="rounded-lg border-[#cbd6cf] text-xs" required>
+                                        <input type="number" min="0.01" step="0.01" name="expenses[{{ $index }}][amount]" value="{{ $expense->amount }}" oninput="calculateTotals()" class="expense-amount rounded-lg border-[#cbd6cf] text-right text-xs" required>
+                                        <button type="button" onclick="removeExpenseRow(this)" class="rounded-lg px-3 text-xs font-bold text-red-600">Quitar</button>
+                                    </div>
+                                @endforeach
+                            </div>
+                        </div>
+
+                        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                            <div class="rounded-xl border border-[#cbd6cf] bg-[#f8faf8] p-4">
+                                <p class="text-[10px] font-bold uppercase text-[#71807a]">Efectivo recibido</p>
+                                <p class="text-lg font-black text-[#227c70]" id="lblTotalCash">$0.00</p>
+                            </div>
+                            <div class="rounded-xl border border-[#cbd6cf] bg-[#f8faf8] p-4">
+                                <p class="text-[10px] font-bold uppercase text-[#71807a]">Bancos / transferencias</p>
+                                <p class="text-lg font-black text-blue-600" id="lblTotalBank">$0.00</p>
+                            </div>
+                            <div class="rounded-xl border border-[#cbd6cf] bg-[#f8faf8] p-4">
+                                <p class="text-[10px] font-bold uppercase text-[#71807a]">Ventas a crédito</p>
+                                <p class="text-lg font-black text-[#52635b]" id="lblTotalCredit">$0.00</p>
+                            </div>
+                            <div class="rounded-xl border border-[#cbd6cf] bg-[#f8faf8] p-4">
+                                <p class="text-[10px] font-bold uppercase text-[#71807a]">Total gastos</p>
+                                <p class="text-lg font-black text-[#b65338]" id="lblTotalExpenses">-$0.00</p>
+                            </div>
+                            <div class="rounded-xl border border-[#e2c044] bg-[#fff8df] p-4">
+                                <p class="text-[10px] font-bold uppercase text-[#8b6811]">Efectivo esperado</p>
+                                <p class="text-xl font-black text-[#8b6811]" id="lblExpectedCash">$0.00</p>
+                            </div>
+                        </div>
+                        <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-[#192522] p-4 text-white">
+                            <p class="text-xs">Diferencia frente al efectivo contado: <strong id="lblDifference">$0.00</strong></p>
+                            <button type="submit" class="rounded-lg bg-[#227c70] px-6 py-2.5 text-xs font-bold uppercase text-white">Guardar liquidación del lote</button>
+                        </div>
+                    </section>
+                </form>
+
+                @endif
+
+                <section class="rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm">
+                    <h3 class="text-sm font-black uppercase tracking-wider text-[#227c70]">Agregar cobro de cartera</h3>
+                    <p class="mt-1 text-xs text-[#71807a]">Registra el pago y la contabilización de una factura sin afectar inventario.</p>
+                    <form method="POST" action="{{ route('cash-register.collect-receivable') }}" class="mt-4 flex flex-wrap items-end gap-3">
+                        @csrf
+                        <input type="hidden" name="session_id" value="{{ $openSession->id }}">
+                        <label class="grid gap-1 text-xs font-bold text-[#52635b]">
+                            Factura
+                            <select name="sale_id" class="min-w-64 rounded-lg border-[#cbd6cf] text-sm" required>
+                                <option value="">Selecciona factura pendiente</option>
+                                @foreach ($receivableSales as $sale)
+                                    <option value="{{ $sale->id }}">{{ $sale->invoice_number }} · {{ $sale->customer_name }} · ${{ number_format($sale->total, 2) }}</option>
+                                @endforeach
+                            </select>
+                        </label>
+                        <label class="grid gap-1 text-xs font-bold text-[#52635b]">
+                            Valor recibido
+                            <input type="number" min="0.01" step="0.01" name="amount" class="rounded-lg border-[#cbd6cf] text-sm" required>
+                        </label>
+                        <label class="grid gap-1 text-xs font-bold text-[#52635b]">
+                            Cuenta de ingreso
+                            <select name="payment_method" class="rounded-lg border-[#cbd6cf] text-sm" required>
+                                <option value="1105">1105 Efectivo</option>
+                                <option value="1120">1120 Banco</option>
+                            </select>
+                        </label>
+                        <button class="rounded-lg bg-[#227c70] px-4 py-2.5 text-xs font-bold text-white">Registrar cartera</button>
+                    </form>
+                </section>
+
+                @unless ($selectedRoute)
+                    <section class="rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm">
+                        <h3 class="text-sm font-black uppercase tracking-wider text-[#b65338]">Agregar gasto de caja</h3>
+                        <form method="POST" action="{{ route('cash-register.expenses.store', $openSession) }}" class="mt-4 flex flex-wrap items-end gap-3">
+                            @csrf
+                            <label class="grid gap-1 text-xs font-bold text-[#52635b]">Tipo de gasto
+                                <select name="category" class="rounded-lg border-[#cbd6cf] text-sm">
+                                    <option value="combustible">Combustible</option>
+                                    <option value="proveedor">Pago a proveedor</option>
+                                    <option value="transferencia">Traslado interno a banco</option>
+                                    <option value="otro">Otro</option>
+                                </select>
+                            </label>
+                            <label class="grid gap-1 text-xs font-bold text-[#52635b]">Concepto
+                                <input name="concept" maxlength="255" class="rounded-lg border-[#cbd6cf] text-sm" required>
+                            </label>
+                            <label class="grid gap-1 text-xs font-bold text-[#52635b]">Valor
+                                <input type="number" min="0.01" step="0.01" name="amount" class="rounded-lg border-[#cbd6cf] text-sm" required>
+                            </label>
+                            <button class="rounded-lg bg-[#b65338] px-4 py-2.5 text-xs font-bold text-white">Registrar gasto</button>
+                        </form>
+                    </section>
+                @endunless
+
+                <form method="POST" action="{{ route('cash-register.close', $openSession) }}" class="rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm">
+                    @csrf
+                    <h3 class="text-sm font-black uppercase tracking-wider text-[#227c70]">Conteo físico por denominaciones</h3>
+                    <div class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                        @foreach ([
+                            'bill_100000' => 'Billetes de $100.000',
+                            'bill_50000' => 'Billetes de $50.000',
+                            'bill_20000' => 'Billetes de $20.000',
+                            'bill_10000' => 'Billetes de $10.000',
+                            'bill_5000' => 'Billetes de $5.000',
+                            'bill_2000' => 'Billetes de $2.000',
+                            'bill_1000' => 'Billetes de $1.000',
+                            'coin_1000' => 'Monedas de $1.000',
+                            'coin_500' => 'Monedas de $500',
+                            'coin_200' => 'Monedas de $200',
+                            'coin_100' => 'Monedas de $100',
+                            'coin_50' => 'Monedas de $50',
+                        ] as $field => $label)
+                            <label class="grid gap-1 text-xs font-bold text-[#52635b]">{{ $label }}
+                                <input type="number" min="0" max="100000" name="{{ $field }}" value="{{ $openSession->{$field} ?? 0 }}" oninput="calculateDenominations()" class="denomination-count rounded-lg border-[#cbd6cf] text-sm">
+                            </label>
+                        @endforeach
+                    </div>
+                    <div class="mt-4 flex flex-wrap items-center justify-between gap-4 rounded-xl bg-[#192522] p-4 text-white">
+                        <div>
+                            <label for="countedCash" class="text-xs font-bold uppercase">Efectivo contado</label>
+                            <input id="countedCash" type="number" step="0.01" min="0" name="counted_cash" value="{{ $openSession->counted_cash ?? 0 }}" class="ml-2 w-40 rounded-lg border-none text-sm font-black text-black" required>
+                            <span class="ml-2 text-xs text-[#b9c9c1]">Suma denominaciones: <strong id="denominationTotal">$0.00</strong></span>
+                        </div>
+                        <label class="grid gap-1 text-xs font-bold uppercase">Notas
+                            <input type="text" name="notes" value="{{ old('notes') }}" maxlength="500" class="rounded-lg border-none text-sm font-normal text-black">
+                        </label>
+                        <button class="rounded-lg bg-[#227c70] px-6 py-2.5 text-xs font-bold uppercase">Cerrar caja y generar arqueo</button>
+                    </div>
+                </form>
+            @elseif ($selectedRoute)
+                <p class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-800">Abre una sesión de caja para liquidar el lote.</p>
+            @endif
+
+            @if ($recentSessions->isNotEmpty())
+                <section class="rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm">
+                    <h3 class="text-sm font-black uppercase tracking-wider text-[#227c70]">Arqueos cerrados recientes</h3>
+                    <div class="mt-3 overflow-x-auto">
+                        <table class="w-full text-left text-xs">
+                            <thead><tr class="border-b text-[#71807a]"><th class="p-2">Fecha</th><th class="p-2">Base</th><th class="p-2">Esperado</th><th class="p-2">Contado</th><th class="p-2">Diferencia</th><th class="p-2">Gastos</th></tr></thead>
+                            <tbody>
+                                @foreach ($recentSessions as $session)
+                                    <tr class="border-b border-[#e6ede8]">
+                                        <td class="p-2">{{ $session->closed_at?->format('d/m/Y H:i') }}</td>
+                                        <td class="p-2">${{ number_format($session->opening_balance, 2) }}</td>
+                                        <td class="p-2">${{ number_format($session->expected_cash, 2) }}</td>
+                                        <td class="p-2">${{ number_format($session->counted_cash, 2) }}</td>
+                                        <td class="p-2">${{ number_format($session->difference, 2) }}</td>
+                                        <td class="p-2">${{ number_format($session->cash_out, 2) }}</td>
+                                    </tr>
+                                @endforeach
                             </tbody>
                         </table>
                     </div>
                 </section>
-
-                <!-- 3. CUADRO DE GASTOS DINÁMICOS -->
-                <section class="rounded-2xl border border-[#d7dfd8] bg-white p-6 shadow-sm space-y-4 mb-6">
-                    <div class="flex items-center justify-between">
-                        <h3 class="text-sm font-black uppercase tracking-wider text-[#b65338]">💸 Registro de Gastos del Día</h3>
-                        <button type="button" onclick="addExpenseRow()" class="rounded-lg bg-[#b65338] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#9c4630]">
-                            ➕ Agregar Fila de Gasto
-                        </button>
-                    </div>
-                    <table class="w-full text-left text-xs" id="expensesTable">
-                        <thead class="bg-[#f8faf8] uppercase text-[#71807a]">
-                            <tr>
-                                <th class="p-2">Concepto / Descripción del Gasto</th>
-                                <th class="p-2 text-right">Valor</th>
-                                <th class="p-2 text-center">Acción</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-[#e6ede8]">
-                            <!-- Filas dinámicas -->
-                        </tbody>
-                    </table>
-                </section>
-
-                <!-- 4. RESUMEN Y CÁLCULO DE DIFERENCIA EN TIEMPO REAL -->
-                <section class="rounded-2xl border border-[#d7dfd8] bg-white p-6 shadow-sm space-y-4">
-                    <h3 class="text-sm font-black uppercase tracking-wider text-[#227c70]">📊 Resumen de Liquidación de Caja</h3>
-                    
-                    <div class="grid gap-4 sm:grid-cols-4">
-                        <div class="rounded-xl bg-[#f8faf8] p-4 border border-[#cbd6cf]">
-                            <p class="text-[10px] font-bold uppercase text-[#71807a]">Total Recaudado Efectivo</p>
-                            <p class="text-lg font-black text-[#227c70]" id="lblTotalCash">$0.00</p>
-                        </div>
-                        <div class="rounded-xl bg-[#f8faf8] p-4 border border-[#cbd6cf]">
-                            <p class="text-[10px] font-bold uppercase text-[#71807a]">Recaudado Bancos / Transf.</p>
-                            <p class="text-lg font-black text-blue-600" id="lblTotalBank">$0.00</p>
-                        </div>
-                        <div class="rounded-xl bg-[#f8faf8] p-4 border border-[#cbd6cf]">
-                            <p class="text-[10px] font-bold uppercase text-[#71807a]">Menos Gastos</p>
-                            <p class="text-lg font-black text-[#b65338]" id="lblTotalExpenses">-$0.00</p>
-                        </div>
-                        <div class="rounded-xl bg-[#fff8df] p-4 border border-[#e2c044]">
-                            <p class="text-[10px] font-bold uppercase text-[#8b6811]">EFECTIVO ESPERADO EN CAJA</p>
-                            <p class="text-xl font-black text-[#8b6811]" id="lblExpectedCash">$0.00</p>
-                        </div>
-                    </div>
-
-                    <!-- RECUADRO DE CONTEO Y DIFERENCIA -->
-                    <div class="mt-4 flex flex-wrap items-center justify-between gap-4 rounded-xl bg-[#192522] p-4 text-white">
-                        <div class="flex items-center gap-3">
-                            <label class="text-xs font-bold uppercase">Efectivo Físico Contado:</label>
-                            <input type="number" step="0.01" id="inputCountedCash" oninput="calculateTotals()" placeholder="0.00" class="w-36 rounded-lg border-none text-black font-black text-sm">
-                        </div>
-                        <div class="flex items-center gap-2">
-                            <span class="text-xs font-bold uppercase">Diferencia:</span>
-                            <span id="lblDifference" class="rounded-lg px-4 py-2 text-base font-black bg-emerald-500 text-white">$0.00</span>
-                        </div>
-                        <button type="submit" class="rounded-lg bg-[#227c70] px-6 py-2.5 text-xs font-bold uppercase text-white hover:bg-[#1a5f55]">
-                            💾 Guardar Liquidación
-                        </button>
-                    </div>
-                </section>
-            </form>
+            @endif
         </div>
     </div>
 
-    <!-- JAVASCRIPT DE CÁLCULO EN TIEMPO REAL Y EXPORTACIÓN A EXCEL -->
     <script>
-        let expenseIndex = 0;
+        const denominationValues = {
+            bill_100000: 100000, bill_50000: 50000, bill_20000: 20000, bill_10000: 10000,
+            bill_5000: 5000, bill_2000: 2000, bill_1000: 1000, coin_1000: 1000,
+            coin_500: 500, coin_200: 200, coin_100: 100, coin_50: 50
+        };
+        let expenseIndex = {{ $openSession?->expenses->count() ?? 0 }};
 
         function addExpenseRow() {
-            const table = document.getElementById('expensesTable').querySelector('tbody');
-            const row = document.createElement('tr');
+            const row = document.createElement('div');
+            row.className = 'expense-row grid gap-2 sm:grid-cols-[12rem_1fr_10rem_auto]';
             row.innerHTML = `
-                <td class="p-2"><input type="text" name="expenses[${expenseIndex}][concept]" placeholder="Escribe el concepto del gasto..." class="w-full rounded-lg border-[#cbd6cf] text-xs" required></td>
-                <td class="p-2 text-right"><input type="number" step="0.01" min="0.01" name="expenses[${expenseIndex}][amount]" oninput="calculateTotals()" placeholder="0.00" class="expense-amount w-28 text-right rounded-lg border-[#cbd6cf] text-xs font-bold" required></td>
-                <td class="p-2 text-center"><button type="button" onclick="removeExpenseRow(this)" class="text-red-600 font-bold hover:underline">X</button></td>
-            `;
-            table.appendChild(row);
+                <select name="expenses[${expenseIndex}][category]" class="expense-category rounded-lg border-[#cbd6cf] text-xs">
+                    <option value="combustible">Combustible</option><option value="proveedor">Pago a proveedor</option>
+                    <option value="transferencia">Traslado interno a banco</option><option value="otro">Otro gasto</option>
+                </select>
+                <input type="text" name="expenses[${expenseIndex}][concept]" placeholder="Concepto / proveedor" class="rounded-lg border-[#cbd6cf] text-xs" required>
+                <input type="number" min="0.01" step="0.01" name="expenses[${expenseIndex}][amount]" oninput="calculateTotals()" placeholder="0.00" class="expense-amount rounded-lg border-[#cbd6cf] text-right text-xs" required>
+                <button type="button" onclick="removeExpenseRow(this)" class="rounded-lg px-3 text-xs font-bold text-red-600">Quitar</button>`;
+            document.getElementById('expensesList').appendChild(row);
             expenseIndex++;
         }
 
-        function removeExpenseRow(btn) {
-            btn.closest('tr').remove();
+        function handleActionChange(select) {
+            if (select.value === 'reschedule') {
+                document.getElementById('routeDate')?.focus();
+            }
+        }
+
+        function removeExpenseRow(button) {
+            button.closest('.expense-row').remove();
             calculateTotals();
         }
 
         function calculateTotals() {
-            let totalCash = 0;
-            let totalBank = 0;
-            let totalExpenses = 0;
-
-            // Filtrar únicamente las filas del settlementTable
+            if (!document.getElementById('lblTotalCash')) return;
+            let cash = 0;
+            let bank = 0;
+            let credit = 0;
+            let expenses = 0;
             document.querySelectorAll('#settlementTable tbody tr').forEach(row => {
-                const type = row.querySelector('.settlement-type')?.value;
-                const amount = parseFloat(row.querySelector('.settlement-amount')?.value || 0);
-
-                if (type === 'cash' || type === 'collection') {
-                    totalCash += amount;
-                } else if (type === 'bank') {
-                    totalBank += amount;
+                const action = row.querySelector('.settlement-type')?.value;
+                const amount = Number(row.querySelector('.settlement-amount')?.value || 0);
+                const collectionMethod = row.querySelector('.settlement-method')?.value;
+                if (action === '1105' || (action === 'collection' && collectionMethod === '1105')) {
+                    cash += amount;
+                } else if (action === '1120' || (action === 'collection' && collectionMethod === '1120')) {
+                    bank += amount;
+                } else if (action === '1305') {
+                    credit += Number(row.cells[1]?.innerText.replace(/[^\d,.-]/g, '').replaceAll(',', '') || 0);
+                } else if (action === 'exchange') {
+                    let returnedValue = 0;
+                    row.querySelectorAll('.return-quantity').forEach(input => {
+                        const discount = Number(input.dataset.discount || 0) / 100;
+                        const tax = Number(input.dataset.tax || 0) / 100;
+                        returnedValue += Number(input.value || 0) * Number(input.dataset.unitPrice || 0) * (1 - discount) * (1 + tax);
+                    });
+                    const replacementSelect = row.querySelector('[name$="[replacement_item_id]"]');
+                    const replacementPrice = Number(replacementSelect?.selectedOptions[0]?.dataset.salePrice || 0);
+                    const replacementQuantity = Number(row.querySelector('.replacement-quantity')?.value || 0);
+                    const difference = replacementPrice * replacementQuantity - returnedValue;
+                    const differenceLabel = row.querySelector('.exchange-difference');
+                    if (differenceLabel) differenceLabel.innerText = (difference < 0 ? '-$' : '$') + Math.abs(difference).toFixed(2);
+                    if (difference > 0 && collectionMethod === '1105') cash += difference;
+                    if (difference > 0 && collectionMethod === '1120') bank += difference;
+                    if (difference < 0 && collectionMethod === '1105') cash += difference;
                 }
             });
+            document.querySelectorAll('.expense-amount').forEach(input => expenses += Number(input.value || 0));
+            const base = Number(@json($openSession?->opening_balance ?? 0));
+            const expected = base + cash - expenses;
+            document.getElementById('lblTotalCash').innerText = '$' + cash.toFixed(2);
+            document.getElementById('lblTotalBank').innerText = '$' + bank.toFixed(2);
+            document.getElementById('lblTotalCredit').innerText = '$' + credit.toFixed(2);
+            document.getElementById('lblTotalExpenses').innerText = '-$' + expenses.toFixed(2);
+            document.getElementById('lblExpectedCash').innerText = '$' + expected.toFixed(2);
+            const counted = Number(document.getElementById('countedCash')?.value || 0);
+            document.getElementById('lblDifference').innerText = (counted - expected >= 0 ? '+' : '') + '$' + (counted - expected).toFixed(2);
+        }
 
-            document.querySelectorAll('.expense-amount').forEach(input => {
-                totalExpenses += parseFloat(input.value || 0);
+        function calculateDenominations() {
+            if (!document.getElementById('denominationTotal')) return;
+            let total = 0;
+            Object.entries(denominationValues).forEach(([field, amount]) => {
+                const count = Number(document.querySelector(`[name="${field}"]`)?.value || 0);
+                total += count * amount;
             });
-
-            const expectedCash = totalCash - totalExpenses;
-            const countedCash = parseFloat(document.getElementById('inputCountedCash').value || 0);
-            const difference = countedCash - expectedCash;
-
-            document.getElementById('lblTotalCash').innerText = '$' + totalCash.toFixed(2);
-            document.getElementById('lblTotalBank').innerText = '$' + totalBank.toFixed(2);
-            document.getElementById('lblTotalExpenses').innerText = '-$' + totalExpenses.toFixed(2);
-            document.getElementById('lblExpectedCash').innerText = '$' + expectedCash.toFixed(2);
-
-            const lblDiff = document.getElementById('lblDifference');
-            lblDiff.innerText = (difference >= 0 ? '+' : '') + '$' + difference.toFixed(2);
-
-            if (Math.abs(difference) < 0.01) {
-                lblDiff.className = 'rounded-lg px-4 py-2 text-base font-black bg-emerald-500 text-white';
-            } else if (difference < 0) {
-                lblDiff.className = 'rounded-lg px-4 py-2 text-base font-black bg-red-600 text-white';
-            } else {
-                lblDiff.className = 'rounded-lg px-4 py-2 text-base font-black bg-blue-600 text-white';
+            document.getElementById('denominationTotal').innerText = '$' + total.toFixed(2);
+            if (Object.keys(denominationValues).some(field => Number(document.querySelector(`[name="${field}"]`)?.value || 0) > 0)) {
+                document.getElementById('countedCash').value = total.toFixed(2);
             }
+            calculateTotals();
         }
 
         function exportToExcel() {
-            let html = '<table border="1"><thead><tr><th colspan="4" style="background-color: #192522; color: white; font-size: 16px;">LIQUIDACION DE CAJA Y RUTA</th></tr>';
-            html += '<tr><th>Factura / Cliente</th><th>Valor Facturado</th><th>Forma de Pago / Novedad</th><th>Monto Recaudado</th></tr></thead><tbody>';
-
+            const rows = [['Factura / Cliente', 'Valor', 'Acción', 'Monto recibido']];
             document.querySelectorAll('#settlementTable tbody tr').forEach(row => {
-                const client = row.cells[0]?.innerText.replace(/\n/g, ' - ') || '';
-                const val = row.cells[1]?.innerText || '';
-                const select = row.querySelector('.settlement-type');
-                const typeText = select ? select.options[select.selectedIndex].text : '';
-                const paid = row.querySelector('.settlement-amount')?.value || '0.00';
-
-                html += `<tr><td>${client}</td><td>${val}</td><td>${typeText}</td><td>$${paid}</td></tr>`;
+                if (!row.querySelector('.settlement-type')) return;
+                rows.push([
+                    row.cells[0].innerText.replace(/\n/g, ' - '),
+                    row.cells[1].innerText,
+                    row.querySelector('.settlement-type').selectedOptions[0].text,
+                    row.querySelector('.settlement-amount').value
+                ]);
             });
-
-            html += '<tr><td colspan="4"></td></tr><tr><th colspan="4" style="background-color: #b65338; color: white;">GASTOS REGISTRADOS</th></tr>';
-
-            document.querySelectorAll('#expensesTable tbody tr').forEach(row => {
-                const concept = row.querySelector('input[type="text"]')?.value || '';
-                const amount = row.querySelector('.expense-amount')?.value || '0.00';
-                if (concept !== '') {
-                    html += `<tr><td colspan="3">${concept}</td><td>$${amount}</td></tr>`;
-                }
-            });
-
-            html += `<tr><td colspan="4"></td></tr>
-                <tr><th colspan="3">TOTAL EFECTIVO RECAUDADO</th><td>${document.getElementById('lblTotalCash').innerText}</td></tr>
-                <tr><th colspan="3">RECAUDADO BANCOS</th><td>${document.getElementById('lblTotalBank').innerText}</td></tr>
-                <tr><th colspan="3">MENOS GASTOS</th><td>${document.getElementById('lblTotalExpenses').innerText}</td></tr>
-                <tr><th colspan="3" style="background-color: #fff8df;">EFECTIVO ESPERADO EN CAJA</th><td style="background-color: #fff8df; font-weight: bold;">${document.getElementById('lblExpectedCash').innerText}</td></tr>
-                <tr><th colspan="3">EFECTIVO CONTADO</th><td>$${document.getElementById('inputCountedCash').value || '0.00'}</td></tr>
-                <tr><th colspan="3">DIFERENCIA</th><td style="font-weight: bold;">${document.getElementById('lblDifference').innerText}</td></tr>`;
-
-            html += '</tbody></table>';
-
-            const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+            rows.push(['Total efectivo', document.getElementById('lblTotalCash').innerText]);
+            rows.push(['Total bancos', document.getElementById('lblTotalBank').innerText]);
+            rows.push(['Total gastos', document.getElementById('lblTotalExpenses').innerText]);
+            rows.push(['Efectivo esperado', document.getElementById('lblExpectedCash').innerText]);
+            const csv = rows.map(row => row.map(value => `"${String(value ?? '').replaceAll('"', '""')}"`).join(';')).join('\n');
             const link = document.createElement('a');
-            link.href = URL.createObjectURL(blob);
-            link.download = `Liquidacion_Caja_${new Date().toISOString().slice(0, 10)}.xls`;
+            link.href = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' }));
+            link.download = `arqueo_${new Date().toISOString().slice(0, 10)}.csv`;
             link.click();
+            URL.revokeObjectURL(link.href);
         }
 
-        document.addEventListener('DOMContentLoaded', calculateTotals);
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('routeDate')?.addEventListener('input', event => {
+                const batchDate = document.getElementById('batchRouteDate');
+                if (batchDate) batchDate.value = event.target.value;
+            });
+            calculateTotals();
+            calculateDenominations();
+            document.getElementById('countedCash')?.addEventListener('input', calculateTotals);
+        });
     </script>
 </x-app-layout>

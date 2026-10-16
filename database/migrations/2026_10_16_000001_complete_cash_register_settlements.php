@@ -2,6 +2,7 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
@@ -9,11 +10,15 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('delivery_stops', function (Blueprint $table) {
+            $table->foreignId('company_id')->nullable()->after('delivery_route_id')->constrained()->nullOnDelete();
             $table->foreignId('sale_id')->nullable()->unique()->constrained()->nullOnDelete();
             $table->string('payment_action')->nullable();
             $table->decimal('collected_amount', 18, 2)->default(0);
             $table->string('payment_method')->nullable();
         });
+        DB::table('delivery_stops')->whereNull('company_id')->update([
+            'company_id' => DB::raw('(select company_id from delivery_routes where delivery_routes.id = delivery_stops.delivery_route_id)'),
+        ]);
 
         Schema::table('cash_register_sessions', function (Blueprint $table) {
             $table->unsignedInteger('bill_100000')->default(0);
@@ -35,6 +40,7 @@ return new class extends Migration
             $table->foreignId('cash_register_session_id')->constrained()->cascadeOnDelete();
             $table->foreignId('delivery_stop_id')->nullable()->constrained()->nullOnDelete();
             $table->foreignId('sale_id')->nullable()->constrained()->nullOnDelete();
+            $table->foreignId('payment_id')->nullable()->constrained()->nullOnDelete();
             $table->foreignId('accounting_voucher_id')->nullable()->constrained()->nullOnDelete();
             $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
             $table->string('movement_type', 40);
@@ -46,6 +52,7 @@ return new class extends Migration
         Schema::table('cash_register_expenses', function (Blueprint $table) {
             $table->foreignId('company_id')->nullable()->constrained()->nullOnDelete();
             $table->foreignId('cash_register_session_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('accounting_voucher_id')->nullable()->constrained()->nullOnDelete();
             $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
             $table->string('category', 80)->default('otro');
             $table->string('concept');
@@ -70,6 +77,7 @@ return new class extends Migration
 
         Schema::table('cash_register_expenses', function (Blueprint $table) {
             $table->dropConstrainedForeignId('cash_register_session_id');
+            $table->dropConstrainedForeignId('accounting_voucher_id');
             $table->dropConstrainedForeignId('company_id');
             $table->dropConstrainedForeignId('created_by');
             $table->dropColumn(['category', 'concept', 'amount']);
@@ -79,6 +87,7 @@ return new class extends Migration
             $table->dropConstrainedForeignId('cash_register_session_id');
             $table->dropConstrainedForeignId('delivery_stop_id');
             $table->dropConstrainedForeignId('sale_id');
+            $table->dropConstrainedForeignId('payment_id');
             $table->dropConstrainedForeignId('accounting_voucher_id');
             $table->dropConstrainedForeignId('company_id');
             $table->dropConstrainedForeignId('created_by');
@@ -94,6 +103,7 @@ return new class extends Migration
 
         Schema::table('delivery_stops', function (Blueprint $table) {
             $table->dropConstrainedForeignId('sale_id');
+            $table->dropConstrainedForeignId('company_id');
             $table->dropColumn(['payment_action', 'collected_amount', 'payment_method']);
         });
     }

@@ -26,4 +26,9 @@ class CashRegisterMovement extends Model
     {
         return $this->belongsTo(Sale::class);
     }
+
+    public function payment(): BelongsTo
+    {
+        return $this->belongsTo(Payment::class);
+    }
 }

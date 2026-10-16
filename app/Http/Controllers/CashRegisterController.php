@@ -2,8 +2,9 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\CashRegisterSession;
+use App\Models\AccountingVoucher;
 use App\Models\CashRegisterExpense;
+use App\Models\CashRegisterSession;
 use App\Models\ChartOfAccount;
 use App\Models\DeliveryRoute;
 use App\Models\DeliveryStop;
@@ -14,8 +15,10 @@ use App\Models\Payment;
 use App\Models\Sale;
 use App\Models\SaleDetail;
 use App\Services\AccountingEntryService;
-use Illuminate\Support\Collection;
+use Illuminate\Contracts\View\View;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -50,10 +53,10 @@ class CashRegisterController extends Controller
         'coin_50' => 50,
     ];
 
-    public function index(Request $request)
+    public function index(Request $request): View
     {
         $fundType = $request->query('fund_type', 'general');
-        abort_unless(array_key_exists($fundType, CashRegisterSession::FUND_TYPES), 404);
+        abort_unless(is_string($fundType) && array_key_exists($fundType, CashRegisterSession::FUND_TYPES), 404);
 
         $openSession = CashRegisterSession::query()
             ->where('fund_type', $fundType)
@@ -107,7 +110,7 @@ class CashRegisterController extends Controller
         ]);
     }
 
-    public function open(Request $request)
+    public function open(Request $request): RedirectResponse
     {
         $data = $request->validate([
             'fund_type' => ['required', 'string', 'in:'.implode(',', array_keys(CashRegisterSession::FUND_TYPES))],
@@ -128,10 +131,8 @@ class CashRegisterController extends Controller
         return redirect()->route('cash-register.index', ['fund_type' => $data['fund_type']])->with('success', 'Caja abierta correctamente.');
     }
 
-    public function close(Request $request, CashRegisterSession $cashRegisterSession)
+    public function close(Request $request, CashRegisterSession $cashRegisterSession): RedirectResponse
     {
-        abort_unless($cashRegisterSession->isOpen(), 422, 'Esta sesión ya está cerrada.');
-
         $data = $request->validate([
             'counted_cash' => ['required', 'numeric', 'min:0'],
             'notes' => ['nullable', 'string', 'max:500'],
@@ -141,6 +142,8 @@ class CashRegisterController extends Controller
         ]);
 
         DB::transaction(function () use ($cashRegisterSession, $data): void {
+            $cashRegisterSession = CashRegisterSession::query()->lockForUpdate()->findOrFail($cashRegisterSession->id);
+            abort_unless($cashRegisterSession->isOpen(), 422, 'Esta sesión ya está cerrada.');
             $cashRegisterSession->closed_at = now();
             $cashRegisterSession->recalculateExpectedCash();
 
@@ -160,6 +163,7 @@ class CashRegisterController extends Controller
             $cashRegisterSession->closed_by = auth()->id();
             $cashRegisterSession->save();
         });
+        $cashRegisterSession->refresh();
 
         $message = abs($cashRegisterSession->difference) < 0.01
             ? '¡Caja cuadrada perfectamente!'
@@ -170,7 +174,7 @@ class CashRegisterController extends Controller
         return redirect()->route('cash-register.index', ['fund_type' => $cashRegisterSession->fund_type])->with('success', $message);
     }
 
-    public function settleBatch(Request $request)
+    public function settleBatch(Request $request): RedirectResponse
     {
         $data = $request->validate([
             'route_id' => ['required', 'integer'],
@@ -195,11 +199,14 @@ class CashRegisterController extends Controller
         abort_unless($session->isOpen(), 422, 'La sesión de caja ya está cerrada.');
 
         DB::transaction(function () use ($data, $route, $session): void {
+            $session = CashRegisterSession::query()->lockForUpdate()->findOrFail($session->id);
+            abort_unless($session->isOpen(), 422, 'La sesión de caja ya está cerrada.');
             foreach ($data['stops'] ?? [] as $stopId => $stopData) {
                 $stop = $route->stops()->with('sale')->lockForUpdate()->findOrFail($stopId);
                 if (! $stop->sale) {
                     continue;
                 }
+                $sale = Sale::query()->lockForUpdate()->findOrFail($stop->sale_id);
 
                 $action = $stopData['payment_action'];
                 if ($action === 'remove') {
@@ -282,7 +289,7 @@ class CashRegisterController extends Controller
                     ->whereIn('movement_type', ['collection', 'receivable_collection'])
                     ->first();
                 $existingPayment = $movement?->payment;
-                $balance = $stop->sale->balanceDue((float) $stop->sale->total)
+                $balance = $sale->balanceDue((float) $sale->total)
                     + (float) ($existingPayment?->amount ?? 0);
                 abort_if($amount > $balance + 0.01, 422, 'El recaudo supera el saldo pendiente de la factura.');
                 $accountingVoucher = null;
@@ -299,9 +306,9 @@ class CashRegisterController extends Controller
                         $this->removeAccountingVoucher($movement?->accounting_voucher_id);
                         $existingPayment->update($paymentData);
                     } else {
-                        $existingPayment = $stop->sale->payments()->create($paymentData);
+                        $existingPayment = $sale->payments()->create($paymentData);
                     }
-                    $accountingVoucher = $this->postCashPayment($existingPayment, $stop->sale, $method);
+                    $accountingVoucher = $this->postCashPayment($existingPayment, $sale, $method);
                 } elseif ($existingPayment) {
                     $this->removeAccountingVoucher($movement?->accounting_voucher_id);
                     $existingPayment->delete();
@@ -328,7 +335,7 @@ class CashRegisterController extends Controller
                         default => 'credit',
                     },
                     'amount' => $amount,
-                    'notes' => 'Factura '.$stop->sale->invoice_number,
+                    'notes' => 'Factura '.$sale->invoice_number,
                 ];
                 if ($movement) {
                     $movement->update($movementData);
@@ -383,59 +390,6 @@ class CashRegisterController extends Controller
                 continue;
             }
 
-            /**
-             * @param  array<int|string, int|string>  $quantities
-             */
-            private function returnedValue(DeliveryStop $stop, array $quantities): float
-            {
-                $details = SaleDetail::query()
-                    ->where('sale_id', $stop->sale_id)
-                    ->get()
-                    ->keyBy('id');
-
-                return round(collect($quantities)->sum(function ($quantity, $detailId) use ($details): float {
-                    $detail = $details->get((int) $detailId);
-                    if (! $detail) {
-                        return 0;
-                    }
-                    $unitPrice = (float) $detail->unit_price;
-                    $discount = (float) $detail->discount_percentage;
-                    $tax = (float) $detail->iva_percentage;
-
-                    return (int) $quantity * $unitPrice * (1 - $discount / 100) * (1 + $tax / 100);
-                }), 2);
-            }
-
-            private function postExchangeAdjustment(DeliveryStop $stop, float $difference, string $method): \App\Models\AccountingVoucher
-            {
-                $cashAccountId = $this->postingAccountId($method);
-                $incomeAccountId = $this->postingAccountId('4135');
-                abort_unless($cashAccountId && $incomeAccountId, 422, 'Configura las cuentas PUC para contabilizar la diferencia del cruce.');
-                $amount = abs($difference);
-                $positiveDifference = $difference > 0;
-
-                return $this->accountingEntryService->post([
-                    'voucher_type' => $positiveDifference ? 'recibo_caja' : 'egreso',
-                    'consecutive' => 'CRUCE-'.$stop->id.'-'.Str::ulid(),
-                    'voucher_date' => now()->toDateString(),
-                    'third_party' => $stop->sale?->customer_name,
-                    'description' => 'Diferencia de cruce de productos, factura '.$stop->sale?->invoice_number,
-                ], new Collection([
-                    [
-                        'chart_of_account_id' => $positiveDifference ? $cashAccountId : $incomeAccountId,
-                        'detail' => $positiveDifference ? 'Diferencia recibida por cruce' : 'Diferencia devuelta por cruce',
-                        'debit' => $amount,
-                        'credit' => 0,
-                    ],
-                    [
-                        'chart_of_account_id' => $positiveDifference ? $incomeAccountId : $cashAccountId,
-                        'detail' => 'Cruce de productos factura '.$stop->sale?->invoice_number,
-                        'debit' => 0,
-                        'credit' => $amount,
-                    ],
-                ]));
-            }
-
             $detail = $details->firstWhere('id', (int) $detailId);
             abort_unless($detail && $detail->item, 422, 'El producto no pertenece a la factura del lote.');
             $alreadyReturned = (int) $stop->returns()->where('sale_detail_id', $detail->id)->sum('quantity');
@@ -464,7 +418,60 @@ class CashRegisterController extends Controller
         }
     }
 
-    private function postCashPayment(Payment $payment, Sale $sale, string $method): \App\Models\AccountingVoucher
+    /**
+     * @param  array<int|string, int|string>  $quantities
+     */
+    private function returnedValue(DeliveryStop $stop, array $quantities): float
+    {
+        $details = SaleDetail::query()
+            ->where('sale_id', $stop->sale_id)
+            ->get()
+            ->keyBy('id');
+
+        return round(collect($quantities)->sum(function ($quantity, $detailId) use ($details): float {
+            $detail = $details->get((int) $detailId);
+            if (! $detail) {
+                return 0;
+            }
+            $unitPrice = (float) $detail->unit_price;
+            $discount = (float) $detail->discount_percentage;
+            $tax = (float) $detail->iva_percentage;
+
+            return (int) $quantity * $unitPrice * (1 - $discount / 100) * (1 + $tax / 100);
+        }), 2);
+    }
+
+    private function postExchangeAdjustment(DeliveryStop $stop, float $difference, string $method): AccountingVoucher
+    {
+        $cashAccountId = $this->postingAccountId($method);
+        $incomeAccountId = $this->postingAccountId('4135');
+        abort_unless($cashAccountId && $incomeAccountId, 422, 'Configura las cuentas PUC para contabilizar la diferencia del cruce.');
+        $amount = abs($difference);
+        $positiveDifference = $difference > 0;
+
+        return $this->accountingEntryService->post([
+            'voucher_type' => $positiveDifference ? 'recibo_caja' : 'egreso',
+            'consecutive' => 'CRUCE-'.$stop->id.'-'.Str::ulid(),
+            'voucher_date' => now()->toDateString(),
+            'third_party' => $stop->sale?->customer_name,
+            'description' => 'Diferencia de cruce de productos, factura '.$stop->sale?->invoice_number,
+        ], new Collection([
+            [
+                'chart_of_account_id' => $positiveDifference ? $cashAccountId : $incomeAccountId,
+                'detail' => $positiveDifference ? 'Diferencia recibida por cruce' : 'Diferencia devuelta por cruce',
+                'debit' => $amount,
+                'credit' => 0,
+            ],
+            [
+                'chart_of_account_id' => $positiveDifference ? $incomeAccountId : $cashAccountId,
+                'detail' => 'Cruce de productos factura '.$stop->sale?->invoice_number,
+                'debit' => 0,
+                'credit' => $amount,
+            ],
+        ]));
+    }
+
+    private function postCashPayment(Payment $payment, Sale $sale, string $method): AccountingVoucher
     {
         $debitAccountId = $this->postingAccountId($method);
         $receivableAccountId = $this->postingAccountId('1305');
@@ -498,14 +505,14 @@ class CashRegisterController extends Controller
             return;
         }
 
-        $voucher = \App\Models\AccountingVoucher::query()->find($voucherId);
+        $voucher = AccountingVoucher::query()->find($voucherId);
         if ($voucher) {
             $voucher->lines()->delete();
             $voucher->delete();
         }
     }
 
-    private function postExpense(CashRegisterExpense $expense): \App\Models\AccountingVoucher
+    private function postExpense(CashRegisterExpense $expense): AccountingVoucher
     {
         [$debitCode, $creditCode, $voucherType] = match ($expense->category) {
             'combustible' => ['5135', '1105', 'egreso'],
@@ -559,7 +566,7 @@ class CashRegisterController extends Controller
             ->value('id');
     }
 
-    public function attachInvoice(Request $request, DeliveryRoute $route)
+    public function attachInvoice(Request $request, DeliveryRoute $route): RedirectResponse
     {
         $data = $request->validate([
             'sale_id' => ['required', 'integer'],
@@ -580,7 +587,7 @@ class CashRegisterController extends Controller
         return back()->with('success', 'Factura agregada al lote sin modificar el inventario.');
     }
 
-    public function removeInvoice(DeliveryStop $stop)
+    public function removeInvoice(DeliveryStop $stop): RedirectResponse
     {
         abort_unless($stop->sale_id, 404);
         $stop->update(['sale_id' => null, 'payment_action' => null, 'collected_amount' => 0, 'payment_method' => null]);
@@ -588,7 +595,7 @@ class CashRegisterController extends Controller
         return back()->with('success', 'Factura retirada del lote; la factura y el inventario no fueron modificados.');
     }
 
-    public function returnProducts(Request $request, DeliveryStop $stop)
+    public function returnProducts(Request $request, DeliveryStop $stop): RedirectResponse
     {
         $data = $request->validate([
             'return_type' => ['required', 'in:return_total,return_partial'],
@@ -613,7 +620,7 @@ class CashRegisterController extends Controller
         return back()->with('success', 'Los productos seleccionados regresaron al inventario. La factura no fue modificada ni enviada a la DIAN.');
     }
 
-    public function reschedule(Request $request, DeliveryRoute $route)
+    public function reschedule(Request $request, DeliveryRoute $route): RedirectResponse
     {
         $data = $request->validate(['route_date' => ['required', 'date_format:Y-m-d']]);
         $route->update(['route_date' => $data['route_date']]);
@@ -621,7 +628,7 @@ class CashRegisterController extends Controller
         return back()->with('success', 'La fecha de toda la ruta fue reprogramada.');
     }
 
-    public function collectReceivable(Request $request)
+    public function collectReceivable(Request $request): RedirectResponse
     {
         $data = $request->validate([
             'sale_id' => ['required', 'integer'],
@@ -631,11 +638,13 @@ class CashRegisterController extends Controller
         ]);
         $sale = Sale::query()->findOrFail($data['sale_id']);
         $session = CashRegisterSession::query()->findOrFail($data['session_id']);
-        abort_unless($session->isOpen(), 422, 'La sesión de caja ya está cerrada.');
-        $balance = $sale->balanceDue((float) $sale->total);
-        abort_if($data['amount'] > $balance + 0.01, 422, 'El recaudo supera el saldo pendiente de la factura.');
 
         DB::transaction(function () use ($data, $sale, $session): void {
+            $lockedSession = CashRegisterSession::query()->lockForUpdate()->findOrFail($session->id);
+            abort_unless($lockedSession->isOpen(), 422, 'La sesión de caja ya está cerrada.');
+            $sale = Sale::query()->lockForUpdate()->findOrFail($sale->id);
+            $balance = $sale->balanceDue((float) $sale->total);
+            abort_if($data['amount'] > $balance + 0.01, 422, 'El recaudo supera el saldo pendiente de la factura.');
             $payment = $sale->payments()->create([
                 'amount' => $data['amount'],
                 'payment_date' => now()->toDateString(),
@@ -644,8 +653,8 @@ class CashRegisterController extends Controller
                 'created_by' => auth()->id(),
             ]);
             $accountingVoucher = $this->postCashPayment($payment, $sale, $data['payment_method']);
-            $session->movements()->create([
-                'company_id' => $session->company_id,
+            $lockedSession->movements()->create([
+                'company_id' => $lockedSession->company_id,
                 'sale_id' => $sale->id,
                 'payment_id' => $payment->id,
                 'accounting_voucher_id' => $accountingVoucher->id,
@@ -655,16 +664,15 @@ class CashRegisterController extends Controller
                 'amount' => $data['amount'],
                 'notes' => 'Cobro de cartera '.$sale->invoice_number,
             ]);
-            $session->recalculateExpectedCash();
-            $session->save();
+            $lockedSession->recalculateExpectedCash();
+            $lockedSession->save();
         });
 
         return back()->with('success', 'Cobro de cartera registrado sin afectar el inventario.');
     }
 
-    public function storeExpense(Request $request, CashRegisterSession $cashRegisterSession)
+    public function storeExpense(Request $request, CashRegisterSession $cashRegisterSession): RedirectResponse
     {
-        abort_unless($cashRegisterSession->isOpen(), 422, 'La sesión de caja ya está cerrada.');
         $data = $request->validate([
             'category' => ['required', 'in:combustible,proveedor,transferencia,otro'],
             'concept' => ['required', 'string', 'max:255'],
@@ -672,6 +680,8 @@ class CashRegisterController extends Controller
         ]);
 
         DB::transaction(function () use ($data, $cashRegisterSession): void {
+            $cashRegisterSession = CashRegisterSession::query()->lockForUpdate()->findOrFail($cashRegisterSession->id);
+            abort_unless($cashRegisterSession->isOpen(), 422, 'La sesión de caja ya está cerrada.');
             $expense = $cashRegisterSession->expenses()->create([
                 ...$data,
                 'company_id' => $cashRegisterSession->company_id,

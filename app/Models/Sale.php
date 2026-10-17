@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Models\Concerns\BelongsToCompany;
 use App\Models\Concerns\HasPayments;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Sale extends Model
 {
@@ -28,5 +29,10 @@ class Sale extends Model
     public function accountingVoucher()
     {
         return $this->belongsTo(AccountingVoucher::class);
+    }
+
+    public function deliveryStop(): HasOne
+    {
+        return $this->hasOne(DeliveryStop::class);
     }
 }

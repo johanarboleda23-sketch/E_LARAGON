@@ -300,8 +300,8 @@
                 <form method="POST" action="{{ route('cash-register.close', $openSession) }}" class="rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm">
                     @csrf
                     <h3 class="text-sm font-black uppercase tracking-wider text-[#227c70]">Conteo físico por denominaciones</h3>
-                    <div class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                        @foreach ([
+                    @php
+                        $denominationLabels = [
                             'bill_100000' => 'Billetes de $100.000',
                             'bill_50000' => 'Billetes de $50.000',
                             'bill_20000' => 'Billetes de $20.000',
@@ -314,7 +314,10 @@
                             'coin_200' => 'Monedas de $200',
                             'coin_100' => 'Monedas de $100',
                             'coin_50' => 'Monedas de $50',
-                        ] as $field => $label)
+                        ];
+                    @endphp
+                    <div class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                        @foreach ($denominationLabels as $field => $label)
                             <label class="grid gap-1 text-xs font-bold text-[#52635b]">{{ $label }}
                                 <input type="number" min="0" max="100000" name="{{ $field }}" value="{{ $openSession->{$field} ?? 0 }}" oninput="calculateDenominations()" class="denomination-count rounded-lg border-[#cbd6cf] text-sm">
                             </label>

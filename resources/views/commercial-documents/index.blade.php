@@ -11,15 +11,18 @@
 
     <div class="min-h-screen bg-gray-50 px-4 py-6 sm:px-6 lg:px-8">
         <div class="mx-auto max-w-7xl">
-            <nav aria-label="Módulos comerciales" class="mb-5 flex flex-wrap gap-2 border-b border-gray-200 pb-3">
-                @foreach ([
+            @php
+                $commercialModules = [
                     'quotation' => ['label' => 'Cotizaciones', 'route' => 'commercial-documents.quotations'],
                     'sales_order' => ['label' => 'Órdenes de venta', 'route' => 'commercial-documents.sales-orders'],
                     'remission' => ['label' => 'Remisiones', 'route' => 'commercial-documents.remissions'],
                     'purchase_order' => ['label' => 'Órdenes de compra', 'route' => 'commercial-documents.purchase-orders'],
                     'customer_credit_note' => ['label' => 'Nota crédito clientes', 'route' => 'commercial-documents.customer-credit-notes'],
                     'supplier_debit_note' => ['label' => 'Nota débito proveedores', 'route' => 'commercial-documents.supplier-debit-notes'],
-                ] as $moduleType => $module)
+                ];
+            @endphp
+            <nav aria-label="Módulos comerciales" class="mb-5 flex flex-wrap gap-2 border-b border-gray-200 pb-3">
+                @foreach ($commercialModules as $moduleType => $module)
                     <a href="{{ route($module['route']) }}" @class([
                         'rounded-md px-3 py-2 text-sm font-semibold',
                         'bg-teal-700 text-white' => $type === $moduleType,

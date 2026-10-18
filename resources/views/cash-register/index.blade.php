@@ -25,11 +25,11 @@
                         Lote / ruta
                         <select name="route_id" class="min-w-64 rounded-lg border-[#cbd6cf] text-sm">
                             <option value="">Selecciona lote</option>
-                            @foreach ($routes as $route)
+                            @php foreach ($routes as $route): @endphp
                                 <option value="{{ $route->id }}" @selected((string) $selectedRouteId === (string) $route->id)>
                                     {{ $route->code }} · {{ $route->driver_name }} · {{ $route->route_date->format('d/m/Y') }}
                                 </option>
-                            @endforeach
+                            @php endforeach; @endphp
                         </select>
                     </label>
                     <button class="rounded-lg bg-[#227c70] px-4 py-2.5 text-xs font-bold text-white">Cargar lote</button>
@@ -52,9 +52,9 @@
                         <label class="grid gap-1 text-xs font-bold text-[#52635b]">
                             Caja
                             <select name="fund_type" class="rounded-lg border-[#cbd6cf] text-sm">
-                                @foreach ($fundTypes as $key => $label)
+                                @php foreach ($fundTypes as $key => $label): @endphp
                                     <option value="{{ $key }}" @selected($fundType === $key)>{{ $label }}</option>
-                                @endforeach
+                                @php endforeach; @endphp
                             </select>
                         </label>
                         <label class="grid gap-1 text-xs font-bold text-[#52635b]">
@@ -80,9 +80,9 @@
                                     Anexar factura existente
                                     <select name="sale_id" class="min-w-64 rounded-lg border-[#cbd6cf] text-sm" required>
                                         <option value="">Selecciona factura</option>
-                                        @foreach ($availableSales as $sale)
+                                        @php foreach ($availableSales as $sale): @endphp
                                             <option value="{{ $sale->id }}">{{ $sale->invoice_number }} · {{ $sale->customer_name }} · ${{ number_format($sale->total, 2) }}</option>
-                                        @endforeach
+                                        @php endforeach; @endphp
                                     </select>
                                 </label>
                                 <button class="rounded-lg border border-[#227c70] px-4 py-2.5 text-xs font-bold text-[#227c70]">Agregar factura</button>
@@ -128,7 +128,8 @@
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-[#e6ede8] bg-white">
-                                    @forelse ($deliveryStops as $stop)
+                                    @if ($deliveryStops->isNotEmpty())
+                                        @php foreach ($deliveryStops as $stop): @endphp
                                         <tr class="align-top hover:bg-[#f8faf8]">
                                             <td class="p-3 font-bold text-[#192522]">
                                                 {{ $stop->sale?->invoice_number ?? 'Parada #'.$stop->id }}
@@ -137,7 +138,7 @@
                                                     <details class="mt-2 font-normal">
                                                         <summary class="cursor-pointer text-[#227c70]">Productos y devolución parcial</summary>
                                                         <div class="mt-2 grid gap-2">
-                                                            @foreach ($stop->sale->details as $detail)
+                                                            @php foreach ($stop->sale->details as $detail): @endphp
                                                                 @php
                                                                     $returnedQty = (int) $stop->returns->where('sale_detail_id', $detail->id)->sum('quantity');
                                                                     $remainingQty = max(0, (int) $detail->quantity - $returnedQty);
@@ -146,13 +147,13 @@
                                                                     <span>{{ $detail->item?->name }} · disponibles para devolución: {{ $remainingQty }}</span>
                                                                     <input type="number" name="stops[{{ $stop->id }}][return_quantities][{{ $detail->id }}]" min="0" max="{{ $remainingQty }}" value="0" data-unit-price="{{ $detail->unit_price }}" data-discount="{{ $detail->discount_percentage }}" data-tax="{{ $detail->iva_percentage }}" class="return-quantity w-20 rounded border-[#cbd6cf] text-xs" oninput="calculateTotals()">
                                                                 </label>
-                                                            @endforeach
+                                                            @php endforeach; @endphp
                                                             <div class="flex flex-wrap items-center gap-2">
                                                                 <select name="stops[{{ $stop->id }}][replacement_item_id]" onchange="calculateTotals()" class="max-w-64 rounded border-[#cbd6cf] text-xs">
                                                                     <option value="">Producto para cruce</option>
-                                                                    @foreach ($availableItems as $item)
+                                                                    @php foreach ($availableItems as $item): @endphp
                                                                         <option value="{{ $item->id }}" data-sale-price="{{ $item->sale_price }}">{{ $item->name }} · stock {{ $item->stock }} · ${{ number_format($item->sale_price, 2) }}</option>
-                                                                    @endforeach
+                                                                    @php endforeach; @endphp
                                                                 </select>
                                                                 <input type="number" name="stops[{{ $stop->id }}][replacement_quantity]" min="1" value="1" class="replacement-quantity w-20 rounded border-[#cbd6cf] text-xs" aria-label="Cantidad del producto de reemplazo" oninput="calculateTotals()">
                                                             </div>
@@ -164,9 +165,9 @@
                                             <td class="p-3 text-right font-bold">${{ number_format($stop->sale?->total ?? 0, 2) }}</td>
                                             <td class="p-3">
                                                 <select name="stops[{{ $stop->id }}][payment_action]" onchange="handleActionChange(this); calculateTotals()" class="settlement-type w-52 rounded-lg border-[#cbd6cf] text-xs font-bold" required>
-                                                    @foreach ($settlementActions as $key => $label)
+                                                    @php foreach ($settlementActions as $key => $label): @endphp
                                                         <option value="{{ $key }}" @selected(($stop->payment_action ?? '1305') === $key)>{{ $label }}</option>
-                                                    @endforeach
+                                                    @php endforeach; @endphp
                                                 </select>
                                             </td>
                                             <td class="p-3">
@@ -180,9 +181,9 @@
                                                 <input type="number" step="0.01" min="0" name="stops[{{ $stop->id }}][amount_paid]" value="{{ $stop->collected_amount ?? 0 }}" oninput="calculateTotals()" class="settlement-amount w-32 rounded-lg border-[#cbd6cf] text-right text-xs font-bold">
                                             </td>
                                         </tr>
-                                    @empty
+                                    @else
                                         <tr><td colspan="5" class="p-6 text-center text-gray-500">Este lote todavía no tiene facturas.</td></tr>
-                                    @endforelse
+                                    @endif
                                 </tbody>
                             </table>
                         </div>
@@ -196,7 +197,7 @@
                                 <button type="button" onclick="addExpenseRow()" class="rounded-lg bg-[#b65338] px-3 py-2 text-xs font-bold text-white">Agregar gasto</button>
                             </div>
                             <div class="mt-3 grid gap-2" id="expensesList">
-                                @foreach ($openSession->expenses as $index => $expense)
+                                @php foreach ($openSession->expenses as $index => $expense): @endphp
                                     <div class="expense-row grid gap-2 sm:grid-cols-[12rem_1fr_10rem_auto]">
                                         <select name="expenses[{{ $index }}][category]" class="expense-category rounded-lg border-[#cbd6cf] text-xs">
                                             <option value="combustible" @selected($expense->category === 'combustible')>Combustible</option>
@@ -208,7 +209,7 @@
                                         <input type="number" min="0.01" step="0.01" name="expenses[{{ $index }}][amount]" value="{{ $expense->amount }}" oninput="calculateTotals()" class="expense-amount rounded-lg border-[#cbd6cf] text-right text-xs" required>
                                         <button type="button" onclick="removeExpenseRow(this)" class="rounded-lg px-3 text-xs font-bold text-red-600">Quitar</button>
                                     </div>
-                                @endforeach
+                                @php endforeach; @endphp
                             </div>
                         </div>
 
@@ -253,9 +254,9 @@
                             Factura
                             <select name="sale_id" class="min-w-64 rounded-lg border-[#cbd6cf] text-sm" required>
                                 <option value="">Selecciona factura pendiente</option>
-                                @foreach ($receivableSales as $sale)
+                                @php foreach ($receivableSales as $sale): @endphp
                                     <option value="{{ $sale->id }}">{{ $sale->invoice_number }} · {{ $sale->customer_name }} · ${{ number_format($sale->total, 2) }}</option>
-                                @endforeach
+                                @php endforeach; @endphp
                             </select>
                         </label>
                         <label class="grid gap-1 text-xs font-bold text-[#52635b]">
@@ -317,11 +318,11 @@
                         ];
                     @endphp
                     <div class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                        @foreach ($denominationLabels as $field => $label)
+                        @php foreach ($denominationLabels as $field => $label): @endphp
                             <label class="grid gap-1 text-xs font-bold text-[#52635b]">{{ $label }}
                                 <input type="number" min="0" max="100000" name="{{ $field }}" value="{{ $openSession->{$field} ?? 0 }}" oninput="calculateDenominations()" class="denomination-count rounded-lg border-[#cbd6cf] text-sm">
                             </label>
-                        @endforeach
+                        @php endforeach; @endphp
                     </div>
                     <div class="mt-4 flex flex-wrap items-center justify-between gap-4 rounded-xl bg-[#192522] p-4 text-white">
                         <div>
@@ -346,7 +347,7 @@
                         <table class="w-full text-left text-xs">
                             <thead><tr class="border-b text-[#71807a]"><th class="p-2">Fecha</th><th class="p-2">Base</th><th class="p-2">Esperado</th><th class="p-2">Contado</th><th class="p-2">Diferencia</th><th class="p-2">Gastos</th></tr></thead>
                             <tbody>
-                                @foreach ($recentSessions as $session)
+                                @php foreach ($recentSessions as $session): @endphp
                                     <tr class="border-b border-[#e6ede8]">
                                         <td class="p-2">{{ $session->closed_at?->format('d/m/Y H:i') }}</td>
                                         <td class="p-2">${{ number_format($session->opening_balance, 2) }}</td>
@@ -355,7 +356,7 @@
                                         <td class="p-2">${{ number_format($session->difference, 2) }}</td>
                                         <td class="p-2">${{ number_format($session->cash_out, 2) }}</td>
                                     </tr>
-                                @endforeach
+                                @php endforeach; @endphp
                             </tbody>
                         </table>
                     </div>

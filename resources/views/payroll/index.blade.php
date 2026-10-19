@@ -20,8 +20,8 @@
                 <p class="mt-3 max-w-2xl text-sm leading-6 text-[#d8f0e8]">Calcula, revisa y prepara los aportes de tu equipo desde una sola pantalla.</p>
             </section>
 
-            <nav class="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8" aria-label="Submódulos de nómina">
-                @foreach([
+            @php
+                $payrollModules = [
                     ['label' => 'Liquidación', 'icon' => '◎', 'href' => '#liquidacion', 'active' => true],
                     ['label' => 'Seguridad social', 'icon' => '＋', 'href' => '#seguridad-social', 'active' => false],
                     ['label' => 'Novedades', 'icon' => '△', 'href' => '#novedades', 'active' => false],
@@ -30,7 +30,10 @@
                     ['label' => 'Desprendibles', 'icon' => '▤', 'href' => '#desprendibles', 'active' => false],
                     ['label' => 'Historial', 'icon' => '◷', 'href' => '#historial', 'active' => false],
                     ['label' => 'Configuración', 'icon' => '⚙', 'href' => '#configuracion', 'active' => false],
-                ] as $module)
+                ];
+            @endphp
+            <nav class="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8" aria-label="Submódulos de nómina">
+                @foreach ($payrollModules as $module)
                     <a href="{{ $module['href'] }}" class="rounded-xl border {{ $module['active'] ? 'border-[#227c70] bg-[#227c70] text-white' : 'border-[#d7dfd8] bg-white text-[#354d45]' }} p-3 transition hover:-translate-y-0.5 hover:border-[#227c70]">
                         <span class="text-lg">{{ $module['icon'] }}</span>
                         <span class="mt-2 block text-xs font-bold leading-4">{{ $module['label'] }}</span>

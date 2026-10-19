@@ -3,8 +3,10 @@
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToCompany;
+use App\Models\CashRegisterMovement;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class CashRegisterSession extends Model
 {
@@ -32,6 +34,16 @@ class CashRegisterSession extends Model
         return $this->belongsTo(User::class, 'closed_by');
     }
 
+    public function movements(): HasMany
+    {
+        return $this->hasMany(CashRegisterMovement::class);
+    }
+
+    public function expenses(): HasMany
+    {
+        return $this->hasMany(CashRegisterExpense::class);
+    }
+
     public function isOpen(): bool
     {
         return $this->status === 'open';
@@ -49,16 +61,38 @@ class CashRegisterSession extends Model
             ->where('voucher_type', 'recibo_caja')
             ->whereDate('voucher_date', '>=', $this->opened_at->toDateString())
             ->whereDate('voucher_date', '<=', $cutoff->toDateString())
+            ->whereNotIn('id', CashRegisterMovement::query()
+                ->where(function ($query): void {
+                    $query->where('cash_register_session_id', '!=', $this->id)
+                        ->orWhere('payment_method', 'bank');
+                })
+                ->whereNotNull('accounting_voucher_id')
+                ->select('accounting_voucher_id'))
             ->sum('total_debit');
 
         $cashOut = (float) AccountingVoucher::query()
             ->where('voucher_type', 'egreso')
             ->whereDate('voucher_date', '>=', $this->opened_at->toDateString())
             ->whereDate('voucher_date', '<=', $cutoff->toDateString())
+            ->whereNotIn('id', CashRegisterMovement::query()
+                ->where('payment_method', 'bank')
+                ->whereNotNull('accounting_voucher_id')
+                ->select('accounting_voucher_id'))
+            ->whereNotIn('id', CashRegisterExpense::query()
+                ->where('cash_register_session_id', '!=', $this->id)
+                ->whereNotNull('accounting_voucher_id')
+                ->select('accounting_voucher_id'))
             ->sum('total_debit');
 
-        $this->cash_in = $cashIn;
-        $this->cash_out = $cashOut;
-        $this->expected_cash = round((float) $this->opening_balance + $cashIn - $cashOut, 2);
+        $movementCashIn = (float) $this->movements()
+            ->whereIn('payment_method', ['cash', '1105'])
+            ->whereIn('movement_type', ['collection', 'receivable_collection', 'exchange_difference'])
+            ->whereNull('accounting_voucher_id')
+            ->sum('amount');
+        $expenseTotal = (float) $this->expenses()->whereNull('accounting_voucher_id')->sum('amount');
+
+        $this->cash_in = $cashIn + $movementCashIn;
+        $this->cash_out = $cashOut + $expenseTotal;
+        $this->expected_cash = round((float) $this->opening_balance + $cashIn + $movementCashIn - $cashOut - $expenseTotal, 2);
     }
 }

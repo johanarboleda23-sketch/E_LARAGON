@@ -18,6 +18,16 @@ class CashRegisterControllerTest extends TestCase
         $this->get(route('cash-register.index'))->assertRedirect(route('login'));
     }
 
+    public function test_authenticated_user_can_view_the_cash_register_page(): void
+    {
+        $this->authenticateWithCompany();
+
+        $this->get(route('cash-register.index'))
+            ->assertOk()
+            ->assertSeeText('Arqueo de Caja')
+            ->assertSeeText('Abrir Caja general');
+    }
+
     public function test_a_session_can_be_opened_and_cannot_be_opened_twice(): void
     {
         $this->authenticateWithCompany();

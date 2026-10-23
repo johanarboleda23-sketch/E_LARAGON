@@ -181,6 +181,7 @@
                                                 <input type="number" step="0.01" min="0" name="stops[{{ $stop->id }}][amount_paid]" value="{{ $stop->collected_amount ?? 0 }}" oninput="calculateTotals()" class="settlement-amount w-32 rounded-lg border-[#cbd6cf] text-right text-xs font-bold">
                                             </td>
                                         </tr>
+                                        @php endforeach; @endphp
                                     @else
                                         <tr><td colspan="5" class="p-6 text-center text-gray-500">Este lote todavía no tiene facturas.</td></tr>
                                     @endif

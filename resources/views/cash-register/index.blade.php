@@ -1,140 +1,496 @@
 <x-app-layout>
     <x-slot name="header">
-        <div class="flex items-center justify-between gap-4">
+        <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
-                <p class="text-[11px] font-bold uppercase tracking-[0.2em] text-[#d96b4c]">Tesorería</p>
-                <h2 class="mt-1 text-xl font-black text-[#192522]">Arqueo de Caja</h2>
+                <p class="text-[11px] font-bold uppercase tracking-[0.2em] text-[#d96b4c]">Tesorería & Logística</p>
+                <h2 class="mt-1 text-xl font-black text-[#192522]">Arqueo de caja y lotes de despacho</h2>
             </div>
             <a href="{{ route('dashboard') }}" class="rounded-lg border border-[#d7dfd8] bg-white px-3 py-2 text-xs font-bold text-[#227c70]">⌂ Tablero</a>
         </div>
     </x-slot>
 
     <div class="min-h-screen bg-[#f3f5f1] px-4 py-8 sm:px-8">
-        <div class="mx-auto max-w-6xl space-y-6">
+        <div class="mx-auto max-w-7xl space-y-6">
             @if (session('success'))
-                <div class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
-                    {{ session('success') }}
-                </div>
+                <div class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{{ session('success') }}</div>
             @endif
-
             @if ($errors->any())
-                <div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
-                    {{ $errors->first() }}
-                </div>
+                <div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{{ $errors->first() }}</div>
             @endif
 
-            <section class="rounded-2xl border border-[#d7dfd8] bg-white p-6 shadow-sm">
-                <form method="GET" action="{{ route('cash-register.index') }}" class="flex flex-wrap items-end gap-4">
-                    <div>
-                        <label for="fund_type" class="mb-1 block text-xs font-bold uppercase text-[#71807a]">Tipo de caja</label>
-                        <select id="fund_type" name="fund_type" class="rounded-lg border-[#cbd6cf] text-sm font-bold text-[#192522] focus:ring-[#227c70]">
-                            @foreach ($fundTypes as $key => $label)
-                                <option value="{{ $key }}" @selected($fundType === $key)>{{ $label }}</option>
-                            @endforeach
+            <section class="flex flex-wrap items-end justify-between gap-4 rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm">
+                <form method="GET" action="{{ route('cash-register.index') }}" class="flex flex-wrap items-end gap-3">
+                    <input type="hidden" name="fund_type" value="{{ $fundType }}">
+                    <label class="grid gap-1 text-xs font-bold text-[#52635b]">
+                        Lote / ruta
+                        <select name="route_id" class="min-w-64 rounded-lg border-[#cbd6cf] text-sm">
+                            <option value="">Selecciona lote</option>
+                            @php foreach ($routes as $route): @endphp
+                                <option value="{{ $route->id }}" @selected((string) $selectedRouteId === (string) $route->id)>
+                                    {{ $route->code }} · {{ $route->driver_name }} · {{ $route->route_date->format('d/m/Y') }}
+                                </option>
+                            @php endforeach; @endphp
                         </select>
-                    </div>
-                    <button type="submit" class="rounded-lg bg-[#192522] px-4 py-2 text-xs font-bold text-white hover:bg-black">
-                        Consultar caja
-                    </button>
+                    </label>
+                    <button class="rounded-lg bg-[#227c70] px-4 py-2.5 text-xs font-bold text-white">Cargar lote</button>
                 </form>
+
+                @if ($openSession)
+                    <div class="rounded-xl bg-[#f8faf8] px-4 py-3 text-sm">
+                        <span class="font-bold text-[#71807a]">Base del día</span>
+                        <span class="ml-2 font-black text-[#192522]">${{ number_format($openSession->opening_balance, 2) }}</span>
+                        <span class="ml-3 rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">Caja abierta</span>
+                    </div>
+                @endif
             </section>
+
+            @if (! $openSession)
+                <section class="rounded-2xl border border-[#d7dfd8] bg-white p-6 shadow-sm">
+                    <h3 class="text-sm font-black uppercase tracking-wider text-[#227c70]">Abrir caja y registrar base del día</h3>
+                    <form method="POST" action="{{ route('cash-register.open') }}" class="mt-4 flex flex-wrap items-end gap-3">
+                        @csrf
+                        <label class="grid gap-1 text-xs font-bold text-[#52635b]">
+                            Caja
+                            <select name="fund_type" class="rounded-lg border-[#cbd6cf] text-sm">
+                                @php foreach ($fundTypes as $key => $label): @endphp
+                                    <option value="{{ $key }}" @selected($fundType === $key)>{{ $label }}</option>
+                                @php endforeach; @endphp
+                            </select>
+                        </label>
+                        <label class="grid gap-1 text-xs font-bold text-[#52635b]">
+                            Base inicial en efectivo
+                            <input type="number" name="opening_balance" min="0" step="0.01" value="{{ old('opening_balance', 0) }}" class="rounded-lg border-[#cbd6cf] text-sm" required>
+                        </label>
+                        <button class="rounded-lg bg-[#227c70] px-5 py-2.5 text-xs font-bold text-white">Abrir caja</button>
+                    </form>
+                </section>
+            @endif
+
+            @if ($selectedRoute)
+                <section class="flex flex-wrap items-end justify-between gap-4 rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm">
+                    <div>
+                        <h3 class="text-sm font-black uppercase tracking-wider text-[#227c70]">Lote {{ $selectedRoute->code }}</h3>
+                        <p class="mt-1 text-xs text-[#71807a]">{{ $selectedRoute->driver_name }} · {{ $selectedRoute->vehicle_plate }} · {{ $selectedRoute->route_date->format('d/m/Y') }}</p>
+                    </div>
+                    <div class="flex flex-wrap items-end gap-3">
+                        @if ($openSession)
+                            <form method="POST" action="{{ route('cash-register.attach-invoice', $selectedRoute) }}" class="flex flex-wrap items-end gap-2">
+                                @csrf
+                                <label class="grid gap-1 text-xs font-bold text-[#52635b]">
+                                    Anexar factura existente
+                                    <select name="sale_id" class="min-w-64 rounded-lg border-[#cbd6cf] text-sm" required>
+                                        <option value="">Selecciona factura</option>
+                                        @php foreach ($availableSales as $sale): @endphp
+                                            <option value="{{ $sale->id }}">{{ $sale->invoice_number }} · {{ $sale->customer_name }} · ${{ number_format($sale->total, 2) }}</option>
+                                        @php endforeach; @endphp
+                                    </select>
+                                </label>
+                                <button class="rounded-lg border border-[#227c70] px-4 py-2.5 text-xs font-bold text-[#227c70]">Agregar factura</button>
+                            </form>
+                        @endif
+                        <form method="POST" action="{{ route('cash-register.reschedule', $selectedRoute) }}" class="flex items-end gap-2">
+                            @csrf
+                            @method('PATCH')
+                            <label class="grid gap-1 text-xs font-bold text-[#52635b]">
+                                Reprogramar toda la ruta
+                                <input type="date" name="route_date" id="routeDate" value="{{ $selectedRoute->route_date->toDateString() }}" class="rounded-lg border-[#cbd6cf] text-sm" required>
+                            </label>
+                            <button class="rounded-lg border border-[#cbd6cf] px-3 py-2.5 text-xs font-bold text-[#52635b]">Guardar fecha</button>
+                        </form>
+                    </div>
+                </section>
+            @endif
 
             @if ($openSession)
-                <section class="space-y-5 rounded-2xl border border-[#d7dfd8] bg-white p-6 shadow-sm">
-                    <div class="flex flex-wrap items-start justify-between gap-4">
-                        <div>
-                            <h3 class="text-sm font-black uppercase tracking-wider text-[#227c70]">Sesión abierta</h3>
-                            <p class="mt-1 text-xs text-[#71807a]">Apertura: {{ $openSession->opened_at->format('d/m/Y H:i') }}</p>
+                @if ($selectedRoute)
+                <form action="{{ route('cash-register.settle-batch') }}" method="POST" id="settlementForm">
+                    @csrf
+                    <input type="hidden" name="route_id" value="{{ $selectedRoute->id }}">
+                    <input type="hidden" name="session_id" value="{{ $openSession->id }}">
+                    <input type="hidden" name="route_date" id="batchRouteDate" value="{{ $selectedRoute->route_date->toDateString() }}">
+                    <section class="space-y-4 rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm">
+                        <div class="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                                <h3 class="text-sm font-black uppercase tracking-wider text-[#227c70]">Facturas del lote y formas de pago</h3>
+                                <p class="mt-1 text-xs text-[#71807a]">Las devoluciones reponen inventario; quitar una factura solo la retira del lote.</p>
+                            </div>
+                            <button type="button" onclick="exportToExcel()" class="rounded-lg bg-[#192522] px-3 py-2 text-xs font-bold text-white">Exportar reporte</button>
                         </div>
-                        <span class="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">Abierta</span>
-                    </div>
+                        <div class="overflow-x-auto rounded-xl border border-[#e6ede8]">
+                            <table class="w-full min-w-[1050px] text-left text-xs" id="settlementTable">
+                                <thead class="bg-[#192522] uppercase text-white">
+                                    <tr>
+                                        <th class="p-3">Factura / cliente / productos</th>
+                                        <th class="p-3 text-right">Valor</th>
+                                        <th class="p-3">Acción</th>
+                                        <th class="p-3">Forma de cobro</th>
+                                        <th class="p-3 text-right">Monto</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-[#e6ede8] bg-white">
+                                    @if ($deliveryStops->isNotEmpty())
+                                        @php foreach ($deliveryStops as $stop): @endphp
+                                        <tr class="align-top hover:bg-[#f8faf8]">
+                                            <td class="p-3 font-bold text-[#192522]">
+                                                {{ $stop->sale?->invoice_number ?? 'Parada #'.$stop->id }}
+                                                <span class="font-normal text-[#71807a]">· {{ $stop->sale?->customer_name ?? $stop->customer_name }}</span>
+                                                @if ($stop->sale)
+                                                    <details class="mt-2 font-normal">
+                                                        <summary class="cursor-pointer text-[#227c70]">Productos y devolución parcial</summary>
+                                                        <div class="mt-2 grid gap-2">
+                                                            @php foreach ($stop->sale->details as $detail): @endphp
+                                                                @php
+                                                                    $returnedQty = (int) $stop->returns->where('sale_detail_id', $detail->id)->sum('quantity');
+                                                                    $remainingQty = max(0, (int) $detail->quantity - $returnedQty);
+                                                                @endphp
+                                                                <label class="flex items-center justify-between gap-3 rounded-lg bg-[#f8faf8] p-2">
+                                                                    <span>{{ $detail->item?->name }} · disponibles para devolución: {{ $remainingQty }}</span>
+                                                                    <input type="number" name="stops[{{ $stop->id }}][return_quantities][{{ $detail->id }}]" min="0" max="{{ $remainingQty }}" value="0" data-unit-price="{{ $detail->unit_price }}" data-discount="{{ $detail->discount_percentage }}" data-tax="{{ $detail->iva_percentage }}" class="return-quantity w-20 rounded border-[#cbd6cf] text-xs" oninput="calculateTotals()">
+                                                                </label>
+                                                            @php endforeach; @endphp
+                                                            <div class="flex flex-wrap items-center gap-2">
+                                                                <select name="stops[{{ $stop->id }}][replacement_item_id]" onchange="calculateTotals()" class="max-w-64 rounded border-[#cbd6cf] text-xs">
+                                                                    <option value="">Producto para cruce</option>
+                                                                    @php foreach ($availableItems as $item): @endphp
+                                                                        <option value="{{ $item->id }}" data-sale-price="{{ $item->sale_price }}">{{ $item->name }} · stock {{ $item->stock }} · ${{ number_format($item->sale_price, 2) }}</option>
+                                                                    @php endforeach; @endphp
+                                                                </select>
+                                                                <input type="number" name="stops[{{ $stop->id }}][replacement_quantity]" min="1" value="1" class="replacement-quantity w-20 rounded border-[#cbd6cf] text-xs" aria-label="Cantidad del producto de reemplazo" oninput="calculateTotals()">
+                                                            </div>
+                                                            <p class="text-xs font-bold text-[#8b6811]">Diferencia estimada del cruce: <span class="exchange-difference">$0.00</span></p>
+                                                        </div>
+                                                    </details>
+                                                @endif
+                                            </td>
+                                            <td class="p-3 text-right font-bold">${{ number_format($stop->sale?->total ?? 0, 2) }}</td>
+                                            <td class="p-3">
+                                                <select name="stops[{{ $stop->id }}][payment_action]" onchange="handleActionChange(this); calculateTotals()" class="settlement-type w-52 rounded-lg border-[#cbd6cf] text-xs font-bold" required>
+                                                    @php foreach ($settlementActions as $key => $label): @endphp
+                                                        <option value="{{ $key }}" @selected(($stop->payment_action ?? '1305') === $key)>{{ $label }}</option>
+                                                    @php endforeach; @endphp
+                                                </select>
+                                            </td>
+                                            <td class="p-3">
+                                                <select name="stops[{{ $stop->id }}][collection_method]" onchange="calculateTotals()" class="settlement-method w-44 rounded-lg border-[#cbd6cf] text-xs">
+                                                    <option value="">Usar acción elegida</option>
+                                                    <option value="1105">1105 Efectivo</option>
+                                                    <option value="1120">1120 Banco</option>
+                                                </select>
+                                            </td>
+                                            <td class="p-3 text-right">
+                                                <input type="number" step="0.01" min="0" name="stops[{{ $stop->id }}][amount_paid]" value="{{ $stop->collected_amount ?? 0 }}" oninput="calculateTotals()" class="settlement-amount w-32 rounded-lg border-[#cbd6cf] text-right text-xs font-bold">
+                                            </td>
+                                        </tr>
+                                        @php endforeach; @endphp
+                                    @else
+                                        <tr><td colspan="5" class="p-6 text-center text-gray-500">Este lote todavía no tiene facturas.</td></tr>
+                                    @endif
+                                </tbody>
+                            </table>
+                        </div>
 
-                    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                        <div class="rounded-xl border border-[#cbd6cf] bg-[#f8faf8] p-4">
-                            <p class="text-[10px] font-bold uppercase text-[#71807a]">Base inicial</p>
-                            <p class="mt-1 text-lg font-black text-[#192522]">${{ number_format((float) $openSession->opening_balance, 2) }}</p>
+                        <div class="rounded-xl border border-[#e6ede8] p-4">
+                            <div class="flex flex-wrap items-center justify-between gap-3">
+                                <div>
+                                    <h4 class="text-sm font-black text-[#b65338]">Gastos y salidas de efectivo</h4>
+                                    <p class="text-xs text-[#71807a]">Combustible, pagos a proveedores, traslados internos u otros.</p>
+                                </div>
+                                <button type="button" onclick="addExpenseRow()" class="rounded-lg bg-[#b65338] px-3 py-2 text-xs font-bold text-white">Agregar gasto</button>
+                            </div>
+                            <div class="mt-3 grid gap-2" id="expensesList">
+                                @php foreach ($openSession->expenses as $index => $expense): @endphp
+                                    <div class="expense-row grid gap-2 sm:grid-cols-[12rem_1fr_10rem_auto]">
+                                        <select name="expenses[{{ $index }}][category]" class="expense-category rounded-lg border-[#cbd6cf] text-xs">
+                                            <option value="combustible" @selected($expense->category === 'combustible')>Combustible</option>
+                                            <option value="proveedor" @selected($expense->category === 'proveedor')>Pago a proveedor</option>
+                                            <option value="transferencia" @selected($expense->category === 'transferencia')>Traslado interno a banco</option>
+                                            <option value="otro" @selected($expense->category === 'otro')>Otro gasto</option>
+                                        </select>
+                                        <input type="text" name="expenses[{{ $index }}][concept]" value="{{ $expense->concept }}" placeholder="Concepto / proveedor" class="rounded-lg border-[#cbd6cf] text-xs" required>
+                                        <input type="number" min="0.01" step="0.01" name="expenses[{{ $index }}][amount]" value="{{ $expense->amount }}" oninput="calculateTotals()" class="expense-amount rounded-lg border-[#cbd6cf] text-right text-xs" required>
+                                        <button type="button" onclick="removeExpenseRow(this)" class="rounded-lg px-3 text-xs font-bold text-red-600">Quitar</button>
+                                    </div>
+                                @php endforeach; @endphp
+                            </div>
                         </div>
-                        <div class="rounded-xl border border-[#cbd6cf] bg-[#f8faf8] p-4">
-                            <p class="text-[10px] font-bold uppercase text-[#71807a]">Entradas</p>
-                            <p class="mt-1 text-lg font-black text-[#227c70]">${{ number_format((float) $openSession->cash_in, 2) }}</p>
-                        </div>
-                        <div class="rounded-xl border border-[#cbd6cf] bg-[#f8faf8] p-4">
-                            <p class="text-[10px] font-bold uppercase text-[#71807a]">Salidas</p>
-                            <p class="mt-1 text-lg font-black text-[#b65338]">${{ number_format((float) $openSession->cash_out, 2) }}</p>
-                        </div>
-                        <div class="rounded-xl border border-[#e2c044] bg-[#fff8df] p-4">
-                            <p class="text-[10px] font-bold uppercase text-[#8b6811]">Efectivo esperado</p>
-                            <p class="mt-1 text-lg font-black text-[#8b6811]">${{ number_format((float) $openSession->expected_cash, 2) }}</p>
-                        </div>
-                    </div>
 
-                    <form action="{{ route('cash-register.close', $openSession) }}" method="POST" class="space-y-4 rounded-xl bg-[#192522] p-5 text-white">
+                        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                            <div class="rounded-xl border border-[#cbd6cf] bg-[#f8faf8] p-4">
+                                <p class="text-[10px] font-bold uppercase text-[#71807a]">Efectivo recibido</p>
+                                <p class="text-lg font-black text-[#227c70]" id="lblTotalCash">$0.00</p>
+                            </div>
+                            <div class="rounded-xl border border-[#cbd6cf] bg-[#f8faf8] p-4">
+                                <p class="text-[10px] font-bold uppercase text-[#71807a]">Bancos / transferencias</p>
+                                <p class="text-lg font-black text-blue-600" id="lblTotalBank">$0.00</p>
+                            </div>
+                            <div class="rounded-xl border border-[#cbd6cf] bg-[#f8faf8] p-4">
+                                <p class="text-[10px] font-bold uppercase text-[#71807a]">Ventas a crédito</p>
+                                <p class="text-lg font-black text-[#52635b]" id="lblTotalCredit">$0.00</p>
+                            </div>
+                            <div class="rounded-xl border border-[#cbd6cf] bg-[#f8faf8] p-4">
+                                <p class="text-[10px] font-bold uppercase text-[#71807a]">Total gastos</p>
+                                <p class="text-lg font-black text-[#b65338]" id="lblTotalExpenses">-$0.00</p>
+                            </div>
+                            <div class="rounded-xl border border-[#e2c044] bg-[#fff8df] p-4">
+                                <p class="text-[10px] font-bold uppercase text-[#8b6811]">Efectivo esperado</p>
+                                <p class="text-xl font-black text-[#8b6811]" id="lblExpectedCash">$0.00</p>
+                            </div>
+                        </div>
+                        <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-[#192522] p-4 text-white">
+                            <p class="text-xs">Diferencia frente al efectivo contado: <strong id="lblDifference">$0.00</strong></p>
+                            <button type="submit" class="rounded-lg bg-[#227c70] px-6 py-2.5 text-xs font-bold uppercase text-white">Guardar liquidación del lote</button>
+                        </div>
+                    </section>
+                </form>
+
+                @endif
+
+                <section class="rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm">
+                    <h3 class="text-sm font-black uppercase tracking-wider text-[#227c70]">Agregar cobro de cartera</h3>
+                    <p class="mt-1 text-xs text-[#71807a]">Registra el pago y la contabilización de una factura sin afectar inventario.</p>
+                    <form method="POST" action="{{ route('cash-register.collect-receivable') }}" class="mt-4 flex flex-wrap items-end gap-3">
                         @csrf
-                        <h4 class="text-xs font-bold uppercase tracking-wider">Cerrar y realizar arqueo</h4>
-                        <div class="grid gap-4 sm:grid-cols-2">
-                            <div>
-                                <label for="counted_cash" class="mb-1 block text-xs font-bold">Efectivo contado</label>
-                                <input id="counted_cash" name="counted_cash" type="number" min="0" step="0.01" value="{{ old('counted_cash') }}" required class="w-full rounded-lg border-none text-sm font-bold text-[#192522]">
-                            </div>
-                            <div>
-                                <label for="notes" class="mb-1 block text-xs font-bold">Observaciones</label>
-                                <input id="notes" name="notes" type="text" maxlength="500" value="{{ old('notes') }}" class="w-full rounded-lg border-none text-sm text-[#192522]">
-                            </div>
-                        </div>
-                        <button type="submit" class="rounded-lg bg-[#227c70] px-5 py-2.5 text-xs font-bold uppercase hover:bg-[#1a5f55]">
-                            Cerrar caja
-                        </button>
+                        <input type="hidden" name="session_id" value="{{ $openSession->id }}">
+                        <label class="grid gap-1 text-xs font-bold text-[#52635b]">
+                            Factura
+                            <select name="sale_id" class="min-w-64 rounded-lg border-[#cbd6cf] text-sm" required>
+                                <option value="">Selecciona factura pendiente</option>
+                                @php foreach ($receivableSales as $sale): @endphp
+                                    <option value="{{ $sale->id }}">{{ $sale->invoice_number }} · {{ $sale->customer_name }} · ${{ number_format($sale->total, 2) }}</option>
+                                @php endforeach; @endphp
+                            </select>
+                        </label>
+                        <label class="grid gap-1 text-xs font-bold text-[#52635b]">
+                            Valor recibido
+                            <input type="number" min="0.01" step="0.01" name="amount" class="rounded-lg border-[#cbd6cf] text-sm" required>
+                        </label>
+                        <label class="grid gap-1 text-xs font-bold text-[#52635b]">
+                            Cuenta de ingreso
+                            <select name="payment_method" class="rounded-lg border-[#cbd6cf] text-sm" required>
+                                <option value="1105">1105 Efectivo</option>
+                                <option value="1120">1120 Banco</option>
+                            </select>
+                        </label>
+                        <button class="rounded-lg bg-[#227c70] px-4 py-2.5 text-xs font-bold text-white">Registrar cartera</button>
                     </form>
                 </section>
-            @else
-                <section class="rounded-2xl border border-[#d7dfd8] bg-white p-6 shadow-sm">
-                    <h3 class="text-sm font-black uppercase tracking-wider text-[#227c70]">Abrir {{ $fundTypes[$fundType] }}</h3>
-                    <p class="mt-1 text-xs text-[#71807a]">Registra el saldo inicial para comenzar una nueva sesión de caja.</p>
-                    <form action="{{ route('cash-register.open') }}" method="POST" class="mt-5 flex flex-wrap items-end gap-4">
-                        @csrf
-                        <input type="hidden" name="fund_type" value="{{ $fundType }}">
+
+                @unless ($selectedRoute)
+                    <section class="rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm">
+                        <h3 class="text-sm font-black uppercase tracking-wider text-[#b65338]">Agregar gasto de caja</h3>
+                        <form method="POST" action="{{ route('cash-register.expenses.store', $openSession) }}" class="mt-4 flex flex-wrap items-end gap-3">
+                            @csrf
+                            <label class="grid gap-1 text-xs font-bold text-[#52635b]">Tipo de gasto
+                                <select name="category" class="rounded-lg border-[#cbd6cf] text-sm">
+                                    <option value="combustible">Combustible</option>
+                                    <option value="proveedor">Pago a proveedor</option>
+                                    <option value="transferencia">Traslado interno a banco</option>
+                                    <option value="otro">Otro</option>
+                                </select>
+                            </label>
+                            <label class="grid gap-1 text-xs font-bold text-[#52635b]">Concepto
+                                <input name="concept" maxlength="255" class="rounded-lg border-[#cbd6cf] text-sm" required>
+                            </label>
+                            <label class="grid gap-1 text-xs font-bold text-[#52635b]">Valor
+                                <input type="number" min="0.01" step="0.01" name="amount" class="rounded-lg border-[#cbd6cf] text-sm" required>
+                            </label>
+                            <button class="rounded-lg bg-[#b65338] px-4 py-2.5 text-xs font-bold text-white">Registrar gasto</button>
+                        </form>
+                    </section>
+                @endunless
+
+                <form method="POST" action="{{ route('cash-register.close', $openSession) }}" class="rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm">
+                    @csrf
+                    <h3 class="text-sm font-black uppercase tracking-wider text-[#227c70]">Conteo físico por denominaciones</h3>
+                    @php
+                        $denominationLabels = [
+                            'bill_100000' => 'Billetes de $100.000',
+                            'bill_50000' => 'Billetes de $50.000',
+                            'bill_20000' => 'Billetes de $20.000',
+                            'bill_10000' => 'Billetes de $10.000',
+                            'bill_5000' => 'Billetes de $5.000',
+                            'bill_2000' => 'Billetes de $2.000',
+                            'bill_1000' => 'Billetes de $1.000',
+                            'coin_1000' => 'Monedas de $1.000',
+                            'coin_500' => 'Monedas de $500',
+                            'coin_200' => 'Monedas de $200',
+                            'coin_100' => 'Monedas de $100',
+                            'coin_50' => 'Monedas de $50',
+                        ];
+                    @endphp
+                    <div class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                        @php foreach ($denominationLabels as $field => $label): @endphp
+                            <label class="grid gap-1 text-xs font-bold text-[#52635b]">{{ $label }}
+                                <input type="number" min="0" max="100000" name="{{ $field }}" value="{{ $openSession->{$field} ?? 0 }}" oninput="calculateDenominations()" class="denomination-count rounded-lg border-[#cbd6cf] text-sm">
+                            </label>
+                        @php endforeach; @endphp
+                    </div>
+                    <div class="mt-4 flex flex-wrap items-center justify-between gap-4 rounded-xl bg-[#192522] p-4 text-white">
                         <div>
-                            <label for="opening_balance" class="mb-1 block text-xs font-bold uppercase text-[#71807a]">Base inicial</label>
-                            <input id="opening_balance" name="opening_balance" type="number" min="0" step="0.01" value="{{ old('opening_balance', 0) }}" required class="rounded-lg border-[#cbd6cf] text-sm font-bold text-[#192522]">
+                            <label for="countedCash" class="text-xs font-bold uppercase">Efectivo contado</label>
+                            <input id="countedCash" type="number" step="0.01" min="0" name="counted_cash" value="{{ $openSession->counted_cash ?? 0 }}" class="ml-2 w-40 rounded-lg border-none text-sm font-black text-black" required>
+                            <span class="ml-2 text-xs text-[#b9c9c1]">Suma denominaciones: <strong id="denominationTotal">$0.00</strong></span>
                         </div>
-                        <button type="submit" class="rounded-lg bg-[#227c70] px-5 py-2.5 text-xs font-bold uppercase text-white hover:bg-[#1a5f55]">
-                            Abrir caja
-                        </button>
-                    </form>
-                </section>
+                        <label class="grid gap-1 text-xs font-bold uppercase">Notas
+                            <input type="text" name="notes" value="{{ old('notes') }}" maxlength="500" class="rounded-lg border-none text-sm font-normal text-black">
+                        </label>
+                        <button class="rounded-lg bg-[#227c70] px-6 py-2.5 text-xs font-bold uppercase">Cerrar caja y generar arqueo</button>
+                    </div>
+                </form>
+            @elseif ($selectedRoute)
+                <p class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-800">Abre una sesión de caja para liquidar el lote.</p>
             @endif
 
-            <section class="space-y-4 rounded-2xl border border-[#d7dfd8] bg-white p-6 shadow-sm">
-                <h3 class="text-sm font-black uppercase tracking-wider text-[#227c70]">Sesiones cerradas recientemente</h3>
-                <div class="overflow-x-auto rounded-xl border border-[#e6ede8]">
-                    <table class="w-full text-left text-xs">
-                        <thead class="bg-[#192522] uppercase text-white">
-                            <tr>
-                                <th class="p-3">Cierre</th>
-                                <th class="p-3 text-right">Base</th>
-                                <th class="p-3 text-right">Esperado</th>
-                                <th class="p-3 text-right">Contado</th>
-                                <th class="p-3 text-right">Diferencia</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-[#e6ede8]">
-                            @forelse ($recentSessions as $session)
-                                <tr>
-                                    <td class="p-3">{{ $session->closed_at?->format('d/m/Y H:i') }}</td>
-                                    <td class="p-3 text-right">${{ number_format((float) $session->opening_balance, 2) }}</td>
-                                    <td class="p-3 text-right">${{ number_format((float) $session->expected_cash, 2) }}</td>
-                                    <td class="p-3 text-right">${{ number_format((float) $session->counted_cash, 2) }}</td>
-                                    <td class="p-3 text-right">${{ number_format((float) $session->difference, 2) }}</td>
-                                </tr>
-                            @empty
-                                <tr>
-                                    <td colspan="5" class="p-4 text-center text-[#71807a]">No hay cierres recientes para esta caja.</td>
-                                </tr>
-                            @endforelse
-                        </tbody>
-                    </table>
-                </div>
-            </section>
+            @if ($recentSessions->isNotEmpty())
+                <section class="rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm">
+                    <h3 class="text-sm font-black uppercase tracking-wider text-[#227c70]">Arqueos cerrados recientes</h3>
+                    <div class="mt-3 overflow-x-auto">
+                        <table class="w-full text-left text-xs">
+                            <thead><tr class="border-b text-[#71807a]"><th class="p-2">Fecha</th><th class="p-2">Base</th><th class="p-2">Esperado</th><th class="p-2">Contado</th><th class="p-2">Diferencia</th><th class="p-2">Gastos</th></tr></thead>
+                            <tbody>
+                                @php foreach ($recentSessions as $session): @endphp
+                                    <tr class="border-b border-[#e6ede8]">
+                                        <td class="p-2">{{ $session->closed_at?->format('d/m/Y H:i') }}</td>
+                                        <td class="p-2">${{ number_format($session->opening_balance, 2) }}</td>
+                                        <td class="p-2">${{ number_format($session->expected_cash, 2) }}</td>
+                                        <td class="p-2">${{ number_format($session->counted_cash, 2) }}</td>
+                                        <td class="p-2">${{ number_format($session->difference, 2) }}</td>
+                                        <td class="p-2">${{ number_format($session->cash_out, 2) }}</td>
+                                    </tr>
+                                @php endforeach; @endphp
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            @endif
         </div>
     </div>
+
+    <script>
+        const denominationValues = {
+            bill_100000: 100000, bill_50000: 50000, bill_20000: 20000, bill_10000: 10000,
+            bill_5000: 5000, bill_2000: 2000, bill_1000: 1000, coin_1000: 1000,
+            coin_500: 500, coin_200: 200, coin_100: 100, coin_50: 50
+        };
+        let expenseIndex = {{ $openSession?->expenses->count() ?? 0 }};
+
+        function addExpenseRow() {
+            const row = document.createElement('div');
+            row.className = 'expense-row grid gap-2 sm:grid-cols-[12rem_1fr_10rem_auto]';
+            row.innerHTML = `
+                <select name="expenses[${expenseIndex}][category]" class="expense-category rounded-lg border-[#cbd6cf] text-xs">
+                    <option value="combustible">Combustible</option><option value="proveedor">Pago a proveedor</option>
+                    <option value="transferencia">Traslado interno a banco</option><option value="otro">Otro gasto</option>
+                </select>
+                <input type="text" name="expenses[${expenseIndex}][concept]" placeholder="Concepto / proveedor" class="rounded-lg border-[#cbd6cf] text-xs" required>
+                <input type="number" min="0.01" step="0.01" name="expenses[${expenseIndex}][amount]" oninput="calculateTotals()" placeholder="0.00" class="expense-amount rounded-lg border-[#cbd6cf] text-right text-xs" required>
+                <button type="button" onclick="removeExpenseRow(this)" class="rounded-lg px-3 text-xs font-bold text-red-600">Quitar</button>`;
+            document.getElementById('expensesList').appendChild(row);
+            expenseIndex++;
+        }
+
+        function handleActionChange(select) {
+            if (select.value === 'reschedule') {
+                document.getElementById('routeDate')?.focus();
+            }
+        }
+
+        function removeExpenseRow(button) {
+            button.closest('.expense-row').remove();
+            calculateTotals();
+        }
+
+        function calculateTotals() {
+            if (!document.getElementById('lblTotalCash')) return;
+            let cash = 0;
+            let bank = 0;
+            let credit = 0;
+            let expenses = 0;
+            document.querySelectorAll('#settlementTable tbody tr').forEach(row => {
+                const action = row.querySelector('.settlement-type')?.value;
+                const amount = Number(row.querySelector('.settlement-amount')?.value || 0);
+                const collectionMethod = row.querySelector('.settlement-method')?.value;
+                if (action === '1105' || (action === 'collection' && collectionMethod === '1105')) {
+                    cash += amount;
+                } else if (action === '1120' || (action === 'collection' && collectionMethod === '1120')) {
+                    bank += amount;
+                } else if (action === '1305') {
+                    credit += Number(row.cells[1]?.innerText.replace(/[^\d,.-]/g, '').replaceAll(',', '') || 0);
+                } else if (action === 'exchange') {
+                    let returnedValue = 0;
+                    row.querySelectorAll('.return-quantity').forEach(input => {
+                        const discount = Number(input.dataset.discount || 0) / 100;
+                        const tax = Number(input.dataset.tax || 0) / 100;
+                        returnedValue += Number(input.value || 0) * Number(input.dataset.unitPrice || 0) * (1 - discount) * (1 + tax);
+                    });
+                    const replacementSelect = row.querySelector('[name$="[replacement_item_id]"]');
+                    const replacementPrice = Number(replacementSelect?.selectedOptions[0]?.dataset.salePrice || 0);
+                    const replacementQuantity = Number(row.querySelector('.replacement-quantity')?.value || 0);
+                    const difference = replacementPrice * replacementQuantity - returnedValue;
+                    const differenceLabel = row.querySelector('.exchange-difference');
+                    if (differenceLabel) differenceLabel.innerText = (difference < 0 ? '-$' : '$') + Math.abs(difference).toFixed(2);
+                    if (difference > 0 && collectionMethod === '1105') cash += difference;
+                    if (difference > 0 && collectionMethod === '1120') bank += difference;
+                    if (difference < 0 && collectionMethod === '1105') cash += difference;
+                }
+            });
+            document.querySelectorAll('.expense-amount').forEach(input => expenses += Number(input.value || 0));
+            const base = Number(@json($openSession?->opening_balance ?? 0));
+            const expected = base + cash - expenses;
+            document.getElementById('lblTotalCash').innerText = '$' + cash.toFixed(2);
+            document.getElementById('lblTotalBank').innerText = '$' + bank.toFixed(2);
+            document.getElementById('lblTotalCredit').innerText = '$' + credit.toFixed(2);
+            document.getElementById('lblTotalExpenses').innerText = '-$' + expenses.toFixed(2);
+            document.getElementById('lblExpectedCash').innerText = '$' + expected.toFixed(2);
+            const counted = Number(document.getElementById('countedCash')?.value || 0);
+            document.getElementById('lblDifference').innerText = (counted - expected >= 0 ? '+' : '') + '$' + (counted - expected).toFixed(2);
+        }
+
+        function calculateDenominations() {
+            if (!document.getElementById('denominationTotal')) return;
+            let total = 0;
+            Object.entries(denominationValues).forEach(([field, amount]) => {
+                const count = Number(document.querySelector(`[name="${field}"]`)?.value || 0);
+                total += count * amount;
+            });
+            document.getElementById('denominationTotal').innerText = '$' + total.toFixed(2);
+            if (Object.keys(denominationValues).some(field => Number(document.querySelector(`[name="${field}"]`)?.value || 0) > 0)) {
+                document.getElementById('countedCash').value = total.toFixed(2);
+            }
+            calculateTotals();
+        }
+
+        function exportToExcel() {
+            const rows = [['Factura / Cliente', 'Valor', 'Acción', 'Monto recibido']];
+            document.querySelectorAll('#settlementTable tbody tr').forEach(row => {
+                if (!row.querySelector('.settlement-type')) return;
+                rows.push([
+                    row.cells[0].innerText.replace(/\n/g, ' - '),
+                    row.cells[1].innerText,
+                    row.querySelector('.settlement-type').selectedOptions[0].text,
+                    row.querySelector('.settlement-amount').value
+                ]);
+            });
+            rows.push(['Total efectivo', document.getElementById('lblTotalCash').innerText]);
+            rows.push(['Total bancos', document.getElementById('lblTotalBank').innerText]);
+            rows.push(['Total gastos', document.getElementById('lblTotalExpenses').innerText]);
+            rows.push(['Efectivo esperado', document.getElementById('lblExpectedCash').innerText]);
+            const csv = rows.map(row => row.map(value => `"${String(value ?? '').replaceAll('"', '""')}"`).join(';')).join('\n');
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' }));
+            link.download = `arqueo_${new Date().toISOString().slice(0, 10)}.csv`;
+            link.click();
+            URL.revokeObjectURL(link.href);
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('routeDate')?.addEventListener('input', event => {
+                const batchDate = document.getElementById('batchRouteDate');
+                if (batchDate) batchDate.value = event.target.value;
+            });
+            calculateTotals();
+            calculateDenominations();
+            document.getElementById('countedCash')?.addEventListener('input', calculateTotals);
+        });
+    </script>
 </x-app-layout>

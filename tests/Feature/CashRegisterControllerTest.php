@@ -31,8 +31,9 @@ class CashRegisterControllerTest extends TestCase
 
         $this->get(route('cash-register.index'))
             ->assertOk()
-            ->assertSeeText('Arqueo de caja y lotes de despacho')
-            ->assertSeeText('Abrir caja y registrar base del día');
+            ->assertSeeText('Arqueo y control de caja')
+            ->assertSeeText('Apertura de caja')
+            ->assertSeeText('Abrir caja');
     }
 
     public function test_a_session_can_be_opened_and_cannot_be_opened_twice(): void

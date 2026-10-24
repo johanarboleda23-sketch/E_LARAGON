@@ -355,6 +355,7 @@ class CashRegisterController extends Controller
                 $expenseRecord = $session->expenses()->create([
                     'company_id' => $session->company_id,
                     'created_by' => auth()->id(),
+                    'expense_date' => now()->toDateString(),
                     ...$expense,
                 ]);
                 $voucher = $this->postExpense($expenseRecord);
@@ -686,6 +687,7 @@ class CashRegisterController extends Controller
                 ...$data,
                 'company_id' => $cashRegisterSession->company_id,
                 'created_by' => auth()->id(),
+                'expense_date' => now()->toDateString(),
             ]);
             $voucher = $this->postExpense($expense);
             $expense->update(['accounting_voucher_id' => $voucher->id]);

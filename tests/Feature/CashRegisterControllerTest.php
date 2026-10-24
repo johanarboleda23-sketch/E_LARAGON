@@ -300,6 +300,7 @@ class CashRegisterControllerTest extends TestCase
 
     public function test_cash_expense_is_accounted_and_reduces_expected_cash(): void
     {
+        $this->freezeTime();
         $company = $this->authenticateWithCompany();
         $this->createAccount('1105', 'Caja', $company);
         $this->createAccount('5135', 'Combustible', $company);
@@ -315,9 +316,49 @@ class CashRegisterControllerTest extends TestCase
             'cash_register_session_id' => $session->id,
             'category' => 'combustible',
             'amount' => 25000,
+            'expense_date' => now()->toDateString(),
         ]);
         $this->assertSame(75000.0, (float) $session->fresh()->expected_cash);
         $this->assertSame(25000.0, (float) $session->fresh()->cash_out);
+    }
+
+    public function test_batch_settlement_records_dated_expenses_and_reduces_expected_cash(): void
+    {
+        $this->freezeTime();
+        $company = $this->authenticateWithCompany();
+        $this->createAccount('1105', 'Caja', $company);
+        $this->createAccount('5195', 'Diversos', $company);
+        $route = $this->createRoute();
+        $session = $this->openSession(500000);
+
+        $this->post(route('cash-register.settle-batch'), [
+            'route_id' => $route->id,
+            'session_id' => $session->id,
+            'expenses' => [
+                ['category' => 'otro', 'concept' => 'Almuerzos', 'amount' => 300000],
+            ],
+        ])->assertRedirect(route('cash-register.index', [
+            'fund_type' => 'general',
+            'route_id' => $route->id,
+        ]));
+
+        $this->assertDatabaseHas('cash_register_expenses', [
+            'company_id' => $company->id,
+            'cash_register_session_id' => $session->id,
+            'category' => 'otro',
+            'concept' => 'Almuerzos',
+            'amount' => 300000,
+            'expense_date' => now()->toDateString(),
+        ]);
+        $this->assertDatabaseHas('accounting_vouchers', [
+            'company_id' => $company->id,
+            'voucher_type' => 'egreso',
+            'voucher_date' => now()->toDateString(),
+            'total_debit' => 300000,
+            'total_credit' => 300000,
+        ]);
+        $this->assertSame(200000.0, (float) $session->fresh()->expected_cash);
+        $this->assertSame(300000.0, (float) $session->fresh()->cash_out);
     }
 
     public function test_closing_uses_the_sum_of_entered_cash_denominations(): void

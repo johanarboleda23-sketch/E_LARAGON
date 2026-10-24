@@ -3,50 +3,76 @@
         <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
                 <p class="text-[11px] font-bold uppercase tracking-[0.2em] text-[#d96b4c]">Tesorería & Logística</p>
-                <h2 class="mt-1 text-xl font-black text-[#192522]">Arqueo de caja y lotes de despacho</h2>
+                <h2 class="mt-1 text-xl font-black text-[#192522]">Panel operativo</h2>
             </div>
             <a href="{{ route('dashboard') }}" class="rounded-lg border border-[#d7dfd8] bg-white px-3 py-2 text-xs font-bold text-[#227c70]">⌂ Tablero</a>
         </div>
     </x-slot>
 
-    <div class="min-h-screen bg-[#f3f5f1] px-4 py-8 sm:px-8">
-        <div class="mx-auto max-w-7xl space-y-6">
+    <div class="min-h-screen bg-[#f3f5f1] px-4 py-6 sm:px-8 sm:py-8">
+        <div class="mx-auto max-w-7xl space-y-5">
             @if (session('success'))
-                <div class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{{ session('success') }}</div>
+                <div class="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700 shadow-sm">{{ session('success') }}</div>
             @endif
             @if ($errors->any())
-                <div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{{ $errors->first() }}</div>
+                <div class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 shadow-sm">{{ $errors->first() }}</div>
             @endif
 
-            <section class="flex flex-wrap items-end justify-between gap-4 rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm">
-                <form method="GET" action="{{ route('cash-register.index') }}" class="flex flex-wrap items-end gap-3">
-                    <input type="hidden" name="fund_type" value="{{ $fundType }}">
-                    <label class="grid gap-1 text-xs font-bold text-[#52635b]">
-                        Lote / ruta
-                        <select name="route_id" class="min-w-64 rounded-lg border-[#cbd6cf] text-sm">
-                            <option value="">Selecciona lote</option>
-                            @php foreach ($routes as $route): @endphp
-                                <option value="{{ $route->id }}" @selected((string) $selectedRouteId === (string) $route->id)>
-                                    {{ $route->code }} · {{ $route->driver_name }} · {{ $route->route_date->format('d/m/Y') }}
-                                </option>
-                            @php endforeach; @endphp
-                        </select>
-                    </label>
-                    <button class="rounded-lg bg-[#227c70] px-4 py-2.5 text-xs font-bold text-white">Cargar lote</button>
-                </form>
-
-                @if ($openSession)
-                    <div class="rounded-xl bg-[#f8faf8] px-4 py-3 text-sm">
-                        <span class="font-bold text-[#71807a]">Base del día</span>
-                        <span class="ml-2 font-black text-[#192522]">${{ number_format($openSession->opening_balance, 2) }}</span>
-                        <span class="ml-3 rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">Caja abierta</span>
+            <section class="overflow-hidden rounded-3xl bg-[#192522] px-6 py-6 text-white shadow-lg sm:px-8 sm:py-7">
+                <div class="flex flex-wrap items-center justify-between gap-6">
+                    <div class="max-w-2xl">
+                        <p class="text-[10px] font-bold uppercase tracking-[0.22em] text-[#9bc9b4]">Control diario · Tesorería</p>
+                        <h1 class="mt-2 text-2xl font-black tracking-tight sm:text-3xl">Arqueo y control de caja</h1>
+                        <p class="mt-2 max-w-xl text-sm leading-relaxed text-[#c2d0c9]">Administra recaudos, gastos y cierres en un solo lugar. Selecciona un lote para registrar su liquidación.</p>
                     </div>
-                @endif
+                    <div class="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                        <span class="h-2.5 w-2.5 rounded-full {{ $openSession ? 'bg-emerald-400' : 'bg-[#d96b4c]' }}"></span>
+                        <div>
+                            <p class="text-[10px] font-bold uppercase tracking-wider text-[#b9c9c1]">Estado de caja</p>
+                            <p class="mt-0.5 text-sm font-bold">{{ $openSession ? 'Sesión abierta' : 'Sin sesión abierta' }}</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="flex flex-wrap items-end justify-between gap-4 rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm">
+                <div>
+                    <h3 class="text-sm font-black text-[#192522]">Consulta de lote</h3>
+                    <p class="mt-1 text-xs text-[#71807a]">Elige una ruta para revisar y liquidar sus facturas.</p>
+                </div>
+                <div class="flex flex-wrap items-end gap-4">
+                    <form method="GET" action="{{ route('cash-register.index') }}" class="flex flex-wrap items-end gap-3">
+                        <input type="hidden" name="fund_type" value="{{ $fundType }}">
+                        <label class="grid gap-1 text-xs font-bold text-[#52635b]">
+                            Lote / ruta
+                            <select name="route_id" class="min-w-64 rounded-lg border-[#cbd6cf] text-sm">
+                                <option value="">Selecciona lote</option>
+                                @php foreach ($routes as $route): @endphp
+                                    <option value="{{ $route->id }}" @selected((string) $selectedRouteId === (string) $route->id)>
+                                        {{ $route->code }} · {{ $route->driver_name }} · {{ $route->route_date->format('d/m/Y') }}
+                                    </option>
+                                @php endforeach; @endphp
+                            </select>
+                        </label>
+                        <button class="rounded-lg bg-[#227c70] px-4 py-2.5 text-xs font-bold text-white transition hover:bg-[#1b665c]">Cargar lote</button>
+                    </form>
+
+                    @if ($openSession)
+                        <div class="rounded-xl border border-[#e6ede8] bg-[#f8faf8] px-4 py-3 text-sm">
+                            <span class="font-bold text-[#71807a]">Base del día</span>
+                            <span class="ml-2 font-black text-[#192522]">${{ number_format($openSession->opening_balance, 2) }}</span>
+                            <span class="ml-3 rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">Caja abierta</span>
+                        </div>
+                    @endif
+                </div>
             </section>
 
             @if (! $openSession)
-                <section class="rounded-2xl border border-[#d7dfd8] bg-white p-6 shadow-sm">
-                    <h3 class="text-sm font-black uppercase tracking-wider text-[#227c70]">Abrir caja y registrar base del día</h3>
+                <section class="rounded-2xl border border-[#cbded4] bg-gradient-to-br from-white to-[#edf5ef] p-6 shadow-sm">
+                    <div>
+                        <h3 class="text-sm font-black text-[#227c70]">Apertura de caja</h3>
+                        <p class="mt-1 text-xs text-[#71807a]">Registra el fondo disponible para iniciar las operaciones del día.</p>
+                    </div>
                     <form method="POST" action="{{ route('cash-register.open') }}" class="mt-4 flex flex-wrap items-end gap-3">
                         @csrf
                         <label class="grid gap-1 text-xs font-bold text-[#52635b]">
@@ -61,7 +87,7 @@
                             Base inicial en efectivo
                             <input type="number" name="opening_balance" min="0" step="0.01" value="{{ old('opening_balance', 0) }}" class="rounded-lg border-[#cbd6cf] text-sm" required>
                         </label>
-                        <button class="rounded-lg bg-[#227c70] px-5 py-2.5 text-xs font-bold text-white">Abrir caja</button>
+                        <button class="rounded-lg bg-[#227c70] px-5 py-2.5 text-xs font-bold text-white transition hover:bg-[#1b665c]">Abrir caja</button>
                     </form>
                 </section>
             @endif
@@ -69,7 +95,8 @@
             @if ($selectedRoute)
                 <section class="flex flex-wrap items-end justify-between gap-4 rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm">
                     <div>
-                        <h3 class="text-sm font-black uppercase tracking-wider text-[#227c70]">Lote {{ $selectedRoute->code }}</h3>
+                        <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-[#71807a]">Ruta seleccionada</p>
+                        <h3 class="mt-1 text-lg font-black text-[#227c70]">Lote {{ $selectedRoute->code }}</h3>
                         <p class="mt-1 text-xs text-[#71807a]">{{ $selectedRoute->driver_name }} · {{ $selectedRoute->vehicle_plate }} · {{ $selectedRoute->route_date->format('d/m/Y') }}</p>
                     </div>
                     <div class="flex flex-wrap items-end gap-3">
@@ -118,7 +145,7 @@
                         </div>
                         <div class="overflow-x-auto rounded-xl border border-[#e6ede8]">
                             <table class="w-full min-w-[1050px] text-left text-xs" id="settlementTable">
-                                <thead class="bg-[#192522] uppercase text-white">
+                                <thead class="bg-[#192522] text-[10px] uppercase tracking-wider text-white">
                                     <tr>
                                         <th class="p-3">Factura / cliente / productos</th>
                                         <th class="p-3 text-right">Valor</th>
@@ -130,7 +157,7 @@
                                 <tbody class="divide-y divide-[#e6ede8] bg-white">
                                     @if ($deliveryStops->isNotEmpty())
                                         @php foreach ($deliveryStops as $stop): @endphp
-                                        <tr class="align-top hover:bg-[#f8faf8]">
+                                        <tr class="align-top transition hover:bg-[#f4f8f5]">
                                             <td class="p-3 font-bold text-[#192522]">
                                                 {{ $stop->sale?->invoice_number ?? 'Parada #'.$stop->id }}
                                                 <span class="font-normal text-[#71807a]">· {{ $stop->sale?->customer_name ?? $stop->customer_name }}</span>
@@ -189,7 +216,7 @@
                             </table>
                         </div>
 
-                        <div class="rounded-xl border border-[#e6ede8] p-4">
+                        <div class="rounded-2xl border border-[#e6ede8] bg-[#fbfcfb] p-4 sm:p-5">
                             <div class="flex flex-wrap items-center justify-between gap-3">
                                 <div>
                                     <h4 class="text-sm font-black text-[#b65338]">Gastos y salidas de efectivo</h4>
@@ -215,28 +242,28 @@
                         </div>
 
                         <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-                            <div class="rounded-xl border border-[#cbd6cf] bg-[#f8faf8] p-4">
+                            <div class="rounded-xl border-l-4 border-[#227c70] bg-white p-4 shadow-sm">
                                 <p class="text-[10px] font-bold uppercase text-[#71807a]">Efectivo recibido</p>
                                 <p class="text-lg font-black text-[#227c70]" id="lblTotalCash">$0.00</p>
                             </div>
-                            <div class="rounded-xl border border-[#cbd6cf] bg-[#f8faf8] p-4">
+                            <div class="rounded-xl border-l-4 border-blue-500 bg-white p-4 shadow-sm">
                                 <p class="text-[10px] font-bold uppercase text-[#71807a]">Bancos / transferencias</p>
                                 <p class="text-lg font-black text-blue-600" id="lblTotalBank">$0.00</p>
                             </div>
-                            <div class="rounded-xl border border-[#cbd6cf] bg-[#f8faf8] p-4">
+                            <div class="rounded-xl border-l-4 border-[#71807a] bg-white p-4 shadow-sm">
                                 <p class="text-[10px] font-bold uppercase text-[#71807a]">Ventas a crédito</p>
                                 <p class="text-lg font-black text-[#52635b]" id="lblTotalCredit">$0.00</p>
                             </div>
-                            <div class="rounded-xl border border-[#cbd6cf] bg-[#f8faf8] p-4">
+                            <div class="rounded-xl border-l-4 border-[#b65338] bg-white p-4 shadow-sm">
                                 <p class="text-[10px] font-bold uppercase text-[#71807a]">Total gastos</p>
                                 <p class="text-lg font-black text-[#b65338]" id="lblTotalExpenses">-$0.00</p>
                             </div>
-                            <div class="rounded-xl border border-[#e2c044] bg-[#fff8df] p-4">
+                            <div class="rounded-xl border-l-4 border-[#e2c044] bg-[#fff8df] p-4 shadow-sm">
                                 <p class="text-[10px] font-bold uppercase text-[#8b6811]">Efectivo esperado</p>
                                 <p class="text-xl font-black text-[#8b6811]" id="lblExpectedCash">$0.00</p>
                             </div>
                         </div>
-                        <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-[#192522] p-4 text-white">
+                        <div class="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-[#192522] p-4 text-white shadow-sm">
                             <p class="text-xs">Diferencia frente al efectivo contado: <strong id="lblDifference">$0.00</strong></p>
                             <button type="submit" class="rounded-lg bg-[#227c70] px-6 py-2.5 text-xs font-bold uppercase text-white">Guardar liquidación del lote</button>
                         </div>
@@ -246,7 +273,7 @@
                 @endif
 
                 <section class="rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm">
-                    <h3 class="text-sm font-black uppercase tracking-wider text-[#227c70]">Agregar cobro de cartera</h3>
+                    <h3 class="text-sm font-black text-[#227c70]">Cobro de cartera</h3>
                     <p class="mt-1 text-xs text-[#71807a]">Registra el pago y la contabilización de una factura sin afectar inventario.</p>
                     <form method="POST" action="{{ route('cash-register.collect-receivable') }}" class="mt-4 flex flex-wrap items-end gap-3">
                         @csrf
@@ -277,7 +304,7 @@
 
                 @unless ($selectedRoute)
                     <section class="rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm">
-                        <h3 class="text-sm font-black uppercase tracking-wider text-[#b65338]">Agregar gasto de caja</h3>
+                        <h3 class="text-sm font-black text-[#b65338]">Gasto de caja</h3>
                         <form method="POST" action="{{ route('cash-register.expenses.store', $openSession) }}" class="mt-4 flex flex-wrap items-end gap-3">
                             @csrf
                             <label class="grid gap-1 text-xs font-bold text-[#52635b]">Tipo de gasto
@@ -299,9 +326,16 @@
                     </section>
                 @endunless
 
-                <form method="POST" action="{{ route('cash-register.close', $openSession) }}" class="rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm">
+                <form method="POST" action="{{ route('cash-register.close', $openSession) }}" class="rounded-2xl border border-[#e8d9b7] bg-white p-5 shadow-sm sm:p-6">
                     @csrf
-                    <h3 class="text-sm font-black uppercase tracking-wider text-[#227c70]">Conteo físico por denominaciones</h3>
+                    <div class="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                            <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-[#b65338]">Cierre diario</p>
+                            <h3 class="mt-1 text-base font-black text-[#192522]">Conteo físico de efectivo</h3>
+                            <p class="mt-1 text-xs text-[#71807a]">Ingresa la cantidad de billetes y monedas para calcular el efectivo contado.</p>
+                        </div>
+                        <span class="rounded-full bg-[#fff4db] px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-[#8b6811]">Verificación final</span>
+                    </div>
                     @php
                         $denominationLabels = [
                             'bill_100000' => 'Billetes de $100.000',
@@ -318,14 +352,29 @@
                             'coin_50' => 'Monedas de $50',
                         ];
                     @endphp
-                    <div class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                        @php foreach ($denominationLabels as $field => $label): @endphp
-                            <label class="grid gap-1 text-xs font-bold text-[#52635b]">{{ $label }}
-                                <input type="number" min="0" max="100000" name="{{ $field }}" value="{{ $openSession->{$field} ?? 0 }}" oninput="calculateDenominations()" class="denomination-count rounded-lg border-[#cbd6cf] text-sm">
-                            </label>
-                        @php endforeach; @endphp
+                    <div class="mt-5 space-y-4">
+                        <div class="rounded-xl bg-[#f8faf8] p-4">
+                            <p class="mb-3 text-[10px] font-bold uppercase tracking-wider text-[#71807a]">Billetes</p>
+                            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                                @php foreach (array_slice($denominationLabels, 0, 7, true) as $field => $label): @endphp
+                                    <label class="grid gap-1 text-xs font-bold text-[#52635b]">{{ $label }}
+                                        <input type="number" min="0" max="100000" name="{{ $field }}" value="{{ $openSession->{$field} ?? 0 }}" oninput="calculateDenominations()" class="denomination-count rounded-lg border-[#cbd6cf] text-sm">
+                                    </label>
+                                @php endforeach; @endphp
+                            </div>
+                        </div>
+                        <div class="rounded-xl bg-[#f8faf8] p-4">
+                            <p class="mb-3 text-[10px] font-bold uppercase tracking-wider text-[#71807a]">Monedas</p>
+                            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                                @php foreach (array_slice($denominationLabels, 7, null, true) as $field => $label): @endphp
+                                    <label class="grid gap-1 text-xs font-bold text-[#52635b]">{{ $label }}
+                                        <input type="number" min="0" max="100000" name="{{ $field }}" value="{{ $openSession->{$field} ?? 0 }}" oninput="calculateDenominations()" class="denomination-count rounded-lg border-[#cbd6cf] text-sm">
+                                    </label>
+                                @php endforeach; @endphp
+                            </div>
+                        </div>
                     </div>
-                    <div class="mt-4 flex flex-wrap items-center justify-between gap-4 rounded-xl bg-[#192522] p-4 text-white">
+                    <div class="mt-4 flex flex-wrap items-end justify-between gap-4 rounded-2xl bg-[#192522] p-4 text-white sm:p-5">
                         <div>
                             <label for="countedCash" class="text-xs font-bold uppercase">Efectivo contado</label>
                             <input id="countedCash" type="number" step="0.01" min="0" name="counted_cash" value="{{ $openSession->counted_cash ?? 0 }}" class="ml-2 w-40 rounded-lg border-none text-sm font-black text-black" required>
@@ -343,19 +392,22 @@
 
             @if ($recentSessions->isNotEmpty())
                 <section class="rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm">
-                    <h3 class="text-sm font-black uppercase tracking-wider text-[#227c70]">Arqueos cerrados recientes</h3>
-                    <div class="mt-3 overflow-x-auto">
-                        <table class="w-full text-left text-xs">
-                            <thead><tr class="border-b text-[#71807a]"><th class="p-2">Fecha</th><th class="p-2">Base</th><th class="p-2">Esperado</th><th class="p-2">Contado</th><th class="p-2">Diferencia</th><th class="p-2">Gastos</th></tr></thead>
+                    <div>
+                        <h3 class="text-sm font-black text-[#192522]">Arqueos cerrados recientes</h3>
+                        <p class="mt-1 text-xs text-[#71807a]">Consulta los últimos cierres registrados en caja.</p>
+                    </div>
+                    <div class="mt-4 overflow-x-auto rounded-xl border border-[#e6ede8]">
+                        <table class="w-full min-w-[640px] text-left text-xs">
+                            <thead class="bg-[#f4f8f5] text-[10px] uppercase tracking-wider text-[#52635b]"><tr><th class="p-3">Fecha</th><th class="p-3">Base</th><th class="p-3">Esperado</th><th class="p-3">Contado</th><th class="p-3">Diferencia</th><th class="p-3">Gastos</th></tr></thead>
                             <tbody>
                                 @php foreach ($recentSessions as $session): @endphp
-                                    <tr class="border-b border-[#e6ede8]">
-                                        <td class="p-2">{{ $session->closed_at?->format('d/m/Y H:i') }}</td>
-                                        <td class="p-2">${{ number_format($session->opening_balance, 2) }}</td>
-                                        <td class="p-2">${{ number_format($session->expected_cash, 2) }}</td>
-                                        <td class="p-2">${{ number_format($session->counted_cash, 2) }}</td>
-                                        <td class="p-2">${{ number_format($session->difference, 2) }}</td>
-                                        <td class="p-2">${{ number_format($session->cash_out, 2) }}</td>
+                                    <tr class="border-b border-[#e6ede8] transition last:border-0 hover:bg-[#f8faf8]">
+                                        <td class="whitespace-nowrap p-3">{{ $session->closed_at?->format('d/m/Y H:i') }}</td>
+                                        <td class="p-3">${{ number_format($session->opening_balance, 2) }}</td>
+                                        <td class="p-3 font-bold">${{ number_format($session->expected_cash, 2) }}</td>
+                                        <td class="p-3">${{ number_format($session->counted_cash, 2) }}</td>
+                                        <td class="p-3 font-bold">${{ number_format($session->difference, 2) }}</td>
+                                        <td class="p-3">${{ number_format($session->cash_out, 2) }}</td>
                                     </tr>
                                 @php endforeach; @endphp
                             </tbody>

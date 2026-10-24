@@ -241,7 +241,7 @@
                             </div>
                         </div>
 
-                        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
                             <div class="rounded-xl border-l-4 border-[#227c70] bg-white p-4 shadow-sm">
                                 <p class="text-[10px] font-bold uppercase text-[#71807a]">Efectivo recibido</p>
                                 <p class="text-lg font-black text-[#227c70]" id="lblTotalCash">$0.00</p>
@@ -258,13 +258,16 @@
                                 <p class="text-[10px] font-bold uppercase text-[#71807a]">Total gastos</p>
                                 <p class="text-lg font-black text-[#b65338]" id="lblTotalExpenses">-$0.00</p>
                             </div>
-                            <div class="rounded-xl border-l-4 border-[#e2c044] bg-[#fff8df] p-4 shadow-sm">
-                                <p class="text-[10px] font-bold uppercase text-[#8b6811]">Efectivo esperado</p>
-                                <p class="text-xl font-black text-[#8b6811]" id="lblExpectedCash">$0.00</p>
+                            <div class="rounded-xl border border-[#e2c044] border-l-4 bg-[#fff8df] p-4 shadow-sm sm:col-span-2 lg:col-span-1">
+                                <p class="text-[10px] font-bold uppercase tracking-wider text-[#8b6811]">Efectivo esperado</p>
+                                <p class="mt-1 text-2xl font-black text-[#8b6811]" id="lblExpectedCash">$0.00</p>
                             </div>
                         </div>
-                        <div class="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-[#192522] p-4 text-white shadow-sm">
-                            <p class="text-xs">Diferencia frente al efectivo contado: <strong id="lblDifference">$0.00</strong></p>
+                        <div class="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-[#35443e] bg-[#192522] p-4 text-white shadow-sm sm:p-5">
+                            <div>
+                                <p class="text-[10px] font-bold uppercase tracking-wider text-[#b9c9c1]">Diferencia frente al efectivo contado</p>
+                                <p class="mt-1 text-xl font-black" id="lblDifference">$0.00</p>
+                            </div>
                             <button type="submit" class="rounded-lg bg-[#227c70] px-6 py-2.5 text-xs font-bold uppercase text-white">Guardar liquidación del lote</button>
                         </div>
                     </section>
@@ -352,13 +355,36 @@
                             'coin_50' => 'Monedas de $50',
                         ];
                     @endphp
+                    <section class="mt-5 rounded-2xl border border-[#d7dfd8] bg-[#f8faf8] p-4 sm:p-5" aria-labelledby="closing-summary-title">
+                        <div class="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                                <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-[#71807a]">Resumen de cierre</p>
+                                <h4 id="closing-summary-title" class="mt-1 text-sm font-black text-[#192522]">Compara el efectivo esperado con el conteo físico</h4>
+                            </div>
+                            <span id="closeStatus" aria-live="polite" class="rounded-full bg-[#e9eeeb] px-3 py-1.5 text-xs font-bold text-[#52635b]">Por contar</span>
+                        </div>
+                        <div class="mt-4 grid gap-3 sm:grid-cols-3">
+                            <div class="rounded-xl border border-[#e6ede8] bg-white p-3">
+                                <p class="text-[10px] font-bold uppercase tracking-wider text-[#71807a]">Efectivo esperado</p>
+                                <p class="mt-1 text-lg font-black text-[#192522]">${{ number_format($openSession->expected_cash, 2) }}</p>
+                            </div>
+                            <div class="rounded-xl border border-[#e6ede8] bg-white p-3">
+                                <p class="text-[10px] font-bold uppercase tracking-wider text-[#71807a]">Efectivo contado</p>
+                                <p id="closeCountedCash" class="mt-1 text-lg font-black text-[#192522]">$0.00</p>
+                            </div>
+                            <div class="rounded-xl border border-[#e6ede8] bg-white p-3">
+                                <p class="text-[10px] font-bold uppercase tracking-wider text-[#71807a]">Diferencia</p>
+                                <p id="closeDifference" class="mt-1 text-lg font-black text-[#52635b]">$0.00</p>
+                            </div>
+                        </div>
+                    </section>
                     <div class="mt-5 space-y-4">
                         <div class="rounded-xl bg-[#f8faf8] p-4">
                             <p class="mb-3 text-[10px] font-bold uppercase tracking-wider text-[#71807a]">Billetes</p>
                             <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                                 @php foreach (array_slice($denominationLabels, 0, 7, true) as $field => $label): @endphp
                                     <label class="grid gap-1 text-xs font-bold text-[#52635b]">{{ $label }}
-                                        <input type="number" min="0" max="100000" name="{{ $field }}" value="{{ $openSession->{$field} ?? 0 }}" oninput="calculateDenominations()" class="denomination-count rounded-lg border-[#cbd6cf] text-sm">
+                                        <input type="number" min="0" max="100000" name="{{ $field }}" value="{{ $openSession->{$field} ?? 0 }}" oninput="calculateDenominations(event)" class="denomination-count rounded-lg border-[#cbd6cf] text-sm">
                                     </label>
                                 @php endforeach; @endphp
                             </div>
@@ -368,7 +394,7 @@
                             <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                                 @php foreach (array_slice($denominationLabels, 7, null, true) as $field => $label): @endphp
                                     <label class="grid gap-1 text-xs font-bold text-[#52635b]">{{ $label }}
-                                        <input type="number" min="0" max="100000" name="{{ $field }}" value="{{ $openSession->{$field} ?? 0 }}" oninput="calculateDenominations()" class="denomination-count rounded-lg border-[#cbd6cf] text-sm">
+                                        <input type="number" min="0" max="100000" name="{{ $field }}" value="{{ $openSession->{$field} ?? 0 }}" oninput="calculateDenominations(event)" class="denomination-count rounded-lg border-[#cbd6cf] text-sm">
                                     </label>
                                 @php endforeach; @endphp
                             </div>
@@ -425,6 +451,8 @@
             coin_500: 500, coin_200: 200, coin_100: 100, coin_50: 50
         };
         let expenseIndex = {{ $openSession?->expenses->count() ?? 0 }};
+        let hasClosingCount = Number(document.getElementById('countedCash')?.value || 0) > 0
+            || Array.from(document.querySelectorAll('.denomination-count')).some(input => Number(input.value || 0) > 0);
 
         function addExpenseRow() {
             const row = document.createElement('div');
@@ -498,8 +526,47 @@
             document.getElementById('lblDifference').innerText = (counted - expected >= 0 ? '+' : '') + '$' + (counted - expected).toFixed(2);
         }
 
-        function calculateDenominations() {
+        function updateClosingSummary() {
+            const countedInput = document.getElementById('countedCash');
+            const countedLabel = document.getElementById('closeCountedCash');
+            const differenceLabel = document.getElementById('closeDifference');
+            const statusLabel = document.getElementById('closeStatus');
+            if (!countedInput || !countedLabel || !differenceLabel || !statusLabel) return;
+
+            const expected = Number(@json($openSession?->expected_cash ?? 0));
+            const counted = Number(countedInput.value || 0);
+            const difference = counted - expected;
+            const absoluteDifference = '$' + Math.abs(difference).toFixed(2);
+            countedLabel.innerText = '$' + counted.toFixed(2);
+
+            if (!hasClosingCount) {
+                differenceLabel.innerText = '$0.00';
+                differenceLabel.className = 'mt-1 text-lg font-black text-[#52635b]';
+                statusLabel.innerText = 'Por contar';
+                statusLabel.className = 'rounded-full bg-[#e9eeeb] px-3 py-1.5 text-xs font-bold text-[#52635b]';
+            } else if (Math.abs(difference) < 0.01) {
+                differenceLabel.innerText = '$0.00';
+                differenceLabel.className = 'mt-1 text-lg font-black text-emerald-700';
+                statusLabel.innerText = 'Caja cuadrada';
+                statusLabel.className = 'rounded-full bg-emerald-100 px-3 py-1.5 text-xs font-bold text-emerald-800';
+            } else if (difference < 0) {
+                differenceLabel.innerText = '-' + absoluteDifference;
+                differenceLabel.className = 'mt-1 text-lg font-black text-red-700';
+                statusLabel.innerText = 'Faltante de ' + absoluteDifference;
+                statusLabel.className = 'rounded-full bg-red-100 px-3 py-1.5 text-xs font-bold text-red-800';
+            } else {
+                differenceLabel.innerText = '+' + absoluteDifference;
+                differenceLabel.className = 'mt-1 text-lg font-black text-amber-700';
+                statusLabel.innerText = 'Sobrante de ' + absoluteDifference;
+                statusLabel.className = 'rounded-full bg-amber-100 px-3 py-1.5 text-xs font-bold text-amber-800';
+            }
+        }
+
+        function calculateDenominations(event) {
             if (!document.getElementById('denominationTotal')) return;
+            if (event) {
+                hasClosingCount = true;
+            }
             let total = 0;
             Object.entries(denominationValues).forEach(([field, amount]) => {
                 const count = Number(document.querySelector(`[name="${field}"]`)?.value || 0);
@@ -509,6 +576,7 @@
             if (Object.keys(denominationValues).some(field => Number(document.querySelector(`[name="${field}"]`)?.value || 0) > 0)) {
                 document.getElementById('countedCash').value = total.toFixed(2);
             }
+            updateClosingSummary();
             calculateTotals();
         }
 
@@ -542,7 +610,11 @@
             });
             calculateTotals();
             calculateDenominations();
-            document.getElementById('countedCash')?.addEventListener('input', calculateTotals);
+            document.getElementById('countedCash')?.addEventListener('input', () => {
+                hasClosingCount = true;
+                updateClosingSummary();
+                calculateTotals();
+            });
         });
     </script>
 </x-app-layout>

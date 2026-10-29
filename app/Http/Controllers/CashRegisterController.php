@@ -211,6 +211,7 @@ class CashRegisterController extends Controller
                 $action = $stopData['payment_action'];
                 if ($action === 'remove') {
                     $stop->update(['sale_id' => null, 'payment_action' => null, 'collected_amount' => 0, 'payment_method' => null]);
+
                     continue;
                 }
 
@@ -218,6 +219,7 @@ class CashRegisterController extends Controller
                     abort_unless(! empty($data['route_date']), 422, 'Selecciona la nueva fecha de la ruta.');
                     $route->update(['route_date' => $data['route_date']]);
                     $stop->update(['payment_action' => $action]);
+
                     continue;
                 }
 
@@ -276,6 +278,7 @@ class CashRegisterController extends Controller
                     }
 
                     $stop->update(['payment_action' => $action, 'collected_amount' => 0]);
+
                     continue;
                 }
 
@@ -355,6 +358,7 @@ class CashRegisterController extends Controller
                 $expenseRecord = $session->expenses()->create([
                     'company_id' => $session->company_id,
                     'created_by' => auth()->id(),
+                    'expense_date' => now()->toDateString(),
                     ...$expense,
                 ]);
                 $voucher = $this->postExpense($expenseRecord);
@@ -686,6 +690,7 @@ class CashRegisterController extends Controller
                 ...$data,
                 'company_id' => $cashRegisterSession->company_id,
                 'created_by' => auth()->id(),
+                'expense_date' => now()->toDateString(),
             ]);
             $voucher = $this->postExpense($expense);
             $expense->update(['accounting_voucher_id' => $voucher->id]);

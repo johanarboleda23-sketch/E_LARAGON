@@ -12,6 +12,10 @@ class CashRegisterExpense extends Model
 
     protected $guarded = [];
 
+    protected $casts = [
+        'expense_date' => 'date',
+    ];
+
     public function session(): BelongsTo
     {
         return $this->belongsTo(CashRegisterSession::class, 'cash_register_session_id');

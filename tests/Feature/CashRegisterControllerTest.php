@@ -3,13 +3,13 @@
 namespace Tests\Feature;
 
 use App\Models\AccountingVoucher;
+use App\Models\CashRegisterExpense;
 use App\Models\CashRegisterSession;
-use App\Models\Company;
 use App\Models\ChartOfAccount;
+use App\Models\Company;
 use App\Models\DeliveryRoute;
 use App\Models\DeliveryStop;
 use App\Models\Item;
-use App\Models\Payment;
 use App\Models\Sale;
 use App\Models\SaleDetail;
 use App\Models\User;
@@ -316,8 +316,44 @@ class CashRegisterControllerTest extends TestCase
             'category' => 'combustible',
             'amount' => 25000,
         ]);
+        $expense = CashRegisterExpense::query()
+            ->where('cash_register_session_id', $session->id)
+            ->firstOrFail();
+        $this->assertSame(now()->toDateString(), $expense->expense_date->toDateString());
         $this->assertSame(75000.0, (float) $session->fresh()->expected_cash);
         $this->assertSame(25000.0, (float) $session->fresh()->cash_out);
+    }
+
+    public function test_batch_settlement_records_the_expense_date_and_posts_its_voucher(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $this->createAccount('1105', 'Caja', $company);
+        $this->createAccount('5195', 'Gastos diversos', $company);
+        $route = $this->createRoute();
+        $session = $this->openSession(500);
+
+        $this->post(route('cash-register.settle-batch'), [
+            'route_id' => $route->id,
+            'session_id' => $session->id,
+            'expenses' => [
+                ['category' => 'otro', 'concept' => 'Gasto de prueba', 'amount' => 100],
+            ],
+        ])->assertRedirect(route('cash-register.index', [
+            'fund_type' => 'general',
+            'route_id' => $route->id,
+        ]));
+
+        $this->assertDatabaseHas('cash_register_expenses', [
+            'cash_register_session_id' => $session->id,
+            'category' => 'otro',
+            'amount' => 100,
+        ]);
+        $expense = CashRegisterExpense::query()
+            ->where('cash_register_session_id', $session->id)
+            ->firstOrFail();
+        $this->assertSame(now()->toDateString(), $expense->expense_date->toDateString());
+        $this->assertDatabaseCount('accounting_vouchers', 1);
+        $this->assertSame(400.0, (float) $session->fresh()->expected_cash);
     }
 
     public function test_closing_uses_the_sum_of_entered_cash_denominations(): void

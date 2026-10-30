@@ -19,6 +19,29 @@
     <div class="py-12">
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg p-6 border-t-4 border-pink-400">
+                <div class="mb-5 flex flex-col gap-4 rounded-lg border border-pink-100 bg-pink-50 p-4 lg:flex-row lg:items-end lg:justify-between">
+                    <div class="flex flex-wrap gap-2">
+                        <a href="{{ route('items.template') }}" class="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                            Descargar plantilla Excel
+                        </a>
+                        <a href="{{ route('items.export') }}" class="inline-flex items-center rounded-md bg-teal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700">
+                            Exportar productos
+                        </a>
+                    </div>
+                    <form method="POST" action="{{ route('items.import') }}" enctype="multipart/form-data" class="flex flex-col gap-2 sm:flex-row sm:items-end">
+                        @csrf
+                        <div>
+                            <label for="products-file" class="mb-1 block text-sm font-medium text-gray-700">Importar productos (.xlsx o CSV)</label>
+                            <input id="products-file" type="file" name="file" accept=".xlsx,.csv,.txt" required class="block w-full text-sm text-gray-700 file:mr-3 file:rounded-md file:border-0 file:bg-white file:px-3 file:py-2 file:text-sm file:font-semibold file:text-pink-700">
+                        </div>
+                        <button type="submit" class="rounded-md bg-pink-600 px-4 py-2 text-sm font-semibold text-white hover:bg-pink-700">
+                            Importar
+                        </button>
+                    </form>
+                </div>
+                @error('file')
+                    <p class="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{{ $message }}</p>
+                @enderror
                 <form method="GET" action="{{ route('items.index') }}" class="mb-5 grid gap-3 md:grid-cols-4">
                     <input type="search" name="search" value="{{ request('search') }}" placeholder="Buscar nombre o código" class="rounded-md border-gray-300">
                     <select name="type" class="rounded-md border-gray-300">

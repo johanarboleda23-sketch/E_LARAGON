@@ -58,7 +58,7 @@ class SpreadsheetReader
 
         $sharedStrings = [];
         if (($sharedXml = $archive->getFromName('xl/sharedStrings.xml')) !== false) {
-            $shared = simplexml_load_string($sharedXml);
+            $shared = simplexml_load_string($sharedXml, options: LIBXML_NONET);
             foreach ($shared->si as $string) {
                 $sharedStrings[] = implode('', array_map('strval', $string->xpath('.//*[local-name()="t"]') ?: []));
             }
@@ -68,7 +68,7 @@ class SpreadsheetReader
         $archive->close();
         abort_unless($sheetXml !== false, 422, 'El archivo Excel no contiene una hoja válida.');
 
-        $sheet = simplexml_load_string($sheetXml);
+        $sheet = simplexml_load_string($sheetXml, options: LIBXML_NONET);
         $namespaces = $sheet->getNamespaces(true);
         $uri = $namespaces[''] ?? $namespaces['x'] ?? null;
         $sheetData = $uri ? $sheet->children($uri)->sheetData : $sheet->sheetData;
@@ -77,15 +77,45 @@ class SpreadsheetReader
         foreach ($sheetData->children($uri) as $sheetRow) {
             $row = [];
             foreach ($sheetRow->children($uri) as $cell) {
+                $attributes = $cell->attributes();
+                $cellType = (string) ($attributes['t'] ?? '');
+                $reference = (string) ($attributes['r'] ?? '');
                 $value = (string) ($uri ? $cell->children($uri)->v : $cell->v);
-                if ((string) ($cell['t'] ?? '') === 's') {
+
+                if ($cellType === 's') {
                     $value = $sharedStrings[(int) $value] ?? '';
+                } elseif ($cellType === 'inlineStr') {
+                    $value = implode('', array_map('strval', $cell->xpath('.//*[local-name()="t"]') ?: []));
                 }
-                $row[] = $value;
+
+                $columnIndex = self::columnIndexFromReference($reference) ?? count($row);
+                $row[$columnIndex] = $value;
             }
+
+            if ($row !== []) {
+                $lastColumnIndex = max(array_keys($row));
+                $row = array_replace(array_fill(0, $lastColumnIndex + 1, ''), $row);
+                ksort($row);
+                $row = array_values($row);
+            }
+
             $rows[] = $row;
         }
 
         return $rows;
+    }
+
+    private static function columnIndexFromReference(string $reference): ?int
+    {
+        if (! preg_match('/^([A-Z]+)/i', $reference, $matches)) {
+            return null;
+        }
+
+        $columnNumber = 0;
+        foreach (str_split(strtoupper($matches[1])) as $letter) {
+            $columnNumber = ($columnNumber * 26) + ord($letter) - ord('A') + 1;
+        }
+
+        return $columnNumber - 1;
     }
 }

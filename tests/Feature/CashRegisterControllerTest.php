@@ -4,12 +4,14 @@ namespace Tests\Feature;
 
 use App\Models\AccountingVoucher;
 use App\Models\CashRegisterExpense;
+use App\Models\CashRegisterMovement;
 use App\Models\CashRegisterSession;
 use App\Models\ChartOfAccount;
 use App\Models\Company;
 use App\Models\DeliveryRoute;
 use App\Models\DeliveryStop;
 use App\Models\Item;
+use App\Models\Purchase;
 use App\Models\Sale;
 use App\Models\SaleDetail;
 use App\Models\User;
@@ -34,6 +36,169 @@ class CashRegisterControllerTest extends TestCase
             ->assertSeeText('Arqueo y control de caja')
             ->assertSeeText('Apertura de caja')
             ->assertSeeText('Abrir caja');
+    }
+
+    public function test_open_cash_register_page_displays_providers_with_pending_purchases(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $this->createPurchase($company, 'FC-CARTERA-001', 'Proveedor pendiente', 500);
+        $paidPurchase = $this->createPurchase($company, 'FC-CARTERA-002', 'Proveedor al día', 200);
+        $paidPurchase->payments()->create([
+            'amount' => 200,
+            'payment_date' => now()->toDateString(),
+            'method' => '1105',
+        ]);
+        $this->openSession(1000);
+
+        $this->get(route('cash-register.index'))
+            ->assertOk()
+            ->assertSeeText('Cartera de proveedores')
+            ->assertSeeText('Proveedor pendiente')
+            ->assertDontSeeText('Proveedor al día')
+            ->assertSeeText('Abonar una factura de compra');
+    }
+
+    public function test_supplier_invoice_lookup_returns_only_unpaid_invoices_for_the_current_company(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $this->openSession(1000);
+        $purchase = $this->createPurchase($company, 'FC-PENDIENTE-001', 'Proveedor cartera', 500);
+        $purchase->payments()->create([
+            'amount' => 150,
+            'payment_date' => now()->toDateString(),
+            'method' => '1105',
+        ]);
+        $paidPurchase = $this->createPurchase($company, 'FC-PAGADA-001', 'Proveedor cartera', 200);
+        $paidPurchase->payments()->create([
+            'amount' => 200,
+            'payment_date' => now()->toDateString(),
+            'method' => '1105',
+        ]);
+        $otherCompany = Company::factory()->create();
+        $this->createPurchase($otherCompany, 'FC-AJENA-001', 'Proveedor cartera', 800);
+
+        $this->getJson(route('cash-register.supplier-invoices', ['provider' => 'Proveedor cartera']))
+            ->assertOk()
+            ->assertJsonCount(1, 'invoices')
+            ->assertJsonPath('invoices.0.invoice_number', 'FC-PENDIENTE-001')
+            ->assertJsonPath('invoices.0.balance_due', 350);
+    }
+
+    public function test_cash_supplier_payment_applies_to_the_purchase_and_decreases_expected_cash(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $this->createAccount('1105', 'Caja', $company);
+        $this->createAccount('2205', 'Proveedores', $company);
+        $purchase = $this->createPurchase($company, 'FC-ABONO-001', 'Proveedor pago', 900);
+        $session = $this->openSession(1500);
+
+        $this->post(route('cash-register.supplier-payments.store', $session), [
+            'purchase_id' => $purchase->id,
+            'amount' => 250,
+            'payment_method' => '1105',
+        ])->assertRedirect();
+
+        $this->assertSame(250.0, $purchase->fresh()->paidAmount());
+        $this->assertSame(650.0, $purchase->fresh()->balanceDue(900));
+        $this->assertDatabaseHas('payments', [
+            'payable_type' => Purchase::class,
+            'payable_id' => $purchase->id,
+            'amount' => 250,
+        ]);
+        $movement = CashRegisterMovement::query()->where('cash_register_session_id', $session->id)->firstOrFail();
+        $this->assertSame('supplier_payment', $movement->movement_type);
+        $this->assertSame('cash', $movement->payment_method);
+        $voucher = AccountingVoucher::query()->findOrFail($movement->accounting_voucher_id);
+        $this->assertSame('egreso', $voucher->voucher_type);
+        $this->assertSame(250.0, (float) $voucher->total_debit);
+        $this->assertSame(250.0, (float) $voucher->total_credit);
+        $this->assertSame(1250.0, (float) $session->fresh()->expected_cash);
+
+        $this->post(route('cash-register.open'), [
+            'fund_type' => 'menor',
+            'opening_balance' => 700,
+        ])->assertRedirect();
+        $otherSession = CashRegisterSession::query()->where('fund_type', 'menor')->firstOrFail();
+        $otherSession->recalculateExpectedCash();
+        $otherSession->save();
+        $this->assertSame(700.0, (float) $otherSession->fresh()->expected_cash);
+    }
+
+    public function test_bank_supplier_payment_does_not_reduce_expected_cash(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $this->createAccount('1120', 'Banco', $company);
+        $this->createAccount('2205', 'Proveedores', $company);
+        $purchase = $this->createPurchase($company, 'FC-BANCO-001', 'Proveedor banco', 600);
+        $session = $this->openSession(1000);
+
+        $this->post(route('cash-register.supplier-payments.store', $session), [
+            'purchase_id' => $purchase->id,
+            'amount' => 200,
+            'payment_method' => '1120',
+        ])->assertRedirect();
+
+        $movement = CashRegisterMovement::query()->where('cash_register_session_id', $session->id)->firstOrFail();
+        $this->assertSame('bank', $movement->payment_method);
+        $this->assertSame(200.0, $purchase->fresh()->paidAmount());
+        $this->assertSame(1000.0, (float) $session->fresh()->expected_cash);
+        $this->assertSame(0.0, (float) $session->fresh()->cash_out);
+    }
+
+    public function test_supplier_payment_cannot_exceed_the_invoice_balance(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $purchase = $this->createPurchase($company, 'FC-SALDO-001', 'Proveedor saldo', 500);
+        $session = $this->openSession(1000);
+        $session->recalculateExpectedCash();
+        $session->save();
+
+        $this->post(route('cash-register.supplier-payments.store', $session), [
+            'purchase_id' => $purchase->id,
+            'amount' => 501,
+            'payment_method' => '1105',
+        ])->assertStatus(422);
+
+        $this->assertSame(0.0, $purchase->fresh()->paidAmount());
+        $this->assertDatabaseCount('payments', 0);
+        $this->assertDatabaseCount('accounting_vouchers', 0);
+        $this->assertDatabaseCount('cash_register_movements', 0);
+        $this->assertSame(1000.0, (float) $session->fresh()->expected_cash);
+    }
+
+    public function test_supplier_payment_rolls_back_when_required_accounting_accounts_are_missing(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $purchase = $this->createPurchase($company, 'FC-CUENTAS-001', 'Proveedor sin cuentas', 500);
+        $session = $this->openSession(1000);
+
+        $this->post(route('cash-register.supplier-payments.store', $session), [
+            'purchase_id' => $purchase->id,
+            'amount' => 100,
+            'payment_method' => '1105',
+        ])->assertStatus(422);
+
+        $this->assertSame(0.0, $purchase->fresh()->paidAmount());
+        $this->assertDatabaseCount('payments', 0);
+        $this->assertDatabaseCount('accounting_vouchers', 0);
+        $this->assertDatabaseCount('cash_register_movements', 0);
+    }
+
+    public function test_supplier_payment_cannot_use_another_companys_purchase(): void
+    {
+        $this->authenticateWithCompany();
+        $otherCompany = Company::factory()->create();
+        $purchase = $this->createPurchase($otherCompany, 'FC-AJENA-002', 'Proveedor ajeno', 500);
+        $session = $this->openSession(1000);
+
+        $this->post(route('cash-register.supplier-payments.store', $session), [
+            'purchase_id' => $purchase->id,
+            'amount' => 100,
+            'payment_method' => '1105',
+        ])->assertNotFound();
+
+        $this->assertDatabaseCount('payments', 0);
+        $this->assertDatabaseCount('cash_register_movements', 0);
     }
 
     public function test_a_session_can_be_opened_and_cannot_be_opened_twice(): void
@@ -393,6 +558,20 @@ class CashRegisterControllerTest extends TestCase
                 'active' => true,
             ],
         );
+    }
+
+    private function createPurchase(Company $company, string $invoiceNumber, string $provider, float $total): Purchase
+    {
+        return Purchase::create([
+            'company_id' => $company->id,
+            'invoice_number' => $invoiceNumber,
+            'provider' => $provider,
+            'purchase_date' => now()->toDateString(),
+            'subtotal' => $total,
+            'iva_total' => 0,
+            'retefuente' => 0,
+            'total_pagar' => $total,
+        ]);
     }
 
     private function createRoute(): DeliveryRoute

@@ -55,7 +55,7 @@ class PaymentControllerTest extends TestCase
         ]);
 
         $this->post(route('purchases.payments.store', $purchase), [
-            'amount' => 600,
+            'amount' => 500.01,
             'payment_date' => now()->toDateString(),
         ])->assertSessionHasErrors('amount');
 

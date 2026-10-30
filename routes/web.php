@@ -122,6 +122,7 @@ Route::middleware(['auth', 'company'])->group(function () {
 
     Route::middleware('module:cash-register')->group(function () {
         Route::get('/arqueo-de-caja', [CashRegisterController::class, 'index'])->name('cash-register.index');
+        Route::get('/arqueo-de-caja/proveedores/facturas', [CashRegisterController::class, 'supplierInvoices'])->name('cash-register.supplier-invoices');
         Route::post('/arqueo-de-caja/abrir', [CashRegisterController::class, 'open'])->name('cash-register.open');
         Route::post('/arqueo-de-caja/lote/liquidar', [CashRegisterController::class, 'settleBatch'])->name('cash-register.settle-batch');
         Route::post('/arqueo-de-caja/lote/{route}/facturas', [CashRegisterController::class, 'attachInvoice'])->name('cash-register.attach-invoice');
@@ -129,6 +130,7 @@ Route::middleware(['auth', 'company'])->group(function () {
         Route::post('/arqueo-de-caja/paradas/{stop}/devoluciones', [CashRegisterController::class, 'returnProducts'])->name('cash-register.returns');
         Route::patch('/arqueo-de-caja/rutas/{route}/reprogramar', [CashRegisterController::class, 'reschedule'])->name('cash-register.reschedule');
         Route::post('/arqueo-de-caja/cartera', [CashRegisterController::class, 'collectReceivable'])->name('cash-register.collect-receivable');
+        Route::post('/arqueo-de-caja/{cashRegisterSession}/pagos-proveedores', [CashRegisterController::class, 'storeSupplierPayment'])->name('cash-register.supplier-payments.store');
         Route::post('/arqueo-de-caja/{cashRegisterSession}/gastos', [CashRegisterController::class, 'storeExpense'])->name('cash-register.expenses.store');
         Route::post('/arqueo-de-caja/{cashRegisterSession}/cerrar', [CashRegisterController::class, 'close'])->name('cash-register.close');
     });

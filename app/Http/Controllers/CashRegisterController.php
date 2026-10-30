@@ -12,10 +12,13 @@ use App\Models\DeliveryStopReturn;
 use App\Models\InventoryMovement;
 use App\Models\Item;
 use App\Models\Payment;
+use App\Models\Purchase;
 use App\Models\Sale;
 use App\Models\SaleDetail;
 use App\Services\AccountingEntryService;
 use Illuminate\Contracts\View\View;
+use Illuminate\Database\Query\Builder;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -66,6 +69,24 @@ class CashRegisterController extends Controller
             $openSession->recalculateExpectedCash();
             $openSession->load('expenses');
         }
+        $payableProviders = $openSession
+            ? Purchase::query()
+                ->whereNotNull('provider')
+                ->where('provider', '<>', '')
+                ->where('purchases.total_pagar', '>', function (Builder $query): void {
+                    $query->selectRaw('COALESCE(SUM(payments.amount), 0)')
+                        ->from('payments')
+                        ->whereColumn('payments.payable_id', 'purchases.id')
+                        ->where('payments.payable_type', (new Purchase)->getMorphClass());
+
+                    if (session()->has('company_id')) {
+                        $query->where('payments.company_id', session('company_id'));
+                    }
+                })
+                ->distinct()
+                ->orderBy('provider')
+                ->pluck('provider')
+            : collect();
 
         $recentSessions = CashRegisterSession::query()
             ->where('fund_type', $fundType)
@@ -98,6 +119,7 @@ class CashRegisterController extends Controller
             'fundType' => $fundType,
             'fundTypes' => CashRegisterSession::FUND_TYPES,
             'openSession' => $openSession,
+            'payableProviders' => $payableProviders,
             'recentSessions' => $recentSessions,
             'routes' => $routes,
             'selectedRoute' => $selectedRoute,
@@ -108,6 +130,38 @@ class CashRegisterController extends Controller
             'availableItems' => $availableItems,
             'settlementActions' => self::SETTLEMENT_ACTIONS,
         ]);
+    }
+
+    public function supplierInvoices(Request $request): JsonResponse
+    {
+        abort_unless(
+            CashRegisterSession::query()->where('status', 'open')->exists(),
+            422,
+            'Abre una sesión de caja para registrar pagos a proveedores.',
+        );
+
+        $data = $request->validate([
+            'provider' => ['required', 'string', 'max:255'],
+        ]);
+
+        $invoices = Purchase::query()
+            ->where('provider', $data['provider'])
+            ->with('payments')
+            ->orderByDesc('purchase_date')
+            ->orderByDesc('id')
+            ->get()
+            ->map(function (Purchase $purchase): array {
+                return [
+                    'id' => $purchase->id,
+                    'invoice_number' => $purchase->invoice_number,
+                    'purchase_date' => $purchase->purchase_date->format('d/m/Y'),
+                    'balance_due' => $purchase->balanceDue((float) $purchase->total_pagar),
+                ];
+            })
+            ->filter(fn (array $invoice): bool => $invoice['balance_due'] > 0)
+            ->values();
+
+        return response()->json(['invoices' => $invoices]);
     }
 
     public function open(Request $request): RedirectResponse
@@ -475,6 +529,34 @@ class CashRegisterController extends Controller
         ]));
     }
 
+    private function postSupplierPayment(Payment $payment, Purchase $purchase): AccountingVoucher
+    {
+        $paymentAccountId = $this->postingAccountId((string) $payment->method);
+        $payableAccountId = $this->postingAccountId('2205');
+        abort_unless($paymentAccountId && $payableAccountId, 422, 'Configura las cuentas PUC 1105/1120 y 2205 para contabilizar el abono al proveedor.');
+
+        return $this->accountingEntryService->post([
+            'voucher_type' => 'egreso',
+            'consecutive' => 'PROV-ARQ-'.$payment->id.'-'.Str::ulid(),
+            'voucher_date' => $payment->payment_date,
+            'third_party' => $purchase->provider,
+            'description' => 'Abono a factura de proveedor '.$purchase->invoice_number,
+        ], new Collection([
+            [
+                'chart_of_account_id' => (int) $payableAccountId,
+                'detail' => 'Abono a factura '.$purchase->invoice_number,
+                'debit' => (float) $payment->amount,
+                'credit' => 0,
+            ],
+            [
+                'chart_of_account_id' => (int) $paymentAccountId,
+                'detail' => $payment->method === '1105' ? 'Pago en efectivo' : 'Pago por banco / transferencia',
+                'debit' => 0,
+                'credit' => (float) $payment->amount,
+            ],
+        ]));
+    }
+
     private function postCashPayment(Payment $payment, Sale $sale, string $method): AccountingVoucher
     {
         $debitAccountId = $this->postingAccountId($method);
@@ -673,6 +755,54 @@ class CashRegisterController extends Controller
         });
 
         return back()->with('success', 'Cobro de cartera registrado sin afectar el inventario.');
+    }
+
+    public function storeSupplierPayment(Request $request, CashRegisterSession $cashRegisterSession): RedirectResponse
+    {
+        $data = $request->validate([
+            'purchase_id' => ['required', 'integer'],
+            'amount' => ['required', 'numeric', 'min:0.01'],
+            'payment_method' => ['required', 'in:1105,1120'],
+        ]);
+
+        DB::transaction(function () use ($data, $cashRegisterSession): void {
+            $cashRegisterSession = CashRegisterSession::query()->lockForUpdate()->findOrFail($cashRegisterSession->id);
+            abort_unless($cashRegisterSession->isOpen(), 422, 'La sesión de caja ya está cerrada.');
+
+            $purchase = Purchase::query()->lockForUpdate()->findOrFail($data['purchase_id']);
+            $amount = round((float) $data['amount'], 2);
+            $balance = round($purchase->balanceDue((float) $purchase->total_pagar), 2);
+            abort_if(
+                $amount > $balance,
+                422,
+                'El abono supera el saldo pendiente de la factura ($'.number_format($balance, 2).').',
+            );
+
+            $payment = $purchase->payments()->create([
+                'amount' => $amount,
+                'payment_date' => now()->toDateString(),
+                'method' => $data['payment_method'],
+                'notes' => 'Abono registrado desde arqueo de caja',
+                'created_by' => auth()->id(),
+            ]);
+            $accountingVoucher = $this->postSupplierPayment($payment, $purchase);
+
+            $cashRegisterSession->movements()->create([
+                'company_id' => $cashRegisterSession->company_id,
+                'payment_id' => $payment->id,
+                'accounting_voucher_id' => $accountingVoucher->id,
+                'created_by' => auth()->id(),
+                'movement_type' => 'supplier_payment',
+                'payment_method' => $data['payment_method'] === '1105' ? 'cash' : 'bank',
+                'amount' => $amount,
+                'notes' => 'Abono a factura '.$purchase->invoice_number,
+            ]);
+
+            $cashRegisterSession->recalculateExpectedCash();
+            $cashRegisterSession->save();
+        });
+
+        return back()->with('success', 'Abono a proveedor registrado y aplicado a la factura.');
     }
 
     public function storeExpense(Request $request, CashRegisterSession $cashRegisterSession): RedirectResponse

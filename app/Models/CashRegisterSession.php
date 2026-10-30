@@ -3,7 +3,6 @@
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToCompany;
-use App\Models\CashRegisterMovement;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -75,7 +74,10 @@ class CashRegisterSession extends Model
             ->whereDate('voucher_date', '>=', $this->opened_at->toDateString())
             ->whereDate('voucher_date', '<=', $cutoff->toDateString())
             ->whereNotIn('id', CashRegisterMovement::query()
-                ->where('payment_method', 'bank')
+                ->where(function ($query): void {
+                    $query->where('cash_register_session_id', '!=', $this->id)
+                        ->orWhere('payment_method', 'bank');
+                })
                 ->whereNotNull('accounting_voucher_id')
                 ->select('accounting_voucher_id'))
             ->whereNotIn('id', CashRegisterExpense::query()

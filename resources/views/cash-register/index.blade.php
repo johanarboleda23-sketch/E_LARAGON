@@ -92,6 +92,52 @@
                 </section>
             @endif
 
+            @if ($openSession)
+                <section class="rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm">
+                    <div>
+                        <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-[#b65338]">Cartera de proveedores</p>
+                        <h3 class="mt-1 text-sm font-black text-[#192522]">Abonar una factura de compra</h3>
+                        <p class="mt-1 text-xs text-[#71807a]">Selecciona proveedor y factura. El abono se aplicará a su saldo y quedará registrado en caja o banco.</p>
+                    </div>
+                    <form id="supplierPaymentForm" method="POST" action="{{ route('cash-register.supplier-payments.store', $openSession) }}" data-invoices-url="{{ route('cash-register.supplier-invoices') }}" class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                        @csrf
+                        <label class="grid gap-1 text-xs font-bold text-[#52635b]">
+                            Proveedor
+                            <select id="supplierProvider" class="rounded-lg border-[#cbd6cf] text-sm" required>
+                                <option value="">Selecciona proveedor</option>
+                                @forelse ($payableProviders as $provider)
+                                    <option value="{{ $provider }}">{{ $provider }}</option>
+                                @empty
+                                    <option value="" disabled>No hay proveedores con cartera pendiente</option>
+                                @endforelse
+                            </select>
+                        </label>
+                        <label class="grid gap-1 text-xs font-bold text-[#52635b]">
+                            Factura pendiente
+                            <select id="supplierInvoice" name="purchase_id" class="rounded-lg border-[#cbd6cf] text-sm" required disabled>
+                                <option value="">Primero selecciona proveedor</option>
+                            </select>
+                        </label>
+                        <label class="grid gap-1 text-xs font-bold text-[#52635b]">
+                            Valor del abono
+                            <input id="supplierPaymentAmount" type="number" min="0.01" step="0.01" name="amount" class="rounded-lg border-[#cbd6cf] text-sm" placeholder="0.00" required disabled>
+                            <span id="supplierPaymentBalance" class="text-[11px] font-normal text-[#71807a]" aria-live="polite"></span>
+                        </label>
+                        <label class="grid gap-1 text-xs font-bold text-[#52635b]">
+                            Medio de pago
+                            <select name="payment_method" class="rounded-lg border-[#cbd6cf] text-sm" required>
+                                <option value="1105">Efectivo</option>
+                                <option value="1120">Banco / transferencia</option>
+                            </select>
+                        </label>
+                        <div class="flex flex-col justify-end gap-2">
+                            <p id="supplierInvoiceMessage" class="text-xs text-red-600" aria-live="polite"></p>
+                            <button class="rounded-lg bg-[#227c70] px-4 py-2.5 text-xs font-bold text-white transition hover:bg-[#1b665c]">Registrar abono</button>
+                        </div>
+                    </form>
+                </section>
+            @endif
+
             @if ($selectedRoute)
                 <section class="flex flex-wrap items-end justify-between gap-4 rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm">
                     <div>
@@ -220,7 +266,7 @@
                             <div class="flex flex-wrap items-center justify-between gap-3">
                                 <div>
                                     <h4 class="text-sm font-black text-[#b65338]">Gastos y salidas de efectivo</h4>
-                                    <p class="text-xs text-[#71807a]">Combustible, pagos a proveedores, traslados internos u otros.</p>
+                                    <p class="text-xs text-[#71807a]">Combustible, pagos sin factura, traslados u otros. Los abonos a facturas se registran en Cartera de proveedores.</p>
                                 </div>
                                 <button type="button" onclick="addExpenseRow()" class="rounded-lg bg-[#b65338] px-3 py-2 text-xs font-bold text-white">Agregar gasto</button>
                             </div>
@@ -229,7 +275,7 @@
                                     <div class="expense-row grid gap-2 sm:grid-cols-[12rem_1fr_10rem_auto]">
                                         <select name="expenses[{{ $index }}][category]" class="expense-category rounded-lg border-[#cbd6cf] text-xs">
                                             <option value="combustible" @selected($expense->category === 'combustible')>Combustible</option>
-                                            <option value="proveedor" @selected($expense->category === 'proveedor')>Pago a proveedor</option>
+                                            <option value="proveedor" @selected($expense->category === 'proveedor')>Otro pago a proveedor (sin factura)</option>
                                             <option value="transferencia" @selected($expense->category === 'transferencia')>Traslado interno a banco</option>
                                             <option value="otro" @selected($expense->category === 'otro')>Otro gasto</option>
                                         </select>
@@ -308,12 +354,13 @@
                 @unless ($selectedRoute)
                     <section class="rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm">
                         <h3 class="text-sm font-black text-[#b65338]">Gasto de caja</h3>
+                        <p class="mt-1 text-xs text-[#71807a]">Para abonar una factura, usa la sección Cartera de proveedores.</p>
                         <form method="POST" action="{{ route('cash-register.expenses.store', $openSession) }}" class="mt-4 flex flex-wrap items-end gap-3">
                             @csrf
                             <label class="grid gap-1 text-xs font-bold text-[#52635b]">Tipo de gasto
                                 <select name="category" class="rounded-lg border-[#cbd6cf] text-sm">
                                     <option value="combustible">Combustible</option>
-                                    <option value="proveedor">Pago a proveedor</option>
+                                    <option value="proveedor">Otro pago a proveedor (sin factura)</option>
                                     <option value="transferencia">Traslado interno a banco</option>
                                     <option value="otro">Otro</option>
                                 </select>
@@ -459,7 +506,7 @@
             row.className = 'expense-row grid gap-2 sm:grid-cols-[12rem_1fr_10rem_auto]';
             row.innerHTML = `
                 <select name="expenses[${expenseIndex}][category]" class="expense-category rounded-lg border-[#cbd6cf] text-xs">
-                    <option value="combustible">Combustible</option><option value="proveedor">Pago a proveedor</option>
+                    <option value="combustible">Combustible</option><option value="proveedor">Otro pago a proveedor (sin factura)</option>
                     <option value="transferencia">Traslado interno a banco</option><option value="otro">Otro gasto</option>
                 </select>
                 <input type="text" name="expenses[${expenseIndex}][concept]" placeholder="Concepto / proveedor" class="rounded-lg border-[#cbd6cf] text-xs" required>
@@ -603,11 +650,76 @@
             URL.revokeObjectURL(link.href);
         }
 
+        async function loadSupplierInvoices() {
+            const form = document.getElementById('supplierPaymentForm');
+            const provider = document.getElementById('supplierProvider')?.value;
+            const invoiceSelect = document.getElementById('supplierInvoice');
+            const amountInput = document.getElementById('supplierPaymentAmount');
+            const balanceLabel = document.getElementById('supplierPaymentBalance');
+            const message = document.getElementById('supplierInvoiceMessage');
+            if (!form || !invoiceSelect || !amountInput || !balanceLabel || !message) return;
+
+            invoiceSelect.replaceChildren(new Option(provider ? 'Cargando facturas...' : 'Primero selecciona proveedor', ''));
+            invoiceSelect.disabled = true;
+            amountInput.value = '';
+            amountInput.max = '';
+            amountInput.disabled = true;
+            balanceLabel.textContent = '';
+            message.textContent = '';
+            if (!provider) return;
+
+            try {
+                const url = new URL(form.dataset.invoicesUrl, window.location.origin);
+                url.searchParams.set('provider', provider);
+                const response = await fetch(url, { headers: { Accept: 'application/json' } });
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.message || 'No fue posible consultar las facturas del proveedor.');
+                }
+
+                if (data.invoices.length === 0) {
+                    invoiceSelect.replaceChildren(new Option('No hay facturas pendientes', ''));
+                    return;
+                }
+
+                invoiceSelect.replaceChildren(new Option('Selecciona factura', ''));
+                data.invoices.forEach(invoice => {
+                    const option = new Option(
+                        `${invoice.invoice_number} · ${invoice.purchase_date} · Saldo $${Number(invoice.balance_due).toLocaleString('es-CO', { minimumFractionDigits: 2 })}`,
+                        invoice.id
+                    );
+                    option.dataset.balance = invoice.balance_due;
+                    invoiceSelect.add(option);
+                });
+                invoiceSelect.disabled = false;
+            } catch (error) {
+                invoiceSelect.replaceChildren(new Option('Error al cargar facturas', ''));
+                message.textContent = error.message || 'No fue posible consultar las facturas del proveedor.';
+            }
+        }
+
+        function updateSupplierPaymentBalance() {
+            const invoiceSelect = document.getElementById('supplierInvoice');
+            const amountInput = document.getElementById('supplierPaymentAmount');
+            const balanceLabel = document.getElementById('supplierPaymentBalance');
+            if (!invoiceSelect || !amountInput || !balanceLabel) return;
+
+            const balance = Number(invoiceSelect.selectedOptions[0]?.dataset.balance || 0);
+            amountInput.disabled = balance <= 0;
+            amountInput.max = balance > 0 ? balance.toFixed(2) : '';
+            amountInput.value = balance > 0 ? balance.toFixed(2) : '';
+            balanceLabel.textContent = balance > 0
+                ? `Saldo pendiente: $${balance.toLocaleString('es-CO', { minimumFractionDigits: 2 })}`
+                : '';
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('routeDate')?.addEventListener('input', event => {
                 const batchDate = document.getElementById('batchRouteDate');
                 if (batchDate) batchDate.value = event.target.value;
             });
+            document.getElementById('supplierProvider')?.addEventListener('change', loadSupplierInvoices);
+            document.getElementById('supplierInvoice')?.addEventListener('change', updateSupplierPaymentBalance);
             calculateTotals();
             calculateDenominations();
             document.getElementById('countedCash')?.addEventListener('input', () => {

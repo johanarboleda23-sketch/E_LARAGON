@@ -27,6 +27,17 @@ class AuthenticatedSessionController extends Controller
         $request->authenticate();
 
         $request->session()->regenerate();
+        $companyId = $request->user()
+            ->companies()
+            ->where('companies.active', true)
+            ->orderBy('companies.id')
+            ->value('companies.id');
+
+        if ($companyId !== null) {
+            $request->session()->put('company_id', $companyId);
+        } else {
+            $request->session()->forget('company_id');
+        }
 
         return redirect()->intended(route('dashboard', absolute: false));
     }

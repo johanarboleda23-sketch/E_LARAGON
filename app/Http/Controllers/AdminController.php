@@ -10,7 +10,10 @@ use App\Models\Purchase;
 use App\Models\User;
 use App\Support\DefaultChartOfAccounts;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules;
+use Illuminate\Validation\ValidationException;
 
 class AdminController extends Controller
 {
@@ -46,8 +49,33 @@ class AdminController extends Controller
         $company = Company::create($data + ['active' => true]);
         $company->users()->attach($request->user(), ['role' => 'owner']);
         DefaultChartOfAccounts::seedFor($company->id);
+        session(['company_id' => $company->id]);
 
-        return back()->with('success', 'Empresa creada, vinculada al administrador y con su catálogo PUC inicial.');
+        return back()->with('success', 'Empresa creada, activada y vinculada al administrador con su catálogo PUC inicial.');
+    }
+
+    public function storeUser(Request $request)
+    {
+        $this->authorizeAdmin($request);
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:users,email'],
+            'password' => ['required', 'confirmed', Rules\Password::defaults()],
+            'role' => ['required', Rule::in(['admin', 'contador', 'auxiliar', 'vendedor', 'consulta'])],
+        ]);
+        $company = $request->user()->companies()->where('companies.id', session('company_id'))->firstOrFail();
+
+        DB::transaction(function () use ($company, $data): void {
+            $user = User::create([
+                'name' => $data['name'],
+                'email' => $data['email'],
+                'password' => $data['password'],
+            ]);
+
+            $company->users()->attach($user->id, ['role' => $data['role']]);
+        });
+
+        return back()->with('success', 'Acceso creado y vinculado a la empresa. Comparte la contraseña inicial de forma segura.');
     }
 
     public function addMember(Request $request)
@@ -66,7 +94,22 @@ class AdminController extends Controller
         $this->authorizeAdmin($request);
         $data = $request->validate(['role' => 'required|in:admin,contador,auxiliar,vendedor,consulta']);
         $company = $request->user()->companies()->where('companies.id', session('company_id'))->firstOrFail();
-        abort_unless($company->users()->whereKey($user->id)->exists(), 404);
+        $member = $company->users()->whereKey($user->id)->firstOrFail();
+        if ($member->pivot->role === 'owner') {
+            throw ValidationException::withMessages([
+                'role' => 'El rol de propietario no se puede cambiar.',
+            ]);
+        }
+
+        if ($member->pivot->role === 'admin' && ! in_array($data['role'], ['admin', 'owner'], true)) {
+            $administratorCount = $company->users()->wherePivotIn('role', ['admin', 'owner'])->count();
+            if ($administratorCount <= 1) {
+                throw ValidationException::withMessages([
+                    'role' => 'La empresa debe conservar al menos un administrador.',
+                ]);
+            }
+        }
+
         $company->users()->updateExistingPivot($user->id, ['role' => $data['role']]);
 
         return back()->with('success', 'Rol actualizado.');

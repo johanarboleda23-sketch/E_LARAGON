@@ -195,6 +195,7 @@ Route::middleware(['auth', 'company'])->group(function () {
 
     Route::get('/admin', [AdminController::class, 'index'])->name('admin.index');
     Route::post('/admin/companies', [AdminController::class, 'storeCompany'])->name('admin.companies.store');
+    Route::post('/admin/users', [AdminController::class, 'storeUser'])->name('admin.users.store');
     Route::post('/admin/members', [AdminController::class, 'addMember'])->name('admin.members.store');
     Route::put('/admin/members/{user}/role', [AdminController::class, 'updateRole'])->name('admin.members.role');
     Route::put('/admin/payment-methods/{paymentMethod}', [AdminController::class, 'updatePaymentMethod'])->name('admin.payment-methods.puc');

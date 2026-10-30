@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Auth;
 
+use App\Models\Company;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -20,6 +21,8 @@ class AuthenticationTest extends TestCase
     public function test_users_can_authenticate_using_the_login_screen(): void
     {
         $user = User::factory()->create();
+        $company = Company::factory()->create();
+        $user->companies()->attach($company->id, ['role' => 'admin']);
 
         $response = $this->post('/login', [
             'email' => $user->email,
@@ -27,7 +30,9 @@ class AuthenticationTest extends TestCase
         ]);
 
         $this->assertAuthenticated();
+        $this->assertSame($company->id, (int) session('company_id'));
         $response->assertRedirect(route('dashboard', absolute: false));
+        $this->get(route('dashboard'))->assertSee('Administración');
     }
 
     public function test_users_can_not_authenticate_with_invalid_password(): void

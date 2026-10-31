@@ -13,6 +13,14 @@ class Company extends Model
 
     protected $guarded = [];
 
+    protected function casts(): array
+    {
+        return [
+            'active' => 'boolean',
+            'is_partner' => 'boolean',
+        ];
+    }
+
     public function users()
     {
         return $this->belongsToMany(User::class)->withPivot('role')->withTimestamps();

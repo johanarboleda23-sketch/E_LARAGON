@@ -117,6 +117,9 @@
                                         <option value="{{ $product->id }}" @selected($detail->item_id === $product->id)>{{ $product->name }}{{ $product->code ? ' - '.$product->code : '' }}</option>
                                     @endforeach
                                 </select>
+                                <select name="items[{{ $index }}][unit_conversion_id]" class="input-style unit-select mt-1" data-selected="{{ $detail->unit_conversion_id }}">
+                                    <option value="">Unidad base</option>
+                                </select>
                                 <select name="items[{{ $index }}][chart_of_account_id]" class="input-style account-select">
                                     <option value="">Seleccione cuenta PUC</option>
                                     @foreach($postingAccounts as $account)
@@ -125,7 +128,7 @@
                                 </select>
                                 <input type="text" name="items[{{ $index }}][line_description]" class="input-style line-description" placeholder="Descripción del gasto" value="{{ $detail->line_description }}">
                             </td>
-                            <td><input type="number" name="items[{{ $index }}][quantity]" class="qty-input input-style" style="text-align:center;" value="{{ $detail->quantity }}" min="1" required></td>
+                            <td><input type="number" name="items[{{ $index }}][quantity]" class="qty-input input-style" style="text-align:center;" value="{{ $detail->quantity }}" min="0.0001" step="0.0001" required></td>
                             <td><input type="number" step="0.01" name="items[{{ $index }}][cost_price]" class="price-input input-style" style="text-align:right;" value="{{ $detail->cost_price }}" required></td>
                             <td><select name="items[{{ $index }}][iva_percentage]" class="iva-input input-style" style="text-align:center;"><option value="19" @selected((float)$detail->iva_percentage === 19.0)>19%</option><option value="5" @selected((float)$detail->iva_percentage === 5.0)>5%</option><option value="0" @selected((float)$detail->iva_percentage === 0.0)>0%</option></select></td>
                             <td><input type="number" name="items[{{ $index }}][utility_percentage]" class="utility-input input-style" style="text-align:center;" min="0" step="0.01" value="{{ $detail->utility_percentage }}"></td>
@@ -167,8 +170,30 @@
 
     <script>
         let rowIndex = {{ $purchase->details->count() }};
-        const productsOptions = `@foreach($products as $product)<option value="{{ $product->id }}">{{ $product->name }}{{ $product->code ? ' - '.$product->code : '' }}</option>@endforeach`;
+        const purchaseProducts = @json($productOptions);
         const accountsOptions = `@foreach($postingAccounts as $account)<option value="{{ $account->id }}">{{ $account->code }} - {{ $account->name }}</option>@endforeach`;
+
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, (character) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'}[character]));
+        }
+
+        function syncUnitOptions(row, resetPrice = false) {
+            const product = purchaseProducts.find((entry) => String(entry.id) === row.querySelector('.product-select').value);
+            const unitSelect = row.querySelector('.unit-select');
+            const previousValue = unitSelect.value || unitSelect.dataset.selected || '';
+            unitSelect.innerHTML = `<option value="">${escapeHtml(product?.base_unit || 'unidad')} (base)</option>` + (product?.units || []).map((unit) => `<option value="${unit.id}" data-factor="${unit.factor}">${escapeHtml(unit.name)} × ${unit.factor}</option>`).join('');
+            if (!resetPrice && [...unitSelect.options].some((option) => option.value === previousValue)) {
+                unitSelect.value = previousValue;
+            }
+            delete unitSelect.dataset.selected;
+            if (resetPrice) updatePurchasePrice(row);
+        }
+
+        function updatePurchasePrice(row) {
+            const product = purchaseProducts.find((entry) => String(entry.id) === row.querySelector('.product-select').value);
+            const unit = product?.units.find((entry) => String(entry.id) === row.querySelector('.unit-select').value);
+            if (product) row.querySelector('.price-input').value = ((Number(product.purchase_price) || 0) * (Number(unit?.factor) || 1)).toFixed(2);
+        }
 
         function syncLineFields(row) {
             const lineType = row.querySelector('.line-type').value;
@@ -177,8 +202,12 @@
             const description = row.querySelector('.line-description');
             const utility = row.querySelector('.utility-input');
             const assetFields = row.querySelector('.asset-fields');
+            const unitSelect = row.querySelector('.unit-select');
 
             productSelect.style.display = lineType === 'producto' ? 'block' : 'none';
+            unitSelect.style.display = lineType === 'producto' ? 'block' : 'none';
+            unitSelect.disabled = lineType !== 'producto';
+            syncUnitOptions(row);
             productSelect.required = lineType === 'producto';
             accountSelect.style.display = lineType === 'producto' ? 'none' : 'block';
             accountSelect.required = lineType !== 'producto';
@@ -192,8 +221,8 @@
             row.className = 'item-row';
             row.innerHTML = `
                 <td><select name="items[${rowIndex}][purchase_line_type]" class="input-style line-type" required><option value="producto">Producto</option><option value="gasto">Gasto</option><option value="activo_fijo">Activo fijo</option></select></td>
-                <td class="line-target"><select name="items[${rowIndex}][item_id]" class="input-style product-select"><option value="">Seleccione producto</option>${productsOptions}</select><select name="items[${rowIndex}][chart_of_account_id]" class="input-style account-select"><option value="">Seleccione cuenta PUC</option>${accountsOptions}</select><input type="text" name="items[${rowIndex}][line_description]" class="input-style line-description" placeholder="Descripción del gasto"></td>
-                <td><input type="number" name="items[${rowIndex}][quantity]" class="qty-input input-style" style="text-align:center;" value="1" min="1" required></td>
+                <td class="line-target"><select name="items[${rowIndex}][item_id]" class="input-style product-select"><option value="">Seleccione producto</option>${purchaseProducts.map((product) => `<option value="${product.id}">${escapeHtml(product.name)}${product.code ? ` - ${escapeHtml(product.code)}` : ''}</option>`).join('')}</select><select name="items[${rowIndex}][unit_conversion_id]" class="input-style unit-select mt-1"><option value="">Unidad base</option></select><select name="items[${rowIndex}][chart_of_account_id]" class="input-style account-select"><option value="">Seleccione cuenta PUC</option>${accountsOptions}</select><input type="text" name="items[${rowIndex}][line_description]" class="input-style line-description" placeholder="Descripción del gasto"></td>
+                <td><input type="number" name="items[${rowIndex}][quantity]" class="qty-input input-style" style="text-align:center;" value="1" min="0.0001" step="0.0001" required></td>
                 <td><input type="number" step="0.01" name="items[${rowIndex}][cost_price]" class="price-input input-style" style="text-align:right;" placeholder="0.00" required></td>
                 <td><select name="items[${rowIndex}][iva_percentage]" class="iva-input input-style" style="text-align:center;"><option value="19">19%</option><option value="5">5%</option><option value="0">0%</option></select></td>
                 <td><input type="number" name="items[${rowIndex}][utility_percentage]" class="utility-input input-style" style="text-align:center;" min="0" step="0.01" value="0"></td>
@@ -261,7 +290,13 @@
         document.addEventListener('change', (event) => {
             const row = event.target.closest('.item-row');
             if (!row) return;
-            if (event.target.matches('.line-type')) syncLineFields(row);
+            if (event.target.matches('.line-type')) {
+                syncLineFields(row);
+            } else if (event.target.matches('.product-select')) {
+                syncUnitOptions(row, true);
+            } else if (event.target.matches('.unit-select')) {
+                updatePurchasePrice(row);
+            }
             calculateTotals();
         });
 

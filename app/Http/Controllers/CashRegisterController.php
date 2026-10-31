@@ -16,6 +16,7 @@ use App\Models\Purchase;
 use App\Models\Sale;
 use App\Models\SaleDetail;
 use App\Services\AccountingEntryService;
+use App\Services\InventoryUnitService;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Http\JsonResponse;
@@ -27,7 +28,10 @@ use Illuminate\Support\Str;
 
 class CashRegisterController extends Controller
 {
-    public function __construct(private readonly AccountingEntryService $accountingEntryService) {}
+    public function __construct(
+        private readonly AccountingEntryService $accountingEntryService,
+        private readonly InventoryUnitService $inventoryUnitService,
+    ) {}
 
     private const SETTLEMENT_ACTIONS = [
         '1105' => '1105 EFECTIVO',
@@ -113,7 +117,7 @@ class CashRegisterController extends Controller
             ->take(100)
             ->get()
             ->filter(fn (Sale $sale): bool => (float) $sale->total - (float) $sale->payments->sum('amount') > 0);
-        $availableItems = Item::query()->where('type', 'producto')->orderBy('name')->get();
+        $availableItems = Item::query()->with('unitConversions')->where('type', 'producto')->orderBy('name')->get();
 
         return view('cash-register.index', [
             'fundType' => $fundType,
@@ -238,9 +242,10 @@ class CashRegisterController extends Controller
             'stops.*.amount_paid' => ['nullable', 'numeric', 'min:0'],
             'stops.*.collection_method' => ['nullable', 'in:1105,1120'],
             'stops.*.return_quantities' => ['nullable', 'array'],
-            'stops.*.return_quantities.*' => ['nullable', 'integer', 'min:0'],
+            'stops.*.return_quantities.*' => ['nullable', 'numeric', 'min:0'],
             'stops.*.replacement_item_id' => ['nullable', 'integer'],
-            'stops.*.replacement_quantity' => ['nullable', 'integer', 'min:1'],
+            'stops.*.replacement_unit_conversion_id' => ['nullable', 'integer', 'exists:item_unit_conversions,id'],
+            'stops.*.replacement_quantity' => ['nullable', 'numeric', 'gt:0'],
             'route_date' => ['nullable', 'date_format:Y-m-d'],
             'expenses' => ['nullable', 'array'],
             'expenses.*.category' => ['required', 'in:combustible,proveedor,transferencia,otro'],
@@ -281,14 +286,14 @@ class CashRegisterController extends Controller
                     if ($action === 'return_total') {
                         $detailRows = $stop->sale->details()->get();
                         $quantities = $detailRows->mapWithKeys(function (SaleDetail $detail) use ($stop): array {
-                            $returned = (int) $stop->returns()->where('sale_detail_id', $detail->id)->sum('quantity');
+                            $returned = (float) $stop->returns()->where('sale_detail_id', $detail->id)->sum('quantity');
 
-                            return [$detail->id => max(0, (int) $detail->quantity - $returned)];
+                            return [$detail->id => max(0, (float) $detail->quantity - $returned)];
                         })->all();
                     } else {
                         $quantities = $stopData['return_quantities'] ?? [];
                     }
-                    abort_unless(collect($quantities)->contains(fn ($quantity): bool => (int) $quantity > 0), 422, 'Selecciona al menos un producto y una cantidad.');
+                    abort_unless(collect($quantities)->contains(fn ($quantity): bool => (float) $quantity > 0), 422, 'Selecciona al menos un producto y una cantidad.');
                     $returnedValue = $action === 'exchange'
                         ? $this->returnedValue($stop, $quantities)
                         : 0;
@@ -296,22 +301,32 @@ class CashRegisterController extends Controller
 
                     if ($action === 'exchange') {
                         $replacementItem = Item::query()->lockForUpdate()->findOrFail($stopData['replacement_item_id'] ?? 0);
-                        $replacementQuantity = (int) ($stopData['replacement_quantity'] ?? 0);
-                        abort_if($replacementQuantity < 1, 422, 'Indica la cantidad del producto de reemplazo.');
-                        abort_if((int) $replacementItem->stock < $replacementQuantity, 422, 'No hay existencias suficientes del producto de reemplazo.');
-                        $stockBefore = (int) $replacementItem->stock;
-                        $replacementItem->decrement('stock', $replacementQuantity);
+                        $replacementQuantity = (float) ($stopData['replacement_quantity'] ?? 0);
+                        $replacementUnit = $this->inventoryUnitService->snapshot(
+                            $replacementItem,
+                            isset($stopData['replacement_unit_conversion_id']) ? (int) $stopData['replacement_unit_conversion_id'] : null,
+                            'stops',
+                        );
+                        $replacementBaseQuantity = round($replacementQuantity * $replacementUnit['unit_factor'], 4);
+                        abort_if($replacementQuantity <= 0, 422, 'Indica la cantidad del producto de reemplazo.');
+                        abort_if((float) $replacementItem->stock < $replacementBaseQuantity, 422, 'No hay existencias suficientes del producto de reemplazo.');
+                        $stockBefore = (float) $replacementItem->stock;
+                        $replacementItem->decrement('stock', $replacementBaseQuantity);
                         $replacementItem->refresh();
                         InventoryMovement::create([
                             'company_id' => $replacementItem->company_id,
                             'item_id' => $replacementItem->id,
                             'type' => 'salida',
-                            'quantity' => $replacementQuantity,
+                            'quantity' => $replacementBaseQuantity,
                             'stock_before' => $stockBefore,
                             'stock_after' => $replacementItem->stock,
                             'reason' => 'Cruce de productos en factura '.$stop->sale->invoice_number,
                         ]);
-                        $replacementValue = (float) $replacementItem->sale_price * $replacementQuantity;
+                        $conversionSalePrice = $replacementUnit['unit_conversion_id']
+                            ? $replacementItem->unitConversions()->findOrFail($replacementUnit['unit_conversion_id'])->sale_price
+                            : null;
+                        $replacementSalePrice = $conversionSalePrice ?? ((float) $replacementItem->sale_price * $replacementUnit['unit_factor']);
+                        $replacementValue = (float) $replacementSalePrice * $replacementQuantity;
                         $difference = round($replacementValue - $returnedValue, 2);
                         if (abs($difference) >= 0.01) {
                             $adjustmentMethod = $stopData['collection_method'] ?? null;
@@ -430,7 +445,7 @@ class CashRegisterController extends Controller
     }
 
     /**
-     * @param  array<int|string, int|string>  $quantities
+     * @param  array<int|string, int|float|string>  $quantities
      */
     private function restockDeliveryStop(DeliveryStop $stop, array $quantities): void
     {
@@ -443,19 +458,20 @@ class CashRegisterController extends Controller
             ->get();
 
         foreach ($quantities as $detailId => $quantity) {
-            $quantity = (int) $quantity;
-            if ($quantity === 0) {
+            $quantity = (float) $quantity;
+            if ($quantity <= 0) {
                 continue;
             }
 
             $detail = $details->firstWhere('id', (int) $detailId);
             abort_unless($detail && $detail->item, 422, 'El producto no pertenece a la factura del lote.');
-            $alreadyReturned = (int) $stop->returns()->where('sale_detail_id', $detail->id)->sum('quantity');
-            abort_if($quantity > (int) $detail->quantity - $alreadyReturned, 422, 'La cantidad devuelta supera la cantidad pendiente.');
+            $alreadyReturned = (float) $stop->returns()->where('sale_detail_id', $detail->id)->sum('quantity');
+            abort_if($quantity > (float) $detail->quantity - $alreadyReturned, 422, 'La cantidad devuelta supera la cantidad pendiente.');
 
             $item = Item::query()->lockForUpdate()->findOrFail($detail->item_id);
-            $stockBefore = (int) $item->stock;
-            $item->increment('stock', $quantity);
+            $baseQuantity = round($quantity * (float) $detail->unit_factor, 4);
+            $stockBefore = (float) $item->stock;
+            $item->increment('stock', $baseQuantity);
             $item->refresh();
             DeliveryStopReturn::create([
                 'company_id' => $item->company_id,
@@ -468,7 +484,7 @@ class CashRegisterController extends Controller
                 'company_id' => $item->company_id,
                 'item_id' => $item->id,
                 'type' => 'entrada',
-                'quantity' => $quantity,
+                'quantity' => $baseQuantity,
                 'stock_before' => $stockBefore,
                 'stock_after' => $item->stock,
                 'reason' => 'Devolución de lote por factura '.$stop->sale_id,
@@ -477,7 +493,7 @@ class CashRegisterController extends Controller
     }
 
     /**
-     * @param  array<int|string, int|string>  $quantities
+     * @param  array<int|string, int|float|string>  $quantities
      */
     private function returnedValue(DeliveryStop $stop, array $quantities): float
     {
@@ -495,7 +511,7 @@ class CashRegisterController extends Controller
             $discount = (float) $detail->discount_percentage;
             $tax = (float) $detail->iva_percentage;
 
-            return (int) $quantity * $unitPrice * (1 - $discount / 100) * (1 + $tax / 100);
+            return (float) $quantity * $unitPrice * (1 - $discount / 100) * (1 + $tax / 100);
         }), 2);
     }
 
@@ -687,7 +703,7 @@ class CashRegisterController extends Controller
             'return_type' => ['required', 'in:return_total,return_partial'],
             'items' => ['required_if:return_type,return_partial', 'array'],
             'items.*.sale_detail_id' => ['required', 'integer'],
-            'items.*.quantity' => ['required', 'integer', 'min:1'],
+            'items.*.quantity' => ['required', 'numeric', 'gt:0'],
         ]);
 
         abort_unless($stop->sale_id, 422, 'La parada no tiene una factura asociada.');
@@ -695,11 +711,11 @@ class CashRegisterController extends Controller
             $details = SaleDetail::query()->where('sale_id', $stop->sale_id)->get();
             $quantities = $data['return_type'] === 'return_total'
                 ? $details->mapWithKeys(function (SaleDetail $detail) use ($stop): array {
-                    $returned = (int) $stop->returns()->where('sale_detail_id', $detail->id)->sum('quantity');
+                    $returned = (float) $stop->returns()->where('sale_detail_id', $detail->id)->sum('quantity');
 
-                    return [$detail->id => max(0, (int) $detail->quantity - $returned)];
+                    return [$detail->id => max(0, (float) $detail->quantity - $returned)];
                 })->all()
-                : collect($data['items'])->mapWithKeys(fn (array $row): array => [(int) $row['sale_detail_id'] => (int) $row['quantity']])->all();
+                : collect($data['items'])->mapWithKeys(fn (array $row): array => [(int) $row['sale_detail_id'] => (float) $row['quantity']])->all();
             $this->restockDeliveryStop($stop, $quantities);
         });
 

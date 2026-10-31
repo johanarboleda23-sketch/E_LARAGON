@@ -148,6 +148,8 @@ Route::middleware(['auth', 'company'])->group(function () {
     Route::middleware('module:third-parties')->group(function () {
         Route::get('/terceros', [ThirdPartyController::class, 'index'])->name('third-parties.index');
         Route::post('/terceros', [ThirdPartyController::class, 'store'])->name('third-parties.store');
+        Route::put('/terceros/{thirdParty}', [ThirdPartyController::class, 'update'])->name('third-parties.update');
+        Route::post('/terceros/rut/extraer', [ThirdPartyController::class, 'extractRut'])->middleware('throttle:10,1')->name('third-parties.rut.extract');
         Route::get('/terceros/plantilla', [ThirdPartyController::class, 'template'])->name('third-parties.template');
         Route::post('/terceros/migrar', [ThirdPartyController::class, 'import'])->name('third-parties.import');
         Route::patch('/terceros/{thirdParty}/estado', [ThirdPartyController::class, 'toggleActive'])->name('third-parties.toggle-active');
@@ -227,6 +229,7 @@ Route::middleware(['auth', 'company'])->group(function () {
     Route::get('/buscar-comprobantes', [DocumentLookupController::class, 'search'])->middleware('auth')->name('documents.search');
 
     Route::middleware('module:accounting-vouchers')->group(function () {
+        Route::view('/contabilidad', 'accounting.index')->name('accounting.index');
         Route::get('/comprobantes', [AccountingVoucherController::class, 'index'])->name('accounting.vouchers.index');
         Route::post('/comprobantes', [AccountingVoucherController::class, 'store'])->name('accounting.vouchers.store');
         Route::get('/comprobantes/plantilla-migracion', [AccountingVoucherController::class, 'importTemplate'])->name('accounting.vouchers.import-template');

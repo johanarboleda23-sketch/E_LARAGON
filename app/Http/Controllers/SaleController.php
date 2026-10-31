@@ -10,6 +10,7 @@ use App\Models\SaleDetail;
 use App\Models\ThirdParty;
 use App\Services\AccountingEntryService;
 use App\Services\FactusService;
+use App\Services\InventoryUnitService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
@@ -20,11 +21,12 @@ class SaleController extends Controller
     public function __construct(
         private readonly AccountingEntryService $accountingEntryService,
         private readonly FactusService $factusService,
+        private readonly InventoryUnitService $inventoryUnitService,
     ) {}
 
     public function index()
     {
-        $items = Item::where('type', 'producto')->orderBy('name')->get();
+        $items = Item::with('unitConversions')->where('type', 'producto')->orderBy('name')->get();
         $sales = Sale::with(['details.item', 'creator'])->latest()->take(20)->get();
         $customers = ThirdParty::where('is_customer', true)->where('active', true)->orderBy('name')->get();
         $withholdings = config('colombia_withholdings');
@@ -35,6 +37,13 @@ class SaleController extends Controller
                 'name' => $item->name,
                 'price' => $item->sale_price,
                 'stock' => $item->stock,
+                'base_unit' => $item->base_unit ?: 'unidad',
+                'units' => $item->unitConversions->map(fn ($unit) => [
+                    'id' => $unit->id,
+                    'name' => $unit->name,
+                    'factor' => $unit->factor,
+                    'sale_price' => $unit->sale_price,
+                ])->values(),
             ];
         })->values();
 
@@ -54,26 +63,27 @@ class SaleController extends Controller
             'subtotal' => 'required|numeric|min:0',
             'iva_total' => 'required|numeric|min:0',
             'discount_total' => 'required|numeric|min:0',
-            'withholding_concept' => 'required|string|in:'.implode(',', array_keys(config('colombia_withholdings.concepts'))),
+            'withholding_concept' => ['required', 'string', Rule::in(array_keys(config('colombia_withholdings.sales_concepts')))],
             'retention_base' => 'required|numeric|min:0',
             'retention_total' => 'required|numeric|min:0',
             'total' => 'required|numeric|min:0',
             'items' => 'required|array|min:1',
             'items.*.item_id' => 'required|exists:items,id',
-            'items.*.quantity' => 'required|integer|min:1',
+            'items.*.quantity' => ['required', 'numeric', 'gt:0'],
+            'items.*.unit_conversion_id' => ['nullable', 'integer', 'exists:item_unit_conversions,id'],
             'items.*.unit_price' => 'required|numeric|min:0',
             'items.*.iva_percentage' => 'required|numeric|min:0',
             'items.*.discount_percentage' => 'nullable|numeric|min:0|max:100',
         ]);
 
-        $concept = config('colombia_withholdings.concepts.'.$data['withholding_concept']);
+        $concept = config('colombia_withholdings.sales_concepts.'.$data['withholding_concept']);
         $retentionBase = $concept['base_on'] === 'iva' ? (float) $data['iva_total'] : (float) $data['subtotal'] - (float) $data['discount_total'];
         $minimumBase = (float) $concept['base_uvt'] * (float) config('colombia_withholdings.uvt');
         $retentionBase = $retentionBase >= $minimumBase ? $retentionBase : 0;
-        
+
         // CORREGIDO: multiplicación explícita para la retención total
         $retentionTotal = round($retentionBase * (float) $concept['rate'], 2);
-        
+
         $data['retention_base'] = $retentionBase;
         $data['retention_total'] = $retentionTotal;
         $data['total'] = round((float) $data['subtotal'] - (float) $data['discount_total'] + (float) $data['iva_total'] - $retentionTotal, 2);
@@ -136,8 +146,10 @@ class SaleController extends Controller
 
         foreach ($items as $itemData) {
             $item = Item::lockForUpdate()->findOrFail($itemData['item_id']);
-            $quantity = (int) $itemData['quantity'];
-            if ($item->stock < $quantity) {
+            $quantity = (float) $itemData['quantity'];
+            $unit = $this->inventoryUnitService->snapshot($item, isset($itemData['unit_conversion_id']) ? (int) $itemData['unit_conversion_id'] : null, 'items');
+            $baseQuantity = round($quantity * $unit['unit_factor'], 4);
+            if ($item->stock < $baseQuantity) {
                 abort(422, "Stock insuficiente para {$item->name}.");
             }
 
@@ -149,6 +161,7 @@ class SaleController extends Controller
             SaleDetail::create([
                 'sale_id' => $sale->id,
                 'item_id' => $item->id,
+                ...$unit,
                 'quantity' => $quantity,
                 'unit_price' => $itemData['unit_price'],
                 'iva_percentage' => $itemData['iva_percentage'],
@@ -156,14 +169,14 @@ class SaleController extends Controller
                 'line_total' => $lineTotal,
             ]);
 
-            $stockBefore = $item->stock;
-            $item->decrement('stock', $quantity);
+            $stockBefore = (float) $item->stock;
+            $item->decrement('stock', $baseQuantity);
             $item->refresh();
 
             InventoryMovement::create([
                 'item_id' => $item->id,
                 'type' => 'salida',
-                'quantity' => $quantity,
+                'quantity' => $baseQuantity,
                 'stock_before' => $stockBefore,
                 'stock_after' => $item->stock,
                 'reason' => $movementReason,
@@ -182,14 +195,15 @@ class SaleController extends Controller
             if ($detail->item) {
                 $item = Item::lockForUpdate()->find($detail->item->id);
                 if ($item) {
-                    $stockBefore = $item->stock;
-                    $item->increment('stock', $detail->quantity);
+                    $baseQuantity = round((float) $detail->quantity * (float) $detail->unit_factor, 4);
+                    $stockBefore = (float) $item->stock;
+                    $item->increment('stock', $baseQuantity);
                     $item->refresh();
 
                     InventoryMovement::create([
                         'item_id' => $item->id,
                         'type' => 'entrada',
-                        'quantity' => $detail->quantity,
+                        'quantity' => $baseQuantity,
                         'stock_before' => $stockBefore,
                         'stock_after' => $item->stock,
                         'reason' => 'Reversión por edición de factura '.$sale->invoice_number,
@@ -214,7 +228,7 @@ class SaleController extends Controller
         $sale->load('details.item');
         $body = "Factura: {$sale->invoice_number}\nCliente: {$sale->customer_name}\nFecha: {$sale->sale_date}\nTotal: {$sale->total}\n\nDetalle:\n";
         foreach ($sale->details as $detail) {
-            $body .= $detail->item->name.' x '.$detail->quantity.' - '.$detail->line_total."\n";
+            $body .= $detail->item->name.' x '.$detail->quantity.' '.($detail->unit_name ?? $detail->item->base_unit ?? 'unidad').' - '.$detail->line_total."\n";
         }
         Mail::raw($body, fn ($message) => $message->to($data['email'])->subject('Factura de venta '.$sale->invoice_number));
 
@@ -231,12 +245,19 @@ class SaleController extends Controller
     public function edit(Sale $sale)
     {
         $sale->load('details.item');
-        $items = Item::where('type', 'producto')->orderBy('name')->get();
+        $items = Item::with('unitConversions')->where('type', 'producto')->orderBy('name')->get();
         $productOptions = $items->map(fn (Item $item) => [
             'id' => $item->id,
             'name' => $item->name,
             'price' => $item->sale_price,
             'stock' => $item->stock,
+            'base_unit' => $item->base_unit ?: 'unidad',
+            'units' => $item->unitConversions->map(fn ($unit) => [
+                'id' => $unit->id,
+                'name' => $unit->name,
+                'factor' => $unit->factor,
+                'sale_price' => $unit->sale_price,
+            ])->values(),
         ])->values();
         $customers = ThirdParty::where('is_customer', true)->where('active', true)->orderBy('name')->get();
         $withholdings = config('colombia_withholdings');
@@ -255,13 +276,14 @@ class SaleController extends Controller
             'subtotal' => 'required|numeric|min:0',
             'iva_total' => 'required|numeric|min:0',
             'discount_total' => 'required|numeric|min:0',
-            'withholding_concept' => 'required|string|in:'.implode(',', array_keys(config('colombia_withholdings.concepts'))),
+            'withholding_concept' => ['required', 'string', Rule::in(array_keys(config('colombia_withholdings.sales_concepts')))],
             'retention_base' => 'required|numeric|min:0',
             'retention_total' => 'required|numeric|min:0',
             'total' => 'required|numeric|min:0',
             'items' => 'required|array|min:1',
             'items.*.item_id' => 'required|exists:items,id',
-            'items.*.quantity' => 'required|integer|min:1',
+            'items.*.quantity' => ['required', 'numeric', 'gt:0'],
+            'items.*.unit_conversion_id' => ['nullable', 'integer', 'exists:item_unit_conversions,id'],
             'items.*.unit_price' => 'required|numeric|min:0',
             'items.*.iva_percentage' => 'required|numeric|min:0',
             'items.*.discount_percentage' => 'nullable|numeric|min:0|max:100',
@@ -342,6 +364,7 @@ class SaleController extends Controller
             $line = $lines->addChild('Line');
             $line->addChild('Product', $detail->item->name);
             $line->addChild('Quantity', (string) $detail->quantity);
+            $line->addChild('Unit', $detail->unit_name ?? $detail->item->base_unit ?? 'unidad');
             $line->addChild('UnitPrice', number_format($detail->unit_price, 2, '.', ''));
             $line->addChild('Total', number_format($detail->line_total, 2, '.', ''));
         }

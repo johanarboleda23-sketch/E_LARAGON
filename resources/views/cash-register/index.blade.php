@@ -213,22 +213,25 @@
                                                         <div class="mt-2 grid gap-2">
                                                             @php foreach ($stop->sale->details as $detail): @endphp
                                                                 @php
-                                                                    $returnedQty = (int) $stop->returns->where('sale_detail_id', $detail->id)->sum('quantity');
-                                                                    $remainingQty = max(0, (int) $detail->quantity - $returnedQty);
+                                                                    $returnedQty = (float) $stop->returns->where('sale_detail_id', $detail->id)->sum('quantity');
+                                                                    $remainingQty = max(0, (float) $detail->quantity - $returnedQty);
                                                                 @endphp
                                                                 <label class="flex items-center justify-between gap-3 rounded-lg bg-[#f8faf8] p-2">
-                                                                    <span>{{ $detail->item?->name }} · disponibles para devolución: {{ $remainingQty }}</span>
-                                                                    <input type="number" name="stops[{{ $stop->id }}][return_quantities][{{ $detail->id }}]" min="0" max="{{ $remainingQty }}" value="0" data-unit-price="{{ $detail->unit_price }}" data-discount="{{ $detail->discount_percentage }}" data-tax="{{ $detail->iva_percentage }}" class="return-quantity w-20 rounded border-[#cbd6cf] text-xs" oninput="calculateTotals()">
+                                                                    <span>{{ $detail->item?->name }} · disponibles: {{ $remainingQty }} {{ $detail->unit_name ?? $detail->item?->base_unit ?? 'unidad' }}</span>
+                                                                    <input type="number" name="stops[{{ $stop->id }}][return_quantities][{{ $detail->id }}]" min="0" max="{{ $remainingQty }}" step="0.0001" value="0" data-unit-price="{{ $detail->unit_price }}" data-discount="{{ $detail->discount_percentage }}" data-tax="{{ $detail->iva_percentage }}" class="return-quantity w-24 rounded border-[#cbd6cf] text-xs" oninput="calculateTotals()">
                                                                 </label>
                                                             @php endforeach; @endphp
                                                             <div class="flex flex-wrap items-center gap-2">
-                                                                <select name="stops[{{ $stop->id }}][replacement_item_id]" onchange="calculateTotals()" class="max-w-64 rounded border-[#cbd6cf] text-xs">
+                                                                <select name="stops[{{ $stop->id }}][replacement_item_id]" class="replacement-item-select max-w-64 rounded border-[#cbd6cf] text-xs">
                                                                     <option value="">Producto para cruce</option>
                                                                     @php foreach ($availableItems as $item): @endphp
-                                                                        <option value="{{ $item->id }}" data-sale-price="{{ $item->sale_price }}">{{ $item->name }} · stock {{ $item->stock }} · ${{ number_format($item->sale_price, 2) }}</option>
+                                                                        <option value="{{ $item->id }}" data-sale-price="{{ $item->sale_price }}" data-base-unit="{{ $item->base_unit ?? 'unidad' }}" data-units="{{ $item->unitConversions->map(fn ($unit) => ['id' => $unit->id, 'name' => $unit->name, 'factor' => $unit->factor, 'sale_price' => $unit->sale_price])->toJson() }}">{{ $item->name }} · stock {{ $item->stock }} {{ $item->base_unit ?? 'unidad' }}</option>
                                                                     @php endforeach; @endphp
                                                                 </select>
-                                                                <input type="number" name="stops[{{ $stop->id }}][replacement_quantity]" min="1" value="1" class="replacement-quantity w-20 rounded border-[#cbd6cf] text-xs" aria-label="Cantidad del producto de reemplazo" oninput="calculateTotals()">
+                                                                <select name="stops[{{ $stop->id }}][replacement_unit_conversion_id]" class="replacement-unit-select max-w-40 rounded border-[#cbd6cf] text-xs">
+                                                                    <option value="">Unidad base</option>
+                                                                </select>
+                                                                <input type="number" name="stops[{{ $stop->id }}][replacement_quantity]" min="0.0001" step="0.0001" value="1" class="replacement-quantity w-24 rounded border-[#cbd6cf] text-xs" aria-label="Cantidad del producto de reemplazo" oninput="calculateTotals()">
                                                             </div>
                                                             <p class="text-xs font-bold text-[#8b6811]">Diferencia estimada del cruce: <span class="exchange-difference">$0.00</span></p>
                                                         </div>
@@ -550,8 +553,8 @@
                         const tax = Number(input.dataset.tax || 0) / 100;
                         returnedValue += Number(input.value || 0) * Number(input.dataset.unitPrice || 0) * (1 - discount) * (1 + tax);
                     });
-                    const replacementSelect = row.querySelector('[name$="[replacement_item_id]"]');
-                    const replacementPrice = Number(replacementSelect?.selectedOptions[0]?.dataset.salePrice || 0);
+                    const replacementUnit = row.querySelector('.replacement-unit-select')?.selectedOptions[0];
+                    const replacementPrice = Number(replacementUnit?.dataset.salePrice || 0);
                     const replacementQuantity = Number(row.querySelector('.replacement-quantity')?.value || 0);
                     const difference = replacementPrice * replacementQuantity - returnedValue;
                     const differenceLabel = row.querySelector('.exchange-difference');
@@ -713,6 +716,26 @@
                 : '';
         }
 
+        function syncReplacementUnits(itemSelect) {
+            const row = itemSelect.closest('tr');
+            const unitSelect = row.querySelector('.replacement-unit-select');
+            const option = itemSelect.selectedOptions[0];
+            const baseUnit = option?.dataset.baseUnit || 'unidad';
+            const basePrice = Number(option?.dataset.salePrice || 0);
+            let units = [];
+            try {
+                units = JSON.parse(option?.dataset.units || '[]');
+            } catch (error) {
+                throw new Error('No fue posible leer las presentaciones del producto.');
+            }
+            unitSelect.innerHTML = `<option value="" data-factor="1" data-sale-price="${basePrice}">${baseUnit} (base)</option>` + units.map((unit) => {
+                const price = unit.sale_price === null || unit.sale_price === undefined
+                    ? basePrice * Number(unit.factor)
+                    : Number(unit.sale_price);
+                return `<option value="${unit.id}" data-factor="${unit.factor}" data-sale-price="${price}">${unit.name} × ${unit.factor}</option>`;
+            }).join('');
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('routeDate')?.addEventListener('input', event => {
                 const batchDate = document.getElementById('batchRouteDate');
@@ -720,6 +743,15 @@
             });
             document.getElementById('supplierProvider')?.addEventListener('change', loadSupplierInvoices);
             document.getElementById('supplierInvoice')?.addEventListener('change', updateSupplierPaymentBalance);
+            document.querySelectorAll('.replacement-item-select').forEach(syncReplacementUnits);
+            document.addEventListener('change', (event) => {
+                if (event.target.matches('.replacement-item-select')) {
+                    syncReplacementUnits(event.target);
+                }
+                if (event.target.matches('.replacement-item-select, .replacement-unit-select')) {
+                    calculateTotals();
+                }
+            });
             calculateTotals();
             calculateDenominations();
             document.getElementById('countedCash')?.addEventListener('input', () => {

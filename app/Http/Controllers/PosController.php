@@ -9,6 +9,7 @@ use App\Models\Sale;
 use App\Models\SaleDetail;
 use App\Services\AccountingEntryService;
 use App\Services\FactusService;
+use App\Services\InventoryUnitService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -17,11 +18,12 @@ class PosController extends Controller
     public function __construct(
         private readonly AccountingEntryService $accountingEntryService,
         private readonly FactusService $factusService,
+        private readonly InventoryUnitService $inventoryUnitService,
     ) {}
 
     public function index()
     {
-        $items = Item::where('type', 'producto')->where('stock', '>', 0)->orderBy('name')->get();
+        $items = Item::with('unitConversions')->where('type', 'producto')->where('stock', '>', 0)->orderBy('name')->get();
         $sales = Sale::where('invoice_number', 'like', 'POS-%')->with('details.item')->latest()->take(15)->get();
 
         $productOptions = $items->map(fn (Item $item) => [
@@ -29,6 +31,13 @@ class PosController extends Controller
             'name' => $item->name,
             'price' => $item->sale_price,
             'stock' => $item->stock,
+            'base_unit' => $item->base_unit ?: 'unidad',
+            'units' => $item->unitConversions->map(fn ($unit) => [
+                'id' => $unit->id,
+                'name' => $unit->name,
+                'factor' => $unit->factor,
+                'sale_price' => $unit->sale_price,
+            ])->values(),
         ])->values();
 
         return view('pos.index', compact('productOptions', 'sales'));
@@ -40,7 +49,8 @@ class PosController extends Controller
             'customer_name' => 'nullable|string|max:255',
             'items' => 'required|array|min:1',
             'items.*.item_id' => 'required|exists:items,id',
-            'items.*.quantity' => 'required|integer|min:1',
+            'items.*.quantity' => ['required', 'numeric', 'gt:0'],
+            'items.*.unit_conversion_id' => ['nullable', 'integer', 'exists:item_unit_conversions,id'],
         ]);
 
         $ivaRate = 19.0;
@@ -57,11 +67,26 @@ class PosController extends Controller
 
             foreach ($data['items'] as $itemData) {
                 $item = Item::lockForUpdate()->findOrFail($itemData['item_id']);
-                $quantity = (int) $itemData['quantity'];
-                abort_if($item->stock < $quantity, 422, "Stock insuficiente para {$item->name}.");
-                $lineSubtotal = $quantity * (float) $item->sale_price;
+                $quantity = (float) $itemData['quantity'];
+                $unit = $this->inventoryUnitService->snapshot($item, isset($itemData['unit_conversion_id']) ? (int) $itemData['unit_conversion_id'] : null, 'items');
+                $baseQuantity = round($quantity * $unit['unit_factor'], 4);
+                abort_if($item->stock < $baseQuantity, 422, "Stock insuficiente para {$item->name}.");
+                $conversionSalePrice = $unit['unit_conversion_id']
+                    ? $item->unitConversions()->findOrFail($unit['unit_conversion_id'])->sale_price
+                    : null;
+                $unitPrice = $conversionSalePrice !== null
+                    ? (float) $conversionSalePrice
+                    : (float) $item->sale_price * $unit['unit_factor'];
+                $lineSubtotal = $quantity * $unitPrice;
                 $subtotal += $lineSubtotal;
-                $lines[] = ['item' => $item, 'quantity' => $quantity, 'unit_price' => $item->sale_price, 'line_total' => $lineSubtotal];
+                $lines[] = [
+                    'item' => $item,
+                    'quantity' => $quantity,
+                    'unit_price' => $unitPrice,
+                    'line_total' => $lineSubtotal,
+                    'base_quantity' => $baseQuantity,
+                    ...$unit,
+                ];
             }
 
             $ivaTotal = round($subtotal * ($ivaRate / 100), 2);
@@ -85,19 +110,22 @@ class PosController extends Controller
                 SaleDetail::create([
                     'sale_id' => $sale->id,
                     'item_id' => $line['item']->id,
+                    'unit_conversion_id' => $line['unit_conversion_id'],
+                    'unit_name' => $line['unit_name'],
+                    'unit_factor' => $line['unit_factor'],
                     'quantity' => $line['quantity'],
                     'unit_price' => $line['unit_price'],
                     'iva_percentage' => $ivaRate,
                     'discount_percentage' => 0,
                     'line_total' => $line['line_total'],
                 ]);
-                $stockBefore = $line['item']->stock;
-                $line['item']->decrement('stock', $line['quantity']);
+                $stockBefore = (float) $line['item']->stock;
+                $line['item']->decrement('stock', $line['base_quantity']);
                 $line['item']->refresh();
                 InventoryMovement::create([
                     'item_id' => $line['item']->id,
                     'type' => 'salida',
-                    'quantity' => $line['quantity'],
+                    'quantity' => $line['base_quantity'],
                     'stock_before' => $stockBefore,
                     'stock_after' => $line['item']->stock,
                     'reason' => 'Venta POS '.$sale->invoice_number,

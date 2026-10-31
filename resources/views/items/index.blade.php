@@ -7,10 +7,10 @@
                     💹 Costos y márgenes
                 </a>
                 <a href="{{ route('items.create') }}" class="inline-flex items-center px-4 py-2 bg-pink-100 border border-pink-300 rounded-md font-semibold text-xs text-pink-700 uppercase tracking-widest hover:bg-pink-200">
-                    + Página Nueva
+                    + Crear producto
                 </a>
                 <button onclick="document.getElementById('modal-crear').classList.remove('hidden')" class="inline-flex items-center px-4 py-2 bg-pink-500 rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-pink-600 shadow-sm">
-                    + Modal Flotante
+                    + Creación rápida
                 </button>
             </div>
         </div>
@@ -39,9 +39,18 @@
                         </button>
                     </form>
                 </div>
-                @error('file')
-                    <p class="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{{ $message }}</p>
-                @enderror
+                @if (session('success'))
+                    <p class="mb-4 rounded-md bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{{ session('success') }}</p>
+                @endif
+                @if ($errors->any())
+                    <div class="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
+                        <ul class="list-inside list-disc space-y-1">
+                            @foreach ($errors->all() as $error)
+                                <li>{{ $error }}</li>
+                            @endforeach
+                        </ul>
+                    </div>
+                @endif
                 <form method="GET" action="{{ route('items.index') }}" class="mb-5 grid gap-3 md:grid-cols-4">
                     <input type="search" name="search" value="{{ request('search') }}" placeholder="Buscar nombre o código" class="rounded-md border-gray-300">
                     <select name="type" class="rounded-md border-gray-300">
@@ -72,7 +81,21 @@
                                     <td class="px-6 py-4 text-sm text-gray-900">{{ $item->name }}</td>
                                     <td class="px-6 py-4 text-sm text-gray-900">${{ number_format($item->sale_price, 2) }}</td>
                                     <td class="px-6 py-4 text-sm text-gray-900">{{ $item->purchase_price !== null ? '$' . number_format($item->purchase_price, 2) : 'N/A' }}</td>
-                                    <td class="px-6 py-4 text-sm {{ $item->type === 'producto' && $item->stock <= $item->min_stock ? 'font-bold text-red-600' : 'text-gray-900' }}">{{ $item->type === 'producto' ? $item->stock . ' (mín. ' . $item->min_stock . ')' : 'Servicio' }}</td>
+                                    <td class="px-6 py-4 text-sm {{ $item->type === 'producto' && $item->stock <= $item->min_stock ? 'font-bold text-red-600' : 'text-gray-900' }}">
+                                        @if ($item->type === 'producto')
+                                            <div>{{ $item->stock }} {{ $item->base_unit ?? 'unidad' }} (mín. {{ $item->min_stock }})</div>
+                                            @if ($item->unitConversions->isNotEmpty())
+                                                <div class="mt-1 text-xs font-normal text-gray-500">
+                                                    Presentaciones:
+                                                    @foreach ($item->unitConversions as $conversion)
+                                                        {{ $conversion->name }} (× {{ $conversion->factor }})@if (! $loop->last), @endif
+                                                    @endforeach
+                                                </div>
+                                            @endif
+                                        @else
+                                            Servicio
+                                        @endif
+                                    </td>
                                     <td class="px-6 py-4 text-xs">
                                         <button type="button" onclick="document.getElementById('modal-puc-{{ $item->id }}').classList.remove('hidden')" class="text-teal-700 hover:underline font-semibold">🔗 Amarrar a PUC</button>
                                         <p class="mt-1 text-gray-500">
@@ -88,7 +111,13 @@
                                                     <option value="entrada">Entrada</option>
                                                     <option value="salida">Salida</option>
                                                 </select>
-                                                <input type="number" name="quantity" min="1" value="1" required class="w-16 rounded border-gray-300 text-xs">
+                                                <select name="unit_conversion_id" class="rounded border-gray-300 text-xs">
+                                                    <option value="">{{ $item->base_unit ?? 'unidad' }}</option>
+                                                    @foreach($item->unitConversions as $conversion)
+                                                        <option value="{{ $conversion->id }}">{{ $conversion->name }}</option>
+                                                    @endforeach
+                                                </select>
+                                                <input type="number" name="quantity" min="0.0001" step="0.0001" value="1" required class="w-20 rounded border-gray-300 text-xs">
                                                 <input type="text" name="reason" placeholder="Motivo" class="w-24 rounded border-gray-300 text-xs">
                                                 <button class="text-blue-600 hover:underline">Aplicar</button>
                                             </form>
@@ -155,8 +184,8 @@
     @endforeach
 
     <!-- VENTANA FLOTANTE MODAL (Blanca con bordes rosa) -->
-    <div id="modal-crear" class="fixed inset-0 bg-gray-900 bg-opacity-40 hidden z-50 flex items-center justify-center">
-        <div class="relative mx-auto p-6 border-2 border-pink-200 w-96 shadow-2xl rounded-xl bg-white border-t-8 border-t-pink-400">
+    <div id="modal-crear" class="fixed inset-0 hidden flex items-center justify-center overflow-y-auto bg-gray-900 bg-opacity-40 p-4 z-50">
+        <div class="relative mx-auto max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl border-2 border-pink-200 border-t-8 border-t-pink-400 bg-white p-6 shadow-2xl">
             <div class="flex justify-between items-center mb-4">
                 <h3 class="text-lg font-bold text-pink-700">Registrar Item</h3>
                 <button onclick="document.getElementById('modal-crear').classList.add('hidden')" class="text-gray-400 hover:text-pink-600 text-2xl font-bold">&times;</button>
@@ -165,7 +194,7 @@
                 @csrf
                 <div>
                     <label class="block text-sm font-semibold text-gray-700">Tipo</label>
-                    <select name="type" required class="mt-1 block w-full rounded-md border-pink-200">
+                    <select id="quick-item-type" name="type" required class="mt-1 block w-full rounded-md border-pink-200">
                         <option value="producto">Producto</option>
                         <option value="servicio">Servicio</option>
                     </select>
@@ -178,6 +207,24 @@
                     <label class="block text-sm font-semibold text-gray-700">Precio Venta</label>
                     <input type="number" step="0.01" name="sale_price" required class="mt-1 block w-full rounded-md border-pink-200">
                 </div>
+                <fieldset id="quick-unit-fields" class="space-y-3 rounded-lg border border-pink-100 p-3">
+                    <legend class="px-2 text-sm font-bold text-gray-700">Unidades, existencias y conversiones</legend>
+                    <p class="text-xs text-gray-500">Las existencias se guardan en la unidad base. Cada presentación convierte su cantidad a esa unidad.</p>
+                    <div class="grid gap-3 sm:grid-cols-3">
+                        <label class="text-xs font-semibold text-gray-600">Unidad base
+                            <input name="base_unit" list="quick-common-units" value="unidad" maxlength="40" required class="mt-1 block w-full rounded-md border-pink-200 text-sm">
+                        </label>
+                        <label class="text-xs font-semibold text-gray-600">Stock inicial
+                            <input type="number" name="stock" min="0" step="0.0001" value="0" class="mt-1 block w-full rounded-md border-pink-200 text-sm">
+                        </label>
+                        <label class="text-xs font-semibold text-gray-600">Stock mínimo
+                            <input type="number" name="min_stock" min="0" step="0.0001" value="0" class="mt-1 block w-full rounded-md border-pink-200 text-sm">
+                        </label>
+                    </div>
+                    <datalist id="quick-common-units">@foreach($unitOptions as $unit)<option value="{{ $unit }}">@endforeach</datalist>
+                    <div id="quick-unit-conversions" class="space-y-2"></div>
+                    <button type="button" id="add-quick-unit-conversion" class="rounded-md border border-gray-300 px-3 py-2 text-xs font-semibold text-teal-700">＋ Agregar presentación y conversión</button>
+                </fieldset>
                 <div class="flex justify-end space-x-2 pt-3 border-t border-pink-50">
                     <button type="button" onclick="document.getElementById('modal-crear').classList.add('hidden')" class="px-4 py-2 bg-gray-100 text-gray-600 rounded-md text-sm font-medium">Cancelar</button>
                     <button type="submit" class="px-4 py-2 bg-pink-500 text-white rounded-md text-sm font-medium hover:bg-pink-600 shadow-sm">Guardar</button>
@@ -185,4 +232,39 @@
             </form>
         </div>
     </div>
+    <template id="quick-unit-conversion-template">
+        <div class="grid grid-cols-1 items-end gap-2 rounded-lg bg-gray-50 p-3 sm:grid-cols-[1fr_1fr_1fr_auto]">
+            <label class="text-xs font-semibold text-gray-600">Presentación
+                <input data-field="name" type="text" maxlength="80" required class="mt-1 block w-full rounded-md border-gray-300 text-sm">
+            </label>
+            <label class="text-xs font-semibold text-gray-600">Equivale a unidades base
+                <input data-field="factor" type="number" min="0.000001" step="0.000001" required class="mt-1 block w-full rounded-md border-gray-300 text-sm">
+            </label>
+            <label class="text-xs font-semibold text-gray-600">Precio propio (opcional)
+                <input data-field="sale_price" type="number" min="0" step="0.01" class="mt-1 block w-full rounded-md border-gray-300 text-sm">
+            </label>
+            <button type="button" class="remove-quick-unit-conversion rounded-md px-3 py-2 text-sm font-bold text-red-600">Quitar</button>
+        </div>
+    </template>
+    <script>
+        const quickUnitFields = document.getElementById('quick-unit-fields');
+        const quickItemType = document.getElementById('quick-item-type');
+        const quickUnitConversions = document.getElementById('quick-unit-conversions');
+        let quickUnitConversionIndex = 0;
+
+        document.getElementById('add-quick-unit-conversion').addEventListener('click', () => {
+            const fragment = document.getElementById('quick-unit-conversion-template').content.cloneNode(true);
+            const row = fragment.querySelector('div');
+
+            row.querySelectorAll('[data-field]').forEach((input) => {
+                input.name = `unit_conversions[${quickUnitConversionIndex}][${input.dataset.field}]`;
+            });
+            row.querySelector('.remove-quick-unit-conversion').addEventListener('click', () => row.remove());
+            quickUnitConversions.appendChild(fragment);
+            quickUnitConversionIndex++;
+        });
+        quickItemType.addEventListener('change', () => {
+            quickUnitFields.disabled = quickItemType.value !== 'producto';
+        });
+    </script>
 </x-app-layout>

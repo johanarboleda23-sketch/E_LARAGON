@@ -12,6 +12,14 @@ class PurchaseDetail extends Model
 
     protected $guarded = [];
 
+    protected function casts(): array
+    {
+        return [
+            'quantity' => 'float',
+            'unit_factor' => 'float',
+        ];
+    }
+
     public function item(): BelongsTo
     {
         return $this->belongsTo(Item::class);
@@ -20,5 +28,10 @@ class PurchaseDetail extends Model
     public function purchase(): BelongsTo
     {
         return $this->belongsTo(Purchase::class);
+    }
+
+    public function unitConversion(): BelongsTo
+    {
+        return $this->belongsTo(ItemUnitConversion::class, 'unit_conversion_id');
     }
 }

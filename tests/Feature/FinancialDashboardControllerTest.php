@@ -61,6 +61,47 @@ class FinancialDashboardControllerTest extends TestCase
         $response->assertSee('40%');
     }
 
+    public function test_it_applies_the_selected_unit_factor_to_estimated_cost_of_goods_sold(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $item = Item::create([
+            'company_id' => $company->id,
+            'type' => 'producto',
+            'name' => 'Producto por caja',
+            'sale_price' => 100,
+            'purchase_price' => 60,
+            'average_cost' => 60,
+            'stock' => 50,
+            'min_stock' => 0,
+        ]);
+        $sale = Sale::create([
+            'company_id' => $company->id,
+            'invoice_number' => 'FV-CAJA-1',
+            'customer_name' => 'Cliente de prueba',
+            'sale_date' => now()->toDateString(),
+            'subtotal' => 1000,
+            'iva_total' => 0,
+            'discount_total' => 0,
+            'total' => 1000,
+        ]);
+        SaleDetail::create([
+            'company_id' => $company->id,
+            'sale_id' => $sale->id,
+            'item_id' => $item->id,
+            'quantity' => 1,
+            'unit_factor' => 5,
+            'unit_name' => 'caja',
+            'unit_price' => 1000,
+            'iva_percentage' => 0,
+            'discount_percentage' => 0,
+            'line_total' => 1000,
+        ]);
+
+        $this->get(route('financial-dashboard.index'))
+            ->assertOk()
+            ->assertSee('70%');
+    }
+
     public function test_it_sums_class_5_accounting_lines_as_operating_expenses(): void
     {
         $company = $this->authenticateWithCompany();

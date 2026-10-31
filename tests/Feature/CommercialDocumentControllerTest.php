@@ -57,7 +57,7 @@ class CommercialDocumentControllerTest extends TestCase
         $document = CommercialDocument::query()->firstOrFail();
         $response->assertRedirect(route('commercial-documents.quotations', ['document' => $document->id]));
         $this->assertSame('draft', $document->status);
-        $this->assertSame(10, $item->fresh()->stock);
+        $this->assertSame(10.0, $item->fresh()->stock);
         $this->assertDatabaseCount('commercial_document_lines', 1);
         $this->assertDatabaseCount('inventory_movements', 0);
     }
@@ -69,14 +69,14 @@ class CommercialDocumentControllerTest extends TestCase
         $document = $this->createDraft('sales_order', $item);
 
         $this->post(route('commercial-documents.convert', $document))->assertRedirect(route('commercial-documents.sales-orders'));
-        $this->assertSame(8, $item->fresh()->stock);
+        $this->assertSame(8.0, $item->fresh()->stock);
         $this->assertSame('converted', $document->fresh()->status);
         $this->assertNotNull($document->fresh()->converted_sale_id);
         $this->assertDatabaseCount('sales', 1);
         $this->assertDatabaseCount('inventory_movements', 1);
 
         $this->post(route('commercial-documents.convert', $document))->assertStatus(409);
-        $this->assertSame(8, $item->fresh()->stock);
+        $this->assertSame(8.0, $item->fresh()->stock);
         $this->assertDatabaseCount('sales', 1);
         $this->assertDatabaseCount('inventory_movements', 1);
     }
@@ -93,7 +93,7 @@ class CommercialDocumentControllerTest extends TestCase
             ->assertRedirect(route('commercial-documents.sales-orders'))
             ->assertSessionHasErrors('items');
 
-        $this->assertSame(1, $item->fresh()->stock);
+        $this->assertSame(1.0, $item->fresh()->stock);
         $this->assertSame('draft', $document->fresh()->status);
         $this->assertDatabaseCount('sales', 0);
         $this->assertDatabaseCount('inventory_movements', 0);
@@ -123,11 +123,64 @@ class CommercialDocumentControllerTest extends TestCase
 
         $this->post(route('commercial-documents.convert', $document))->assertRedirect(route('commercial-documents.purchase-orders'));
 
-        $this->assertSame(12, $item->fresh()->stock);
+        $this->assertSame(12.0, $item->fresh()->stock);
         $this->assertSame('converted', $document->fresh()->status);
         $this->assertNotNull($document->fresh()->converted_purchase_id);
         $this->assertDatabaseCount('purchases', 1);
         $this->assertDatabaseCount('inventory_movements', 1);
+    }
+
+    public function test_converting_a_sales_order_applies_its_unit_conversion_to_stock(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $item = $this->createItem();
+        $item->update(['stock' => 20]);
+        $conversion = $item->unitConversions()->create([
+            'company_id' => $company->id,
+            'name' => 'caja',
+            'factor' => 6,
+        ]);
+        $document = $this->createDraft('sales_order', $item);
+        $document->lines()->update([
+            'unit_conversion_id' => $conversion->id,
+            'unit_name' => 'caja',
+            'unit_factor' => 6,
+            'quantity' => 0.5,
+        ]);
+
+        $this->post(route('commercial-documents.convert', $document))
+            ->assertRedirect(route('commercial-documents.sales-orders'));
+
+        $detail = Sale::query()->findOrFail($document->fresh()->converted_sale_id)->details()->firstOrFail();
+        $this->assertSame(17.0, $item->fresh()->stock);
+        $this->assertSame('caja', $detail->unit_name);
+        $this->assertSame(6.0, (float) $detail->unit_factor);
+        $this->assertSame(0.5, $detail->quantity);
+    }
+
+    public function test_converting_a_purchase_order_applies_its_unit_conversion_to_stock(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $item = $this->createItem();
+        $conversion = $item->unitConversions()->create([
+            'company_id' => $company->id,
+            'name' => 'paquete',
+            'factor' => 3,
+        ]);
+        $document = $this->createDraft('purchase_order', $item);
+        $document->lines()->update([
+            'unit_conversion_id' => $conversion->id,
+            'unit_name' => 'paquete',
+            'unit_factor' => 3,
+        ]);
+
+        $this->post(route('commercial-documents.convert', $document))
+            ->assertRedirect(route('commercial-documents.purchase-orders'));
+
+        $detail = Purchase::query()->findOrFail($document->fresh()->converted_purchase_id)->details()->firstOrFail();
+        $this->assertSame(16.0, $item->fresh()->stock);
+        $this->assertSame('paquete', $detail->unit_name);
+        $this->assertSame(3.0, (float) $detail->unit_factor);
     }
 
     public function test_sales_order_consecutive_cannot_be_changed_after_saving(): void

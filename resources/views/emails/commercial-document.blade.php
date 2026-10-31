@@ -18,7 +18,7 @@
         @foreach ($document->lines as $line)
             <tr>
                 <td style="padding:8px;border-bottom:1px solid #e5e7eb">{{ $line->description }}</td>
-                <td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right">{{ $line->quantity }}</td>
+                <td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right">{{ $line->quantity }} {{ $line->unit_name ?? $line->item?->base_unit ?? 'unidad' }}</td>
                 <td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right">${{ number_format($line->line_total, 2) }}</td>
             </tr>
         @endforeach

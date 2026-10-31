@@ -53,7 +53,7 @@
             @foreach($sale->details as $detail)
                 <tr>
                     <td>{{ $detail->item->name }}</td>
-                    <td class="numeric">{{ $detail->quantity }}</td>
+                    <td class="numeric">{{ $detail->quantity }} {{ $detail->unit_name ?? $detail->item->base_unit ?? 'unidad' }}</td>
                     <td class="numeric">${{ number_format($detail->unit_price, 2) }}</td>
                     <td class="numeric">${{ number_format($detail->line_total, 2) }}</td>
                 </tr>

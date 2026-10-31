@@ -225,7 +225,9 @@ class AccountingEntryService
         }
 
         if ((float) $sale->retention_total > 0) {
-            $rate = (float) (config('colombia_withholdings.concepts.'.$sale->withholding_concept.'.rate') ?? 0);
+            $rate = (float) (config('colombia_withholdings.sales_concepts.'.$sale->withholding_concept.'.rate')
+                ?? config('colombia_withholdings.concepts.'.$sale->withholding_concept.'.rate')
+                ?? 0);
             $retentionAccountId = $rate > 0
                 ? $this->resolveRetentionAccountId('1355', $rate)
                 : $this->resolvePostingAccountId('1355');

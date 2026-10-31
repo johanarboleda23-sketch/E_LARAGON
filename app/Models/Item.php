@@ -3,14 +3,33 @@
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToCompany;
+use Database\Factories\ItemFactory;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Item extends Model
 {
     use BelongsToCompany;
 
+    /** @use HasFactory<ItemFactory> */
+    use HasFactory;
+
     protected $guarded = [];
+
+    protected function casts(): array
+    {
+        return [
+            'stock' => 'float',
+            'min_stock' => 'float',
+        ];
+    }
+
+    public function unitConversions(): HasMany
+    {
+        return $this->hasMany(ItemUnitConversion::class)->orderBy('id');
+    }
 
     public function inventoryAccount(): BelongsTo
     {
@@ -38,7 +57,7 @@ class Item extends Model
         $totals = $this->purchaseDetails()
             ->where('purchase_line_type', 'producto')
             ->whereHas('purchase', fn ($query) => $query->whereNull('deleted_at'))
-            ->selectRaw('SUM(quantity) as total_quantity, SUM(quantity * cost_price) as total_cost')
+            ->selectRaw('SUM(quantity * unit_factor) as total_quantity, SUM(quantity * cost_price) as total_cost')
             ->first();
 
         $totalQuantity = (float) ($totals->total_quantity ?? 0);

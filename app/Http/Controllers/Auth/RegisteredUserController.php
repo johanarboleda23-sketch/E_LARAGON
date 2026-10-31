@@ -10,7 +10,7 @@ use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rules;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
@@ -20,33 +20,51 @@ class RegisteredUserController extends Controller
     /**
      * Display the registration view.
      */
-    public function create(): View
+    public function create(Request $request): View
     {
-        return view('auth.register');
+        return view('auth.register', [
+            'isPartnerRegistration' => $request->routeIs('register.partner'),
+        ]);
+    }
+
+    public function store(Request $request): RedirectResponse
+    {
+        return $this->register($request, false);
+    }
+
+    public function storePartner(Request $request): RedirectResponse
+    {
+        return $this->register($request, true);
     }
 
     /**
-     * Handle an incoming registration request.
-     *
      * @throws ValidationException
      */
-    public function store(Request $request): RedirectResponse
+    private function register(Request $request, bool $isPartner): RedirectResponse
     {
-        $request->validate([
+        $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
+            'company_name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:'.User::class],
             'password' => ['required', 'confirmed', Rules\Password::defaults()],
         ]);
 
-        $user = User::create([
-            'name' => $request->name,
-            'email' => $request->email,
-            'password' => Hash::make($request->password),
-        ]);
+        [$user, $company] = DB::transaction(function () use ($data, $isPartner): array {
+            $user = User::create([
+                'name' => $data['name'],
+                'email' => $data['email'],
+                'password' => $data['password'],
+            ]);
+            $company = Company::create([
+                'name' => $data['company_name'],
+                'is_partner' => $isPartner,
+            ]);
+            $user->companies()->attach($company, ['role' => 'admin']);
+            DefaultChartOfAccounts::seedFor($company->id);
 
-        $company = Company::create(['name' => 'Empresa de '.$user->name]);
-        $user->companies()->attach($company, ['role' => 'admin']);
-        DefaultChartOfAccounts::seedFor($company->id);
+            return [$user, $company];
+        });
+
         session(['company_id' => $company->id]);
 
         event(new Registered($user));

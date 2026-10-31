@@ -38,7 +38,7 @@
             @foreach ($document->lines as $line)
                 <tr>
                     <td>{{ $line->description }}</td>
-                    <td class="numeric">{{ $line->quantity }}</td>
+                    <td class="numeric">{{ $line->quantity }} {{ $line->unit_name ?? $line->item?->base_unit ?? 'unidad' }}</td>
                     <td class="numeric">${{ number_format($line->unit_price, 2) }}</td>
                     <td class="numeric">${{ number_format($line->line_total, 2) }}</td>
                 </tr>

@@ -70,7 +70,7 @@
                     ['name' => 'Compras', 'hint' => 'Facturas y XML', 'route' => 'purchases.index', 'icon' => '📥'],
                     ['name' => 'Ventas', 'hint' => 'Facturación emitida', 'route' => 'sales.index', 'icon' => '📤'],
                     ['name' => 'Nómina', 'hint' => 'Gestión de personal', 'route' => 'payroll.index', 'icon' => '👥'],
-                    ['name' => 'Contabilidad', 'hint' => 'Asientos y reportes', 'route' => 'accounting.vouchers.index', 'icon' => '📊'],
+                    ['name' => 'Contabilidad', 'hint' => 'Egresos, recibos y comprobantes', 'route' => 'accounting.index', 'icon' => '📊'],
                     ['name' => 'PUC', 'hint' => 'Plan único de cuentas', 'route' => 'accounting.puc.index', 'icon' => '📒'],
                     ['name' => 'Documento soporte', 'hint' => 'Compras a no obligados', 'route' => 'support-documents.index', 'icon' => '🧾'],
                     ['name' => 'Conciliación bancaria', 'hint' => 'Extractos y cruces', 'route' => 'bank-reconciliation.index', 'icon' => '🏦'],

@@ -20,6 +20,23 @@ class AccountingVoucherControllerTest extends TestCase
         $this->get(route('accounting.vouchers.index'))->assertRedirect(route('login'));
     }
 
+    public function test_guest_cannot_open_the_accounting_hub(): void
+    {
+        $this->get(route('accounting.index'))->assertRedirect(route('login'));
+    }
+
+    public function test_accounting_hub_links_to_each_voucher_workspace(): void
+    {
+        $this->authenticateWithCompany();
+
+        $this->get(route('accounting.index'))
+            ->assertOk()
+            ->assertSee(route('accounting.vouchers.index.typed', 'egreso'), false)
+            ->assertSee(route('accounting.vouchers.index.typed', 'recibo_caja'), false)
+            ->assertSee(route('accounting.vouchers.index'), false)
+            ->assertSee(route('accounting.puc.index'), false);
+    }
+
     public function test_typed_route_filters_the_list_and_generates_the_right_consecutive(): void
     {
         $company = $this->authenticateWithCompany();
@@ -47,6 +64,20 @@ class AccountingVoucherControllerTest extends TestCase
         $response->assertOk();
         $response->assertSee('EG-1');
         $response->assertDontSee('RC-1');
+        $response->assertSee('action="'.route('accounting.vouchers.store.typed', 'egreso').'"', false);
+        $response->assertSee('name="voucher_type" value="egreso"', false);
+        $response->assertDontSee('<select name="voucher_type"', false);
+    }
+
+    public function test_cash_receipt_workspace_submits_only_cash_receipts(): void
+    {
+        $this->authenticateWithCompany();
+
+        $this->get(route('accounting.vouchers.index.typed', 'recibo_caja'))
+            ->assertOk()
+            ->assertSee('action="'.route('accounting.vouchers.store.typed', 'recibo_caja').'"', false)
+            ->assertSee('name="voucher_type" value="recibo_caja"', false)
+            ->assertDontSee('<select name="voucher_type"', false);
     }
 
     public function test_bulk_import_template_can_be_downloaded(): void

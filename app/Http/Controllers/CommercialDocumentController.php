@@ -12,6 +12,7 @@ use App\Models\PurchaseDetail;
 use App\Models\Sale;
 use App\Models\SaleDetail;
 use App\Models\ThirdParty;
+use App\Services\InventoryUnitService;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -23,6 +24,8 @@ use Illuminate\Validation\ValidationException;
 
 class CommercialDocumentController extends Controller
 {
+    public function __construct(private readonly InventoryUnitService $inventoryUnitService) {}
+
     private const CONFIGURATION = [
         'quotation' => [
             'label' => 'Cotización',
@@ -117,9 +120,10 @@ class CommercialDocumentController extends Controller
             ->get(['id', 'name', 'document', 'email']);
 
         $items = Item::query()
+            ->with('unitConversions')
             ->when($configuration['party'] !== 'supplier', fn ($query) => $query->where('type', 'producto'))
             ->orderBy('name')
-            ->get(['id', 'name', 'type', 'sale_price', 'purchase_price', 'stock']);
+            ->get(['id', 'name', 'type', 'sale_price', 'purchase_price', 'stock', 'base_unit']);
 
         $referenceInvoices = collect();
         if ($type === 'customer_credit_note') {
@@ -149,6 +153,7 @@ class CommercialDocumentController extends Controller
         );
         $formLines = old('items', $currentDocument?->lines->map(fn (CommercialDocumentLine $line): array => [
             'item_id' => $line->item_id,
+            'unit_conversion_id' => $line->unit_conversion_id,
             'quantity' => $line->quantity,
             'unit_price' => $line->unit_price,
             'iva_percentage' => $line->iva_percentage,
@@ -207,7 +212,8 @@ class CommercialDocumentController extends Controller
             'notes' => ['nullable', 'string', 'max:3000'],
             'items' => ['required', 'array', 'min:1', 'max:100'],
             'items.*.item_id' => ['required', 'integer', 'distinct', 'exists:items,id'],
-            'items.*.quantity' => ['required', 'integer', 'min:1', 'max:1000000'],
+            'items.*.quantity' => ['required', 'numeric', 'gt:0', 'max:1000000'],
+            'items.*.unit_conversion_id' => ['nullable', 'integer', 'exists:item_unit_conversions,id'],
             'items.*.unit_price' => ['required', 'numeric', 'min:0', 'max:999999999'],
             'items.*.iva_percentage' => ['required', 'numeric', 'min:0', 'max:100'],
             'items.*.discount_percentage' => [$type === 'purchase_order' ? 'nullable' : 'required', 'numeric', 'min:0', 'max:100'],
@@ -245,8 +251,9 @@ class CommercialDocumentController extends Controller
 
         foreach ($data['items'] as $lineData) {
             $item = Item::query()->findOrFail($lineData['item_id']);
-            $quantity = (int) $lineData['quantity'];
+            $quantity = (float) $lineData['quantity'];
             $unitPrice = (float) $lineData['unit_price'];
+            $unit = $this->inventoryUnitService->snapshot($item, isset($lineData['unit_conversion_id']) ? (int) $lineData['unit_conversion_id'] : null, 'items');
             $ivaPercentage = (float) $lineData['iva_percentage'];
             $discountPercentage = $type === 'purchase_order' ? 0 : (float) ($lineData['discount_percentage'] ?? 0);
             $utilityPercentage = $type === 'purchase_order' ? (float) $lineData['utility_percentage'] : 0;
@@ -257,6 +264,7 @@ class CommercialDocumentController extends Controller
 
             $preparedLines[] = [
                 'item_id' => $item->id,
+                ...$unit,
                 'description' => $item->name,
                 'quantity' => $quantity,
                 'unit_price' => $unitPrice,
@@ -471,7 +479,7 @@ class CommercialDocumentController extends Controller
                 $document->document_date->toDateString(),
                 $document->third_party_name,
                 $line->description,
-                $line->quantity,
+                $line->quantity.' '.($line->unit_name ?? $line->item?->base_unit ?? 'unidad'),
                 number_format($line->unit_price, 2, '.', ''),
                 number_format($line->line_total, 2, '.', ''),
             ];
@@ -513,7 +521,8 @@ class CommercialDocumentController extends Controller
         foreach ($document->lines as $line) {
             $item = Item::query()->lockForUpdate()->findOrFail($line->item_id);
 
-            if ($item->type === 'producto' && $item->stock < $line->quantity) {
+            $baseQuantity = round((float) $line->quantity * (float) $line->unit_factor, 4);
+            if ($item->type === 'producto' && $item->stock < $baseQuantity) {
                 throw ValidationException::withMessages([
                     'items' => "Stock insuficiente para {$item->name}.",
                 ]);
@@ -522,6 +531,9 @@ class CommercialDocumentController extends Controller
             SaleDetail::create([
                 'sale_id' => $sale->id,
                 'item_id' => $item->id,
+                'unit_conversion_id' => $line->unit_conversion_id,
+                'unit_name' => $line->unit_name,
+                'unit_factor' => $line->unit_factor,
                 'quantity' => $line->quantity,
                 'unit_price' => $line->unit_price,
                 'iva_percentage' => $line->iva_percentage,
@@ -530,13 +542,13 @@ class CommercialDocumentController extends Controller
             ]);
 
             if ($item->type === 'producto') {
-                $stockBefore = $item->stock;
-                $item->decrement('stock', $line->quantity);
+                $stockBefore = (float) $item->stock;
+                $item->decrement('stock', $baseQuantity);
                 $item->refresh();
                 InventoryMovement::create([
                     'item_id' => $item->id,
                     'type' => 'salida',
-                    'quantity' => $line->quantity,
+                    'quantity' => $baseQuantity,
                     'stock_before' => $stockBefore,
                     'stock_after' => $item->stock,
                     'reason' => 'Factura '.$sale->invoice_number,
@@ -563,10 +575,14 @@ class CommercialDocumentController extends Controller
         foreach ($document->lines as $line) {
             $item = Item::query()->lockForUpdate()->findOrFail($line->item_id);
             $calculatedSalePrice = $line->unit_price * (1 + $line->utility_percentage / 100);
+            $baseQuantity = round((float) $line->quantity * (float) $line->unit_factor, 4);
 
             PurchaseDetail::create([
                 'purchase_id' => $purchase->id,
                 'item_id' => $item->id,
+                'unit_conversion_id' => $line->unit_conversion_id,
+                'unit_name' => $line->unit_name,
+                'unit_factor' => $line->unit_factor,
                 'quantity' => $line->quantity,
                 'cost_price' => $line->unit_price,
                 'iva_percentage' => $line->iva_percentage,
@@ -576,22 +592,23 @@ class CommercialDocumentController extends Controller
             ]);
 
             if ($item->type === 'producto') {
-                $stockBefore = $item->stock;
-                $item->increment('stock', $line->quantity);
+                $stockBefore = (float) $item->stock;
+                $item->increment('stock', $baseQuantity);
                 $item->refresh();
                 $item->update([
-                    'purchase_price' => $line->unit_price,
-                    'sale_price' => $calculatedSalePrice,
+                    'purchase_price' => $line->unit_price / (float) $line->unit_factor,
+                    'sale_price' => $calculatedSalePrice / (float) $line->unit_factor,
                 ]);
                 InventoryMovement::create([
                     'item_id' => $item->id,
                     'purchase_id' => $purchase->id,
                     'type' => 'entrada',
-                    'quantity' => $line->quantity,
+                    'quantity' => $baseQuantity,
                     'stock_before' => $stockBefore,
                     'stock_after' => $item->stock,
                     'reason' => 'Compra '.$purchase->invoice_number,
                 ]);
+                $item->recalculateAverageCost();
             }
         }
 

@@ -7,6 +7,7 @@ use App\Models\Company;
 use App\Models\FactusCredential;
 use App\Models\Item;
 use App\Models\Sale;
+use App\Models\SaleDetail;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -37,7 +38,36 @@ class PosControllerTest extends TestCase
         $this->assertSame(200.0, (float) $sale->subtotal);
 
         $product->refresh();
-        $this->assertSame(8, $product->stock);
+        $this->assertSame(8.0, $product->stock);
+    }
+
+    public function test_pos_sale_uses_the_selected_conversion_for_price_and_stock(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $product = $this->createProduct();
+        $conversion = $product->unitConversions()->create([
+            'company_id' => $company->id,
+            'name' => 'caja',
+            'factor' => 6,
+            'sale_price' => 500,
+        ]);
+
+        $this->post(route('pos.store'), [
+            'customer_name' => 'Cliente de caja',
+            'items' => [[
+                'item_id' => $product->id,
+                'quantity' => 0.5,
+                'unit_conversion_id' => $conversion->id,
+            ]],
+        ])->assertSessionHasNoErrors();
+
+        $detail = SaleDetail::query()->latest('id')->firstOrFail();
+        $this->assertSame(7.0, (float) $product->fresh()->stock);
+        $this->assertSame('caja', $detail->unit_name);
+        $this->assertSame(6.0, (float) $detail->unit_factor);
+        $this->assertSame(0.5, $detail->quantity);
+        $this->assertSame(500.0, (float) $detail->unit_price);
+        $this->assertSame(250.0, (float) $detail->line_total);
     }
 
     public function test_pos_sale_is_sent_to_factus_when_credentials_are_configured(): void

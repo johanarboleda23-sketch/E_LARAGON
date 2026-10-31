@@ -4,9 +4,12 @@ namespace App\Http\Controllers;
 
 use App\Models\EmployeeContract;
 use App\Models\ThirdParty;
+use App\Services\RutPdfExtractionService;
 use App\Support\SpreadsheetReader;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Validation\ValidationException;
 
 class ThirdPartyController extends Controller
 {
@@ -26,6 +29,9 @@ class ThirdPartyController extends Controller
             'document' => 'nullable|string|max:100',
             'email' => 'nullable|email|max:255',
             'phone' => 'nullable|string|max:50',
+            'address' => 'nullable|string|max:255',
+            'city' => 'nullable|string|max:150',
+            'neighborhood' => 'nullable|string|max:150',
             'is_customer' => 'nullable|boolean',
             'is_supplier' => 'nullable|boolean',
             'is_employee' => 'nullable|boolean',
@@ -38,13 +44,44 @@ class ThirdPartyController extends Controller
 
     public function update(Request $request, ThirdParty $thirdParty)
     {
-        $data = $request->validate(['name' => 'required|string|max:255', 'document' => 'nullable|string|max:100', 'email' => 'nullable|email|max:255', 'phone' => 'nullable|string|max:50', 'is_customer' => 'nullable|boolean', 'is_supplier' => 'nullable|boolean', 'is_employee' => 'nullable|boolean', 'active' => 'nullable|boolean']);
+        $data = $request->validate([
+            'type' => 'required|in:natural,juridica',
+            'name' => 'required|string|max:255',
+            'document' => 'nullable|string|max:100',
+            'email' => 'nullable|email|max:255',
+            'phone' => 'nullable|string|max:50',
+            'address' => 'nullable|string|max:255',
+            'city' => 'nullable|string|max:150',
+            'neighborhood' => 'nullable|string|max:150',
+            'is_customer' => 'nullable|boolean',
+            'is_supplier' => 'nullable|boolean',
+            'is_employee' => 'nullable|boolean',
+            'active' => 'required|boolean',
+        ]);
         $data['is_customer'] = ! empty($data['is_customer']);
         $data['is_supplier'] = ! empty($data['is_supplier']);
         $data['is_employee'] = ! empty($data['is_employee']);
+        abort_if(! $data['is_customer'] && ! $data['is_supplier'] && ! $data['is_employee'], 422, 'Selecciona al menos un perfil.');
         $thirdParty->update($data);
 
         return back()->with('success', 'Tercero actualizado.');
+    }
+
+    public function extractRut(Request $request, RutPdfExtractionService $rutPdfExtractionService): JsonResponse
+    {
+        $data = $request->validate([
+            'rut_pdf' => ['required', 'file', 'mimes:pdf', 'max:5120'],
+        ]);
+
+        $extracted = $rutPdfExtractionService->extract($data['rut_pdf']);
+
+        if (count(array_filter($extracted, fn (?string $value): bool => $value !== null)) === 0) {
+            throw ValidationException::withMessages([
+                'rut_pdf' => 'No se encontraron datos legibles. Carga un PDF digital del RUT, no una imagen escaneada.',
+            ]);
+        }
+
+        return response()->json(['data' => $extracted]);
     }
 
     public function toggleActive(ThirdParty $thirdParty)

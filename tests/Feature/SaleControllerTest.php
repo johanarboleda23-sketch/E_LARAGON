@@ -18,6 +18,17 @@ class SaleControllerTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_sales_module_displays_sales_withholding_concepts_instead_of_purchase_labels(): void
+    {
+        $this->authenticateWithCompany();
+
+        $this->get(route('sales.index'))
+            ->assertOk()
+            ->assertSeeText('Retención en ventas (practicada por el cliente)')
+            ->assertSeeText('Venta de bienes - vendedor declarante (2,5%)')
+            ->assertDontSeeText('Compras - proveedor declarante');
+    }
+
     public function test_sale_is_accounted_automatically_with_balanced_debits_and_credits(): void
     {
         $this->authenticateWithCompany();
@@ -215,6 +226,63 @@ class SaleControllerTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_sale_converts_the_selected_presentation_to_base_stock_units(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $item = $this->createProduct();
+        $item->update(['stock' => 20]);
+        $conversion = $item->unitConversions()->create([
+            'company_id' => $company->id,
+            'name' => 'paquete',
+            'factor' => 6,
+        ]);
+        $payload = $this->salePayload($item, 600);
+        $payload['subtotal'] = 300;
+        $payload['total'] = 300;
+        $payload['items'][0]['quantity'] = 0.5;
+        $payload['items'][0]['unit_conversion_id'] = $conversion->id;
+
+        $this->post(route('sales.store'), $payload)
+            ->assertRedirect(route('sales.index'));
+
+        $sale = Sale::query()->where('invoice_number', 'VTA-TEST-001')->firstOrFail();
+        $detail = $sale->details()->firstOrFail();
+        $this->assertSame(17.0, $item->fresh()->stock);
+        $this->assertSame('paquete', $detail->unit_name);
+        $this->assertSame(6.0, (float) $detail->unit_factor);
+        $this->assertSame(0.5, $detail->quantity);
+    }
+
+    public function test_sale_rejects_a_presentation_that_belongs_to_another_product(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $item = $this->createProduct();
+        $otherItem = Item::create([
+            'type' => 'producto',
+            'name' => 'Otro producto',
+            'code' => 'SKU-VTA-OTRO',
+            'sale_price' => 100,
+            'purchase_price' => 50,
+            'stock' => 10,
+            'min_stock' => 1,
+        ]);
+        $conversion = $otherItem->unitConversions()->create([
+            'company_id' => $company->id,
+            'name' => 'caja',
+            'factor' => 6,
+        ]);
+        $payload = $this->salePayload($item, 100);
+        $payload['items'][0]['unit_conversion_id'] = $conversion->id;
+
+        $this->from(route('sales.index'))
+            ->post(route('sales.store'), $payload)
+            ->assertRedirect(route('sales.index'))
+            ->assertSessionHasErrors('items');
+
+        $this->assertDatabaseCount('sales', 0);
+        $this->assertSame(10.0, $item->fresh()->stock);
+    }
+
     public function test_edit_and_update_change_the_sale_header_and_line_items(): void
     {
         $this->authenticateWithCompany();
@@ -222,9 +290,13 @@ class SaleControllerTest extends TestCase
         $this->post(route('sales.store'), $this->salePayload($item, 100_000))
             ->assertRedirect(route('sales.index'));
         $sale = Sale::query()->where('invoice_number', 'VTA-TEST-001')->firstOrFail();
-        $this->assertSame(9, $item->fresh()->stock);
+        $this->assertSame(9.0, $item->fresh()->stock);
 
-        $this->get(route('sales.edit', $sale))->assertOk()->assertSee('VTA-TEST-001');
+        $this->get(route('sales.edit', $sale))
+            ->assertOk()
+            ->assertSee('VTA-TEST-001')
+            ->assertSeeText('Retención en ventas (practicada por el cliente)')
+            ->assertSeeText('Honorarios o comisiones recibidos (10%)');
 
         $updatePayload = $this->salePayload($item, 50_000);
         $updatePayload['invoice_number'] = 'VTA-TEST-001-B';
@@ -239,10 +311,10 @@ class SaleControllerTest extends TestCase
         $this->assertSame('VTA-TEST-001-B', $sale->invoice_number);
         $this->assertSame('Cliente actualizado', $sale->customer_name);
         $this->assertSame(1, $sale->details()->count());
-        $this->assertSame(3, $sale->details()->first()->quantity);
+        $this->assertSame(3.0, $sale->details()->first()->quantity);
 
         // Stock inicial 10: -1 por la venta original, +1 al revertir, -3 por la nueva cantidad = 7.
-        $this->assertSame(7, $item->fresh()->stock);
+        $this->assertSame(7.0, $item->fresh()->stock);
     }
 
     public function test_statement_lists_all_sales_from_the_same_customer(): void

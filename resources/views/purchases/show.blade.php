@@ -44,8 +44,8 @@
         <tbody>
             @foreach($purchase->details as $detail)
                 <tr>
-                    <td>{{ $detail->item->name }}</td>
-                    <td class="numeric">{{ $detail->quantity }}</td>
+                    <td>{{ $detail->item?->name ?? $detail->line_description ?? 'Línea' }}</td>
+                    <td class="numeric">{{ $detail->quantity }} {{ $detail->unit_name ?? $detail->item?->base_unit ?? 'unidad' }}</td>
                     <td class="numeric">${{ number_format($detail->cost_price, 2) }}</td>
                     <td class="numeric">{{ number_format($detail->iva_percentage, 2) }}%</td>
                 </tr>

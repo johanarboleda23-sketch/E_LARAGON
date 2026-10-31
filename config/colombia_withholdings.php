@@ -1,6 +1,6 @@
 <?php
 
-return [
+$withholdingConfig = [
     // UVT 2026. Keep this value configurable because DIAN updates it annually.
     'uvt' => (float) env('COLOMBIA_UVT_2026', 52374),
 
@@ -164,4 +164,44 @@ return [
             'base_on' => 'iva',
         ],
     ],
+];
+
+$concepts = $withholdingConfig['concepts'];
+$salesConceptLabels = [
+    'none' => 'No aplicar retención en ventas',
+    'purchase_declarante' => 'Venta de bienes - vendedor declarante (2,5%)',
+    'purchase_no_declarante' => 'Venta de bienes - vendedor no declarante (3,5%)',
+    'service_declarante' => 'Venta de servicios - vendedor declarante (4%)',
+    'service_no_declarante' => 'Venta de servicios - vendedor no declarante (6%)',
+    'professional_fee_10' => 'Honorarios o comisiones recibidos (10%)',
+    'professional_fee_11' => 'Honorarios o comisiones recibidos (11%)',
+    'rent_immovable' => 'Ingreso por arrendamiento de inmueble (3,5%)',
+    'rent_movable' => 'Ingreso por arrendamiento de bien mueble (4%)',
+    'agricultural_no_processing' => 'Venta de productos agropecuarios sin procesamiento industrial (1,5%)',
+    'coffee_parchment' => 'Venta de café pergamino o cereza (0,5%)',
+    'fuel' => 'Venta de combustibles derivados del petróleo (0,1%)',
+    'fixed_assets_individual' => 'Venta de activo fijo de persona natural (1%)',
+    'vehicle_purchase' => 'Venta de vehículos (1%)',
+    'gold_trading_company' => 'Venta de oro por sociedades de comercialización internacional (2,5%)',
+    'real_estate_housing' => 'Venta de bienes raíces para vivienda de habitación, hasta 10.000 UVT (1%)',
+    'real_estate_non_housing' => 'Venta de bienes raíces para uso distinto a vivienda (2,5%)',
+    'ecclesiastical_declarante' => 'Emolumentos eclesiásticos recibidos - declarante (4%)',
+    'ecclesiastical_no_declarante' => 'Emolumentos eclesiásticos recibidos - no declarante (3,5%)',
+    'cargo_transport' => 'Ingreso por transporte de carga terrestre (1%)',
+    'passenger_transport' => 'Ingreso por transporte de pasajeros vía terrestre (3,5%)',
+    'temporary_services' => 'Ingreso por servicios temporales de empleo, sobre AIU (1%)',
+    'security_cleaning' => 'Ingreso por servicios de vigilancia y aseo, sobre AIU (2%)',
+    'hotel_restaurant' => 'Ingreso por hoteles, restaurantes y hospedajes (3,5%)',
+    'lottery' => 'Premios de loterías, rifas y apuestas (20%)',
+    'vat' => 'Retención de IVA practicada por el cliente (15% del IVA)',
+];
+
+$salesConcepts = [];
+foreach ($salesConceptLabels as $key => $label) {
+    $salesConcepts[$key] = [...$concepts[$key], 'label' => $label];
+}
+
+return [
+    ...$withholdingConfig,
+    'sales_concepts' => $salesConcepts,
 ];

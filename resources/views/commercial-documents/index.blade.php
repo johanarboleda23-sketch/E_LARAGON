@@ -156,8 +156,11 @@
                                                     <option value="{{ $item->id }}" data-sale-price="{{ $item->sale_price }}" data-purchase-price="{{ $item->purchase_price }}" @selected((string) ($line['item_id'] ?? '') === (string) $item->id)>{{ $item->name }}</option>
                                                 @endforeach
                                             </select>
+                                            <select name="items[{{ $index }}][unit_conversion_id]" data-selected="{{ $line['unit_conversion_id'] ?? '' }}" class="unit-select mt-1 block w-full rounded-md border-gray-300 text-sm">
+                                                <option value="">Unidad base</option>
+                                            </select>
                                         </td>
-                                        <td class="px-3 py-2"><input name="items[{{ $index }}][quantity]" type="number" min="1" max="1000000" value="{{ $line['quantity'] ?? 1 }}" required class="quantity block w-full rounded-md border-gray-300 text-sm"></td>
+                                        <td class="px-3 py-2"><input name="items[{{ $index }}][quantity]" type="number" min="0.0001" step="0.0001" max="1000000" value="{{ $line['quantity'] ?? 1 }}" required class="quantity block w-full rounded-md border-gray-300 text-sm"></td>
                                         <td class="px-3 py-2"><input name="items[{{ $index }}][unit_price]" type="number" min="0" max="999999999" step="0.01" value="{{ $line['unit_price'] ?? '' }}" required class="unit-price block w-full rounded-md border-gray-300 text-sm"></td>
                                         <td class="px-3 py-2">
                                             <select name="items[{{ $index }}][iva_percentage]" class="iva-percentage block w-full rounded-md border-gray-300 text-sm">
@@ -343,12 +346,34 @@
             }).join('');
         }
 
+        function syncUnitOptions(row, resetPrice = false) {
+            const item = catalog.find((entry) => String(entry.id) === row.querySelector('.item-select').value);
+            const select = row.querySelector('.unit-select');
+            const previousValue = select.value || select.dataset.selected || '';
+            select.innerHTML = `<option value="">${escapeHtml(item?.base_unit || 'unidad')} (base)</option>` + (item?.unit_conversions || []).map((unit) => `<option value="${unit.id}">${escapeHtml(unit.name)} × ${unit.factor}</option>`).join('');
+            if (!resetPrice && [...select.options].some((option) => option.value === previousValue)) {
+                select.value = previousValue;
+            }
+            delete select.dataset.selected;
+            if (resetPrice) updateDocumentPrice(row);
+        }
+
+        function updateDocumentPrice(row) {
+            const item = catalog.find((entry) => String(entry.id) === row.querySelector('.item-select').value);
+            const unit = item?.unit_conversions.find((entry) => String(entry.id) === row.querySelector('.unit-select').value);
+            const basePrice = Number(isPurchaseDocument ? item?.purchase_price : item?.sale_price) || 0;
+            const unitPrice = !isPurchaseDocument && unit && unit.sale_price !== null && unit.sale_price !== undefined
+                ? Number(unit.sale_price)
+                : basePrice * (Number(unit?.factor) || 1);
+            if (item) row.querySelector('.unit-price').value = unitPrice.toFixed(2);
+        }
+
         function addDocumentLine() {
             const purchaseOrder = documentType === 'purchase_order';
             const row = document.createElement('tr');
             row.className = 'document-line';
-            row.innerHTML = `<td class="min-w-56 px-3 py-2"><select name="items[${lineIndex}][item_id]" required class="item-select block w-full rounded-md border-gray-300 text-sm">${itemOptions()}</select></td>
-                <td class="px-3 py-2"><input name="items[${lineIndex}][quantity]" type="number" min="1" max="1000000" value="1" required class="quantity block w-full rounded-md border-gray-300 text-sm"></td>
+            row.innerHTML = `<td class="min-w-56 px-3 py-2"><select name="items[${lineIndex}][item_id]" required class="item-select block w-full rounded-md border-gray-300 text-sm">${itemOptions()}</select><select name="items[${lineIndex}][unit_conversion_id]" class="unit-select mt-1 block w-full rounded-md border-gray-300 text-sm"><option value="">Unidad base</option></select></td>
+                <td class="px-3 py-2"><input name="items[${lineIndex}][quantity]" type="number" min="0.0001" step="0.0001" max="1000000" value="1" required class="quantity block w-full rounded-md border-gray-300 text-sm"></td>
                 <td class="px-3 py-2"><input name="items[${lineIndex}][unit_price]" type="number" min="0" max="999999999" step="0.01" required class="unit-price block w-full rounded-md border-gray-300 text-sm"></td>
                 <td class="px-3 py-2"><select name="items[${lineIndex}][iva_percentage]" class="iva-percentage block w-full rounded-md border-gray-300 text-sm"><option value="0">0%</option><option value="5">5%</option><option value="19" selected>19%</option></select></td>
                 <td class="px-3 py-2">${purchaseOrder ? `<input name="items[${lineIndex}][utility_percentage]" type="number" min="0" max="1000" step="0.01" value="0" class="utility-percentage block w-full rounded-md border-gray-300 text-sm">` : `<input name="items[${lineIndex}][discount_percentage]" type="number" min="0" max="100" step="0.01" value="0" class="discount-percentage block w-full rounded-md border-gray-300 text-sm">`}</td>
@@ -399,9 +424,10 @@
         });
         document.addEventListener('change', (event) => {
             if (event.target.matches('.item-select')) {
-                const option = event.target.selectedOptions[0];
-                const price = isPurchaseDocument ? option?.dataset.purchasePrice : option?.dataset.salePrice;
-                event.target.closest('.document-line').querySelector('.unit-price').value = price || '';
+                syncUnitOptions(event.target.closest('.document-line'), true);
+                calculateTotals();
+            } else if (event.target.matches('.unit-select')) {
+                updateDocumentPrice(event.target.closest('.document-line'));
                 calculateTotals();
             }
         });
@@ -425,6 +451,7 @@
                 });
             }
         });
+        document.querySelectorAll('.document-line').forEach((row) => syncUnitOptions(row));
         calculateTotals();
     </script>
 </x-app-layout>

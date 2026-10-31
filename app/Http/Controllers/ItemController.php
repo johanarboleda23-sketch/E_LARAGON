@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\ChartOfAccount;
 use App\Models\InventoryMovement;
 use App\Models\Item;
+use App\Services\InventoryUnitService;
 use App\Support\SpreadsheetReader;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -20,11 +21,13 @@ class ItemController extends Controller
 {
     private const PRODUCT_HEADERS = ['Código', 'Nombre', 'Precio de venta', 'Costo de compra', 'Stock', 'Stock mínimo'];
 
+    private const UNITS = ['unidad', 'paquete', 'caja', 'docena', 'par', 'kilogramo', 'gramo', 'libra', 'litro', 'mililitro', 'metro', 'centímetro', 'rollo', 'bulto', 'saco', 'botella', 'lata', 'galón', 'set'];
+
     // Muestra la lista de productos/servicios y la opción Modal
     public function index()
     {
         $items = Item::query()
-            ->with(['inventoryAccount', 'incomeAccount'])
+            ->with(['inventoryAccount', 'incomeAccount', 'unitConversions'])
             ->when(request('search'), function ($query, $search) {
                 $query->where(function ($query) use ($search) {
                     $query->where('name', 'like', "%{$search}%")
@@ -37,13 +40,17 @@ class ItemController extends Controller
             ->get();
         $postingAccounts = ChartOfAccount::query()->where('active', true)->where('allows_posting', true)->orderBy('code')->get(['id', 'code', 'name']);
 
-        return view('items.index', compact('items', 'postingAccounts'));
+        return view('items.index', [
+            'items' => $items,
+            'postingAccounts' => $postingAccounts,
+            'unitOptions' => self::UNITS,
+        ]);
     }
 
     // Muestra el formulario en una página completa
     public function create()
     {
-        return view('items.create');
+        return view('items.create', ['unitOptions' => self::UNITS]);
     }
 
     // Guarda el producto o servicio en Laragon
@@ -55,18 +62,29 @@ class ItemController extends Controller
             'code' => 'nullable|string|max:255',
             'sale_price' => 'required|numeric|min:0',
             'purchase_price' => 'nullable|numeric|min:0',
-            'stock' => 'nullable|integer|min:0',
-            'min_stock' => 'nullable|integer|min:0',
+            'base_unit' => ['required_if:type,producto', 'nullable', 'string', 'max:40'],
+            'stock' => ['nullable', 'numeric', 'min:0'],
+            'min_stock' => ['nullable', 'numeric', 'min:0'],
+            'unit_conversions' => ['nullable', 'array'],
+            'unit_conversions.*.name' => ['required', 'string', 'max:80', 'distinct:ignore_case'],
+            'unit_conversions.*.factor' => ['required', 'numeric', 'gt:0', 'max:100000000'],
+            'unit_conversions.*.sale_price' => ['nullable', 'numeric', 'min:0'],
         ]);
+        $this->validateUnitNames($data);
 
-        Item::create($this->itemAttributes($data));
+        DB::transaction(function () use ($data): void {
+            $item = Item::create($this->itemAttributes($data));
+            $this->syncUnitConversions($item, $data['unit_conversions'] ?? []);
+        });
 
         return redirect()->route('items.index')->with('success', 'Registro creado con éxito.');
     }
 
     public function edit(Item $item)
     {
-        return view('items.edit', compact('item'));
+        $item->load('unitConversions');
+
+        return view('items.edit', ['item' => $item, 'unitOptions' => self::UNITS]);
     }
 
     public function update(Request $request, Item $item)
@@ -77,11 +95,20 @@ class ItemController extends Controller
             'code' => 'nullable|string|max:255',
             'sale_price' => 'required|numeric|min:0',
             'purchase_price' => 'nullable|numeric|min:0',
-            'stock' => 'required|integer|min:0',
-            'min_stock' => 'nullable|integer|min:0',
+            'base_unit' => ['required_if:type,producto', 'nullable', 'string', 'max:40'],
+            'stock' => ['required', 'numeric', 'min:0'],
+            'min_stock' => ['nullable', 'numeric', 'min:0'],
+            'unit_conversions' => ['nullable', 'array'],
+            'unit_conversions.*.name' => ['required', 'string', 'max:80', 'distinct:ignore_case'],
+            'unit_conversions.*.factor' => ['required', 'numeric', 'gt:0', 'max:100000000'],
+            'unit_conversions.*.sale_price' => ['nullable', 'numeric', 'min:0'],
         ]);
+        $this->validateUnitNames($data);
 
-        $item->update($this->itemAttributes($data));
+        DB::transaction(function () use ($data, $item): void {
+            $item->update($this->itemAttributes($data));
+            $this->syncUnitConversions($item, $data['unit_conversions'] ?? []);
+        });
 
         return redirect()->route('items.index')->with('success', 'Registro actualizado con éxito.');
     }
@@ -105,33 +132,39 @@ class ItemController extends Controller
         return back()->with('success', 'Cuentas PUC de "'.$item->name.'" actualizadas. La contabilización automática las usará a partir de ahora.');
     }
 
-    public function adjustStock(Request $request, Item $item)
+    public function adjustStock(Request $request, Item $item, InventoryUnitService $inventoryUnitService)
     {
         abort_if($item->type !== 'producto', 422, 'Los servicios no manejan existencias.');
 
         $data = $request->validate([
             'movement_type' => 'required|in:entrada,salida',
-            'quantity' => 'required|integer|min:1',
+            'unit_conversion_id' => ['nullable', 'integer', 'exists:item_unit_conversions,id'],
+            'quantity' => ['required', 'numeric', 'gt:0'],
             'reason' => 'nullable|string|max:255',
         ]);
 
-        $quantity = (int) $data['quantity'];
-        $stockBefore = $item->stock;
-        $stockAfter = $data['movement_type'] === 'entrada'
-            ? $stockBefore + $quantity
-            : $stockBefore - $quantity;
+        $unit = $inventoryUnitService->snapshot($item, isset($data['unit_conversion_id']) ? (int) $data['unit_conversion_id'] : null, 'unit_conversion_id');
+        $baseQuantity = round((float) $data['quantity'] * $unit['unit_factor'], 4);
 
-        abort_if($stockAfter < 0, 422, 'La salida supera el stock disponible.');
+        DB::transaction(function () use ($data, $item, $baseQuantity): void {
+            $lockedItem = Item::query()->lockForUpdate()->findOrFail($item->id);
+            $stockBefore = (float) $lockedItem->stock;
+            $stockAfter = $data['movement_type'] === 'entrada'
+                ? $stockBefore + $baseQuantity
+                : $stockBefore - $baseQuantity;
 
-        $item->update(['stock' => $stockAfter]);
-        InventoryMovement::create([
-            'item_id' => $item->id,
-            'type' => $data['movement_type'],
-            'quantity' => $quantity,
-            'stock_before' => $stockBefore,
-            'stock_after' => $stockAfter,
-            'reason' => $data['reason'] ?? 'Movimiento manual',
-        ]);
+            abort_if($stockAfter < 0, 422, 'La salida supera el stock disponible.');
+
+            $lockedItem->update(['stock' => $stockAfter]);
+            InventoryMovement::create([
+                'item_id' => $lockedItem->id,
+                'type' => $data['movement_type'],
+                'quantity' => $baseQuantity,
+                'stock_before' => $stockBefore,
+                'stock_after' => $stockAfter,
+                'reason' => $data['reason'] ?? 'Movimiento manual',
+            ]);
+        });
 
         return redirect()->route('items.index')->with('success', 'Movimiento aplicado correctamente.');
     }
@@ -229,8 +262,8 @@ class ItemController extends Controller
                 'name' => ['required', 'string', 'max:255'],
                 'sale_price' => ['required', 'numeric', 'min:0'],
                 'purchase_price' => ['nullable', 'numeric', 'min:0'],
-                'stock' => ['nullable', 'integer', 'min:0'],
-                'min_stock' => ['nullable', 'integer', 'min:0'],
+                'stock' => ['nullable', 'numeric', 'min:0'],
+                'min_stock' => ['nullable', 'numeric', 'min:0'],
             ], [], [
                 'code' => 'código',
                 'name' => 'nombre',
@@ -314,7 +347,7 @@ class ItemController extends Controller
                     continue;
                 }
 
-                Item::create($attributes);
+                Item::create([...$attributes, 'base_unit' => 'unidad']);
                 $created++;
             }
 
@@ -361,8 +394,45 @@ class ItemController extends Controller
             'code' => $data['code'] ?? null,
             'sale_price' => $data['sale_price'],
             'purchase_price' => $data['type'] === 'producto' ? ($data['purchase_price'] ?? null) : null,
+            'base_unit' => $data['type'] === 'producto' ? ($data['base_unit'] ?? 'unidad') : null,
             'stock' => $data['type'] === 'producto' ? ($data['stock'] ?? 0) : 0,
             'min_stock' => $data['type'] === 'producto' ? ($data['min_stock'] ?? 0) : 0,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function validateUnitNames(array $data): void
+    {
+        $baseUnit = mb_strtolower(trim((string) ($data['base_unit'] ?? '')), 'UTF-8');
+
+        foreach ($data['unit_conversions'] ?? [] as $index => $conversion) {
+            if (mb_strtolower(trim($conversion['name']), 'UTF-8') === $baseUnit) {
+                throw ValidationException::withMessages([
+                    "unit_conversions.{$index}.name" => 'La presentación debe ser distinta de la unidad base.',
+                ]);
+            }
+        }
+    }
+
+    /**
+     * @param  array<int, array{name: string, factor: int|float|string, sale_price?: int|float|string|null}>  $conversions
+     */
+    private function syncUnitConversions(Item $item, array $conversions): void
+    {
+        $item->unitConversions()->delete();
+
+        if ($item->type !== 'producto') {
+            return;
+        }
+
+        foreach ($conversions as $conversion) {
+            $item->unitConversions()->create([
+                'name' => trim($conversion['name']),
+                'factor' => $conversion['factor'],
+                'sale_price' => $conversion['sale_price'] ?? null,
+            ]);
+        }
     }
 }

@@ -42,6 +42,88 @@ class ItemControllerTest extends TestCase
         $this->assertSame($incomeAccount->id, $item->income_account_id);
     }
 
+    public function test_it_saves_a_product_base_unit_and_its_conversions(): void
+    {
+        $company = $this->authenticateWithCompany();
+
+        $this->post(route('items.store'), [
+            'type' => 'producto',
+            'name' => 'Producto por unidad',
+            'code' => 'SKU-UNIDADES',
+            'sale_price' => 100,
+            'purchase_price' => 50,
+            'base_unit' => 'unidad',
+            'stock' => 2.5,
+            'min_stock' => 0.5,
+            'unit_conversions' => [[
+                'name' => 'caja',
+                'factor' => 6,
+                'sale_price' => 0,
+            ]],
+        ])->assertRedirect(route('items.index'));
+
+        $item = Item::query()->where('code', 'SKU-UNIDADES')->firstOrFail();
+        $conversion = $item->unitConversions()->firstOrFail();
+        $this->assertSame($company->id, $item->company_id);
+        $this->assertSame('unidad', $item->base_unit);
+        $this->assertSame(2.5, $item->stock);
+        $this->assertSame('caja', $conversion->name);
+        $this->assertSame(6.0, (float) $conversion->factor);
+        $this->assertSame(0.0, (float) $conversion->sale_price);
+    }
+
+    public function test_inventory_page_shows_unit_conversion_controls_and_configured_presentations(): void
+    {
+        $this->authenticateWithCompany();
+        $item = Item::factory()->create([
+            'name' => 'Producto con empaque',
+            'base_unit' => 'unidad',
+            'stock' => 12,
+        ]);
+        $item->unitConversions()->create([
+            'name' => 'caja',
+            'factor' => 6,
+        ]);
+
+        $this->get(route('items.index'))
+            ->assertSee('Unidades, existencias y conversiones')
+            ->assertSee('Agregar presentación y conversión')
+            ->assertSee('name="base_unit"', false)
+            ->assertSee('Presentaciones:', false)
+            ->assertSee('caja (× 6)', false);
+    }
+
+    public function test_stock_adjustment_converts_selected_presentation_to_base_units(): void
+    {
+        $this->authenticateWithCompany();
+        $item = Item::factory()->create([
+            'stock' => 12,
+            'base_unit' => 'unidad',
+        ]);
+        $conversion = $item->unitConversions()->create([
+            'name' => 'caja',
+            'factor' => 6,
+        ]);
+
+        $response = $this->post(route('items.stock', $item), [
+            'movement_type' => 'salida',
+            'unit_conversion_id' => $conversion->id,
+            'quantity' => 2,
+            'reason' => 'Ajuste por cajas',
+        ]);
+
+        $response->assertRedirect(route('items.index'));
+        $this->assertSame(0.0, (float) $item->refresh()->stock);
+        $this->assertDatabaseHas('inventory_movements', [
+            'item_id' => $item->id,
+            'type' => 'salida',
+            'quantity' => 12,
+            'stock_before' => 12,
+            'stock_after' => 0,
+            'reason' => 'Ajuste por cajas',
+        ]);
+    }
+
     public function test_it_imports_and_updates_products_from_an_excel_file(): void
     {
         $company = $this->authenticateWithCompany();
@@ -56,8 +138,8 @@ class ItemControllerTest extends TestCase
         ]);
         $filePath = $this->createExcelFile([
             ['Código', 'Nombre', 'Precio de venta', 'Costo de compra', 'Stock', 'Stock mínimo'],
-            ['SKU-001', 'Producto actualizado', 125.5, 65, 12, 2],
-            ['SKU-002', 'Producto nuevo', 200, '', 8, 3],
+            ['SKU-001', 'Producto actualizado', 125.5, 65, 12.5, 2.25],
+            ['SKU-002', 'Producto nuevo', 200, '', 8.75, 3.5],
         ], false);
 
         try {
@@ -73,13 +155,14 @@ class ItemControllerTest extends TestCase
         $response->assertRedirect(route('items.index'))
             ->assertSessionHas('success', 'Importación completada: 1 creados y 1 actualizados.');
         $this->assertSame('Producto actualizado', $existingItem->refresh()->name);
+        $this->assertSame(12.5, (float) $existingItem->stock);
         $this->assertDatabaseHas('items', [
             'company_id' => $company->id,
             'code' => 'SKU-002',
             'name' => 'Producto nuevo',
             'purchase_price' => null,
-            'stock' => 8,
-            'min_stock' => 3,
+            'stock' => 8.75,
+            'min_stock' => 3.5,
         ]);
     }
 

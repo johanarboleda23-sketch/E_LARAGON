@@ -41,7 +41,33 @@ class PurchaseControllerTest extends TestCase
         $this->assertSame(2_000_000.0, (float) $purchase->subtotal);
         $this->assertSame(70_000.0, (float) $purchase->retefuente);
         $this->assertSame(1_930_000.0, (float) $purchase->total_pagar);
-        $this->assertSame(11, $item->fresh()->stock);
+        $this->assertSame(11.0, $item->fresh()->stock);
+    }
+
+    public function test_purchase_converts_received_presentations_into_base_stock_units(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $item = $this->createProduct();
+        $conversion = $item->unitConversions()->create([
+            'company_id' => $company->id,
+            'name' => 'caja',
+            'factor' => 6,
+        ]);
+        $payload = $this->purchasePayload($item, 60);
+        $payload['invoice_number'] = 'DAV-UNIDAD-001';
+        $payload['items'][0]['quantity'] = 1.5;
+        $payload['items'][0]['unit_conversion_id'] = $conversion->id;
+
+        $this->post(route('purchases.store'), $payload)
+            ->assertRedirect(route('purchases.index'));
+
+        $purchase = Purchase::query()->where('invoice_number', 'DAV-UNIDAD-001')->firstOrFail();
+        $detail = $purchase->details()->firstOrFail();
+        $this->assertSame(19.0, $item->fresh()->stock);
+        $this->assertSame('caja', $detail->unit_name);
+        $this->assertSame(6.0, (float) $detail->unit_factor);
+        $this->assertSame(1.5, $detail->quantity);
+        $this->assertSame(10.0, (float) $item->fresh()->average_cost);
     }
 
     public function test_purchase_is_accounted_when_payment_method_has_a_puc_account(): void
@@ -169,7 +195,7 @@ class PurchaseControllerTest extends TestCase
         $this->assertSame('gasto', $detail->purchase_line_type);
         $this->assertSame($account->id, $detail->chart_of_account_id);
         $this->assertNull($detail->item_id);
-        $this->assertSame(10, $item->fresh()->stock);
+        $this->assertSame(10.0, $item->fresh()->stock);
     }
 
     public function test_fixed_asset_line_requires_depreciation_data_without_changing_inventory(): void
@@ -205,7 +231,7 @@ class PurchaseControllerTest extends TestCase
         $this->assertSame('activo_fijo', $detail->purchase_line_type);
         $this->assertSame(60, $detail->useful_life_months);
         $this->assertSame(500_000.0, (float) $detail->residual_value);
-        $this->assertSame(10, $item->fresh()->stock);
+        $this->assertSame(10.0, $item->fresh()->stock);
     }
 
     public function test_show_displays_an_existing_and_a_soft_deleted_purchase(): void
@@ -288,7 +314,7 @@ class PurchaseControllerTest extends TestCase
         $this->post(route('purchases.store'), $this->purchasePayload($item, 100_000))
             ->assertRedirect(route('purchases.index'));
         $purchase = Purchase::query()->where('invoice_number', 'DAV-RET-001')->firstOrFail();
-        $this->assertSame(11, $item->fresh()->stock);
+        $this->assertSame(11.0, $item->fresh()->stock);
 
         $this->get(route('purchases.edit', $purchase))->assertOk()->assertSee('DAV-RET-001');
 
@@ -306,12 +332,12 @@ class PurchaseControllerTest extends TestCase
         $this->assertSame('DAV-RET-001-B', $purchase->invoice_number);
         $this->assertSame('Proveedor actualizado', $purchase->provider);
         $this->assertSame(1, $purchase->details()->count());
-        $this->assertSame(3, $purchase->details()->first()->quantity);
+        $this->assertSame(3.0, $purchase->details()->first()->quantity);
         $this->assertSame(150_000.0, (float) $purchase->subtotal);
 
         // El stock debe reflejar solo la nueva cantidad (10 + 3 = 13): la entrada original de 1
         // unidad fue revertida antes de aplicar la edición.
-        $this->assertSame(13, $item->fresh()->stock);
+        $this->assertSame(13.0, $item->fresh()->stock);
     }
 
     public function test_statement_lists_all_purchases_from_the_same_provider(): void

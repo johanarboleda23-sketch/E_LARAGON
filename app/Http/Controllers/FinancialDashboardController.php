@@ -33,7 +33,7 @@ class FinancialDashboardController extends Controller
             ->with('details.item')
             ->get()
             ->flatMap(fn (Sale $sale) => $sale->details)
-            ->sum(fn ($detail) => (float) $detail->quantity * (float) ($detail->item?->average_cost ?? 0));
+            ->sum(fn ($detail) => (float) $detail->quantity * (float) ($detail->unit_factor ?? 1) * (float) ($detail->item?->average_cost ?? 0));
 
         $grossProfit = round($totalSales - $costOfGoodsSold, 2);
         $grossMargin = $totalSales > 0 ? round($grossProfit / $totalSales * 100, 2) : null;

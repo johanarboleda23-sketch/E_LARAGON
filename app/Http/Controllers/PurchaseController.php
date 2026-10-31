@@ -11,7 +11,9 @@ use App\Models\Purchase;
 use App\Models\PurchaseDetail;
 use App\Models\ThirdParty;
 use App\Services\AccountingEntryService;
+use App\Services\InventoryUnitService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rule;
@@ -19,7 +21,10 @@ use Illuminate\Validation\ValidationException;
 
 class PurchaseController extends Controller
 {
-    public function __construct(private readonly AccountingEntryService $accountingEntryService) {}
+    public function __construct(
+        private readonly AccountingEntryService $accountingEntryService,
+        private readonly InventoryUnitService $inventoryUnitService,
+    ) {}
 
     /**
      * Muestra la pantalla principal rosa de compras avanzada con botones arriba.
@@ -37,9 +42,11 @@ class PurchaseController extends Controller
             ->get();
         $suppliers = ThirdParty::where('is_supplier', true)->where('active', true)->orderBy('name')->get();
         $products = Item::query()
+            ->with('unitConversions')
             ->where('type', 'producto')
             ->orderBy('name')
-            ->get(['id', 'name', 'code', 'stock']);
+            ->get(['id', 'name', 'code', 'stock', 'base_unit', 'purchase_price']);
+        $productOptions = $this->mapProductOptions($products);
         $postingAccounts = ChartOfAccount::query()
             ->where('active', true)
             ->where('allows_posting', true)
@@ -54,7 +61,7 @@ class PurchaseController extends Controller
             $paymentMethods = PaymentMethod::query()->orderBy('name')->get();
         }
 
-        return view('purchases.index', compact('paymentMethods', 'postingAccounts', 'products', 'withholdings', 'recentPurchases', 'suppliers', 'nextConsecutive'));
+        return view('purchases.index', compact('paymentMethods', 'postingAccounts', 'products', 'productOptions', 'withholdings', 'recentPurchases', 'suppliers', 'nextConsecutive'));
     }
 
     public function create()
@@ -81,7 +88,8 @@ class PurchaseController extends Controller
             'items.*.item_id' => ['nullable', 'integer', 'exists:items,id'],
             'items.*.chart_of_account_id' => ['nullable', 'integer', 'exists:chart_of_accounts,id'],
             'items.*.line_description' => ['nullable', 'string', 'max:255'],
-            'items.*.quantity' => 'required|integer|min:1',
+            'items.*.quantity' => ['required', 'numeric', 'gt:0'],
+            'items.*.unit_conversion_id' => ['nullable', 'integer', 'exists:item_unit_conversions,id'],
             'items.*.cost_price' => 'required|numeric|min:0',
             'items.*.iva_percentage' => 'required|numeric|min:0',
             'items.*.utility_percentage' => 'nullable|numeric|min:0',
@@ -178,7 +186,7 @@ class PurchaseController extends Controller
         $subtotal = 0.0;
         $ivaTotal = 0.0;
         foreach ($items as $itemData) {
-            $lineSubtotal = round((int) $itemData['quantity'] * (float) $itemData['cost_price'], 2);
+            $lineSubtotal = round((float) $itemData['quantity'] * (float) $itemData['cost_price'], 2);
             $subtotal += $lineSubtotal;
             $ivaTotal += round($lineSubtotal * (float) $itemData['iva_percentage'] / 100, 2);
         }
@@ -209,10 +217,14 @@ class PurchaseController extends Controller
         foreach ($items as $itemData) {
             $lineType = $itemData['purchase_line_type'];
             $item = $lineType === 'producto' ? Item::lockForUpdate()->findOrFail($itemData['item_id']) : null;
-            $quantity = (int) $itemData['quantity'];
+            $quantity = (float) $itemData['quantity'];
             $costPrice = (float) $itemData['cost_price'];
             $ivaPercentage = (float) $itemData['iva_percentage'];
             $utilityPercentage = (float) ($itemData['utility_percentage'] ?? 0);
+            $unit = $item
+                ? $this->inventoryUnitService->snapshot($item, isset($itemData['unit_conversion_id']) ? (int) $itemData['unit_conversion_id'] : null, 'items')
+                : ['unit_conversion_id' => null, 'unit_name' => null, 'unit_factor' => 1.0];
+            $baseQuantity = round($quantity * $unit['unit_factor'], 4);
             $ivaValue = $quantity * $costPrice * $ivaPercentage / 100;
             $salePrice = $costPrice * (1 + $utilityPercentage / 100);
 
@@ -220,6 +232,7 @@ class PurchaseController extends Controller
                 'purchase_id' => $purchase->id,
                 'purchase_line_type' => $lineType,
                 'item_id' => $item?->id,
+                ...$unit,
                 'chart_of_account_id' => $itemData['chart_of_account_id'] ?? null,
                 'line_description' => $itemData['line_description'] ?? $item?->name,
                 'quantity' => $quantity,
@@ -236,18 +249,18 @@ class PurchaseController extends Controller
             ]);
 
             if ($lineType === 'producto') {
-                $stockBefore = $item->stock;
-                $item->increment('stock', $quantity);
+                $stockBefore = (float) $item->stock;
+                $item->increment('stock', $baseQuantity);
                 $item->refresh();
                 $item->update([
-                    'purchase_price' => $costPrice,
-                    'sale_price' => $salePrice,
+                    'purchase_price' => $costPrice / $unit['unit_factor'],
+                    'sale_price' => $salePrice / $unit['unit_factor'],
                 ]);
                 InventoryMovement::create([
                     'item_id' => $item->id,
                     'purchase_id' => $purchase->id,
                     'type' => 'entrada',
-                    'quantity' => $quantity,
+                    'quantity' => $baseQuantity,
                     'stock_before' => $stockBefore,
                     'stock_after' => $item->stock,
                     'reason' => $movementReason,
@@ -271,14 +284,15 @@ class PurchaseController extends Controller
             if ($detail->purchase_line_type === 'producto' && $detail->item) {
                 $item = Item::lockForUpdate()->find($detail->item->id);
                 if ($item) {
-                    $stockBefore = $item->stock;
-                    $item->decrement('stock', $detail->quantity);
+                    $baseQuantity = round((float) $detail->quantity * (float) $detail->unit_factor, 4);
+                    $stockBefore = (float) $item->stock;
+                    $item->decrement('stock', $baseQuantity);
                     $item->refresh();
                     InventoryMovement::create([
                         'item_id' => $item->id,
                         'purchase_id' => $purchase->id,
                         'type' => 'salida',
-                        'quantity' => $detail->quantity,
+                        'quantity' => $baseQuantity,
                         'stock_before' => $stockBefore,
                         'stock_after' => $item->stock,
                         'reason' => 'Reversión por edición de factura '.$purchase->invoice_number,
@@ -314,11 +328,32 @@ class PurchaseController extends Controller
         $purchase->load('details.item');
         $paymentMethods = PaymentMethod::query()->orderBy('name')->get();
         $suppliers = ThirdParty::where('is_supplier', true)->where('active', true)->orderBy('name')->get();
-        $products = Item::query()->where('type', 'producto')->orderBy('name')->get(['id', 'name', 'code', 'stock']);
+        $products = Item::query()->with('unitConversions')->where('type', 'producto')->orderBy('name')->get(['id', 'name', 'code', 'stock', 'base_unit', 'purchase_price']);
+        $productOptions = $this->mapProductOptions($products);
         $postingAccounts = ChartOfAccount::query()->where('active', true)->where('allows_posting', true)->orderBy('code')->get(['id', 'code', 'name', 'class']);
         $withholdings = config('colombia_withholdings');
 
-        return view('purchases.edit', compact('purchase', 'paymentMethods', 'suppliers', 'products', 'postingAccounts', 'withholdings'));
+        return view('purchases.edit', compact('purchase', 'paymentMethods', 'suppliers', 'products', 'productOptions', 'postingAccounts', 'withholdings'));
+    }
+
+    /**
+     * @param  Collection<int, Item>  $products
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function mapProductOptions(Collection $products): Collection
+    {
+        return $products->map(fn (Item $product): array => [
+            'id' => $product->id,
+            'name' => $product->name,
+            'code' => $product->code,
+            'base_unit' => $product->base_unit ?: 'unidad',
+            'purchase_price' => $product->purchase_price,
+            'units' => $product->unitConversions->map(fn ($unit): array => [
+                'id' => $unit->id,
+                'name' => $unit->name,
+                'factor' => $unit->factor,
+            ])->values(),
+        ])->values();
     }
 
     /**
@@ -340,7 +375,8 @@ class PurchaseController extends Controller
             'items.*.item_id' => ['nullable', 'integer', 'exists:items,id'],
             'items.*.chart_of_account_id' => ['nullable', 'integer', 'exists:chart_of_accounts,id'],
             'items.*.line_description' => ['nullable', 'string', 'max:255'],
-            'items.*.quantity' => 'required|integer|min:1',
+            'items.*.quantity' => ['required', 'numeric', 'gt:0'],
+            'items.*.unit_conversion_id' => ['nullable', 'integer', 'exists:item_unit_conversions,id'],
             'items.*.cost_price' => 'required|numeric|min:0',
             'items.*.iva_percentage' => 'required|numeric|min:0',
             'items.*.utility_percentage' => 'nullable|numeric|min:0',
@@ -408,7 +444,7 @@ class PurchaseController extends Controller
         $purchase->load('details.item');
         $body = "Factura de compra: {$purchase->invoice_number}\nProveedor: {$purchase->provider}\nFecha: {$purchase->purchase_date}\nTotal: {$purchase->total_pagar}\n\nDetalle:\n";
         foreach ($purchase->details as $detail) {
-            $body .= ($detail->item?->name ?? $detail->line_description ?? 'Línea').' x '.$detail->quantity.' - '.($detail->quantity * $detail->cost_price)."\n";
+            $body .= ($detail->item?->name ?? $detail->line_description ?? 'Línea').' x '.$detail->quantity.' '.($detail->unit_name ?? $detail->item?->base_unit ?? 'unidad').' - '.($detail->quantity * $detail->cost_price)."\n";
         }
         Mail::raw($body, fn ($message) => $message->to($data['email'])->subject('Factura de compra '.$purchase->invoice_number));
 

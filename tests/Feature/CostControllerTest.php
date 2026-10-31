@@ -37,7 +37,7 @@ class CostControllerTest extends TestCase
             ->assertRedirect(route('purchases.index'));
 
         $this->assertSame(175.0, (float) $item->fresh()->average_cost);
-        $this->assertSame(40, $item->fresh()->stock);
+        $this->assertSame(40.0, $item->fresh()->stock);
     }
 
     public function test_average_cost_is_recalculated_when_a_purchase_is_deleted(): void

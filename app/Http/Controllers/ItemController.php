@@ -21,7 +21,22 @@ class ItemController extends Controller
 {
     private const PRODUCT_HEADERS = ['Código', 'Nombre', 'Precio de venta', 'Costo de compra', 'Stock', 'Stock mínimo'];
 
-    private const UNITS = ['unidad', 'paquete', 'caja', 'docena', 'par', 'kilogramo', 'gramo', 'libra', 'litro', 'mililitro', 'metro', 'centímetro', 'rollo', 'bulto', 'saco', 'botella', 'lata', 'galón', 'set'];
+    private const UNITS = [
+        'unidad', 'pieza', 'par', 'docena', 'media docena', 'centena', 'millar', 'paquete', 'caja', 'bulto', 'saco',
+        'set', 'kit', 'rollo', 'resma', 'botella', 'lata', 'bolsa', 'frasco', 'blíster',
+        'kilogramo', 'gramo', 'miligramo', 'tonelada métrica', 'libra', 'onza',
+        'litro', 'mililitro', 'centilitro', 'galón estadounidense', 'galón imperial',
+        'cuarto estadounidense', 'cuarto imperial', 'pinta estadounidense', 'pinta imperial',
+        'taza', 'onza líquida', 'cucharada', 'cucharadita',
+        'milímetro', 'centímetro', 'metro', 'kilómetro', 'pulgada', 'pie', 'yarda', 'milla',
+        'centímetro cuadrado', 'metro cuadrado', 'hectárea', 'acre',
+        'hora', 'minuto', 'día',
+    ];
+
+    private const UNIT_FACTOR_OPTIONS = [
+        '1', '1/2', '1/3', '1/4', '1/5', '1/6', '1/8', '1/10', '1/12', '1/16',
+        '1 1/2', '1 1/3', '1 1/4', '1 1/8', '2', '3', '4', '6', '12', '24', '100', '1000',
+    ];
 
     // Muestra la lista de productos/servicios y la opción Modal
     public function index()
@@ -44,18 +59,23 @@ class ItemController extends Controller
             'items' => $items,
             'postingAccounts' => $postingAccounts,
             'unitOptions' => self::UNITS,
+            'unitFactorOptions' => self::UNIT_FACTOR_OPTIONS,
         ]);
     }
 
     // Muestra el formulario en una página completa
     public function create()
     {
-        return view('items.create', ['unitOptions' => self::UNITS]);
+        return view('items.create', [
+            'unitOptions' => self::UNITS,
+            'unitFactorOptions' => self::UNIT_FACTOR_OPTIONS,
+        ]);
     }
 
     // Guarda el producto o servicio en Laragon
     public function store(Request $request)
     {
+        $this->normalizeUnitConversionFactors($request);
         $data = $request->validate([
             'type' => 'required|in:producto,servicio',
             'name' => 'required|string|max:255',
@@ -84,11 +104,16 @@ class ItemController extends Controller
     {
         $item->load('unitConversions');
 
-        return view('items.edit', ['item' => $item, 'unitOptions' => self::UNITS]);
+        return view('items.edit', [
+            'item' => $item,
+            'unitOptions' => self::UNITS,
+            'unitFactorOptions' => self::UNIT_FACTOR_OPTIONS,
+        ]);
     }
 
     public function update(Request $request, Item $item)
     {
+        $this->normalizeUnitConversionFactors($request);
         $data = $request->validate([
             'type' => 'required|in:producto,servicio',
             'name' => 'required|string|max:255',
@@ -414,6 +439,50 @@ class ItemController extends Controller
                 ]);
             }
         }
+
+    }
+
+    private function normalizeUnitConversionFactors(Request $request): void
+    {
+        $conversions = $request->input('unit_conversions');
+        if (! is_array($conversions)) {
+            return;
+        }
+
+        foreach ($conversions as $index => $conversion) {
+            if (! is_array($conversion) || ! isset($conversion['factor']) || ! is_string($conversion['factor'])) {
+                continue;
+            }
+
+            $factor = trim($conversion['factor']);
+            if ($factor === '') {
+                continue;
+            }
+
+            $factor = str_replace(',', '.', $factor);
+            if (preg_match('/^\d+(?:\.\d+)?$/', $factor) === 1) {
+                $conversions[$index]['factor'] = (float) $factor;
+
+                continue;
+            }
+
+            if (preg_match('/^(?:(\d+)\s+)?(\d+)\s*\/\s*(\d+)$/', $factor, $matches) === 1) {
+                $whole = (int) ($matches[1] ?? 0);
+                $numerator = (int) $matches[2];
+                $denominator = (int) $matches[3];
+                if ($denominator > 0 && $numerator > 0 && $numerator < $denominator) {
+                    $conversions[$index]['factor'] = $whole + ($numerator / $denominator);
+
+                    continue;
+                }
+            }
+
+            throw ValidationException::withMessages([
+                "unit_conversions.{$index}.factor" => 'Escribe una conversión decimal o fraccionaria, por ejemplo 0.5, 1/2 o 1 1/2.',
+            ]);
+        }
+
+        $request->merge(['unit_conversions' => $conversions]);
     }
 
     /**

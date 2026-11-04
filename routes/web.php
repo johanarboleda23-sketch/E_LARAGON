@@ -15,6 +15,7 @@ use App\Http\Controllers\FinancialDashboardController;
 use App\Http\Controllers\ItemController;
 use App\Http\Controllers\LogisticsController;
 use App\Http\Controllers\NumberingResolutionController;
+use App\Http\Controllers\OpeningBalanceInvoiceController;
 use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\PayrollController;
 use App\Http\Controllers\PosController;
@@ -230,6 +231,10 @@ Route::middleware(['auth', 'company'])->group(function () {
 
     Route::middleware('module:accounting-vouchers')->group(function () {
         Route::view('/contabilidad', 'accounting.index')->name('accounting.index');
+        Route::get('/contabilidad/saldos-iniciales/cartera', [OpeningBalanceInvoiceController::class, 'index'])->name('accounting.opening-balances.index');
+        Route::get('/contabilidad/saldos-iniciales/plantilla', [OpeningBalanceInvoiceController::class, 'template'])->name('accounting.opening-balances.template');
+        Route::post('/contabilidad/saldos-iniciales/importar', [OpeningBalanceInvoiceController::class, 'import'])->name('accounting.opening-balances.import');
+        Route::post('/contabilidad/saldos-iniciales/cartera/{invoice}/abonos', [OpeningBalanceInvoiceController::class, 'storePayment'])->name('accounting.opening-balances.payments.store');
         Route::get('/comprobantes', [AccountingVoucherController::class, 'index'])->name('accounting.vouchers.index');
         Route::post('/comprobantes', [AccountingVoucherController::class, 'store'])->name('accounting.vouchers.store');
         Route::get('/comprobantes/plantilla-migracion', [AccountingVoucherController::class, 'importTemplate'])->name('accounting.vouchers.import-template');

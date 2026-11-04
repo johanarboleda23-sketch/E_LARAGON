@@ -28,6 +28,7 @@ class AccountingVoucherController extends Controller
         'nota_credito_proveedor' => 'Nota crédito proveedor',
         'nota_debito_cliente' => 'Nota débito cliente',
         'nota_debito_proveedor' => 'Nota débito proveedor',
+        'saldos_iniciales' => 'Saldos iniciales',
     ];
 
     /**
@@ -46,6 +47,7 @@ class AccountingVoucherController extends Controller
         'nota_credito_proveedor' => 'NCP',
         'nota_debito_cliente' => 'NDC',
         'nota_debito_proveedor' => 'NDP',
+        'saldos_iniciales' => 'SI',
     ];
 
     public function __construct(private readonly AccountingEntryService $accountingEntryService) {}

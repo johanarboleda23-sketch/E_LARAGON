@@ -65,7 +65,7 @@
                     <table class="min-w-full divide-y divide-pink-100">
                         <thead class="bg-pink-50">
                             <tr>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-pink-700 uppercase">Tipo</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-pink-700 uppercase">Código</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-pink-700 uppercase">Nombre</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-pink-700 uppercase">P. Venta</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-pink-700 uppercase">P. Compra</th>
@@ -77,7 +77,7 @@
                         <tbody class="bg-white divide-y divide-gray-100">
                             @forelse ($items as $item)
                                 <tr>
-                                    <td class="px-6 py-4 text-sm font-semibold text-pink-600">{{ ucfirst($item->type) }}</td>
+                                    <td class="px-6 py-4 text-sm font-semibold text-pink-600">{{ $item->code ?: '—' }}</td>
                                     <td class="px-6 py-4 text-sm text-gray-900">{{ $item->name }}</td>
                                     <td class="px-6 py-4 text-sm text-gray-900">${{ number_format($item->sale_price, 2) }}</td>
                                     <td class="px-6 py-4 text-sm text-gray-900">{{ $item->purchase_price !== null ? '$' . number_format($item->purchase_price, 2) : 'N/A' }}</td>
@@ -222,6 +222,7 @@
                         </label>
                     </div>
                     <datalist id="quick-common-units">@foreach($unitOptions as $unit)<option value="{{ $unit }}">@endforeach</datalist>
+                    <datalist id="quick-unit-factor-options">@foreach($unitFactorOptions as $factor)<option value="{{ $factor }}">@endforeach</datalist>
                     <div id="quick-unit-conversions" class="space-y-2"></div>
                     <button type="button" id="add-quick-unit-conversion" class="rounded-md border border-gray-300 px-3 py-2 text-xs font-semibold text-teal-700">＋ Agregar presentación y conversión</button>
                 </fieldset>
@@ -235,10 +236,10 @@
     <template id="quick-unit-conversion-template">
         <div class="grid grid-cols-1 items-end gap-2 rounded-lg bg-gray-50 p-3 sm:grid-cols-[1fr_1fr_1fr_auto]">
             <label class="text-xs font-semibold text-gray-600">Presentación
-                <input data-field="name" type="text" maxlength="80" required class="mt-1 block w-full rounded-md border-gray-300 text-sm">
+                <input data-field="name" list="quick-common-units" type="text" maxlength="80" required class="mt-1 block w-full rounded-md border-gray-300 text-sm">
             </label>
             <label class="text-xs font-semibold text-gray-600">Equivale a unidades base
-                <input data-field="factor" type="number" min="0.000001" step="0.000001" required class="mt-1 block w-full rounded-md border-gray-300 text-sm">
+                <input data-field="factor" list="quick-unit-factor-options" type="text" placeholder="1, 1/2 o 1 1/2" required class="mt-1 block w-full rounded-md border-gray-300 text-sm">
             </label>
             <label class="text-xs font-semibold text-gray-600">Precio propio (opcional)
                 <input data-field="sale_price" type="number" min="0" step="0.01" class="mt-1 block w-full rounded-md border-gray-300 text-sm">

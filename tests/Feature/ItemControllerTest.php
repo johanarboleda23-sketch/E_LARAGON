@@ -59,17 +59,22 @@ class ItemControllerTest extends TestCase
                 'name' => 'caja',
                 'factor' => 6,
                 'sale_price' => 0,
+            ], [
+                'name' => 'media caja',
+                'factor' => '1/2',
             ]],
         ])->assertRedirect(route('items.index'));
 
         $item = Item::query()->where('code', 'SKU-UNIDADES')->firstOrFail();
         $conversion = $item->unitConversions()->firstOrFail();
+        $fractionalConversion = $item->unitConversions()->where('name', 'media caja')->firstOrFail();
         $this->assertSame($company->id, $item->company_id);
         $this->assertSame('unidad', $item->base_unit);
         $this->assertSame(2.5, $item->stock);
         $this->assertSame('caja', $conversion->name);
         $this->assertSame(6.0, (float) $conversion->factor);
         $this->assertSame(0.0, (float) $conversion->sale_price);
+        $this->assertSame(0.5, (float) $fractionalConversion->factor);
     }
 
     public function test_inventory_page_shows_unit_conversion_controls_and_configured_presentations(): void
@@ -77,6 +82,7 @@ class ItemControllerTest extends TestCase
         $this->authenticateWithCompany();
         $item = Item::factory()->create([
             'name' => 'Producto con empaque',
+            'code' => 'SKU-EMP-001',
             'base_unit' => 'unidad',
             'stock' => 12,
         ]);
@@ -88,6 +94,9 @@ class ItemControllerTest extends TestCase
         $this->get(route('items.index'))
             ->assertSee('Unidades, existencias y conversiones')
             ->assertSee('Agregar presentación y conversión')
+            ->assertSee('Código')
+            ->assertSee('SKU-EMP-001')
+            ->assertDontSee('<td class="px-6 py-4 text-sm font-semibold text-pink-600">Producto</td>', false)
             ->assertSee('name="base_unit"', false)
             ->assertSee('Presentaciones:', false)
             ->assertSee('caja (× 6)', false);

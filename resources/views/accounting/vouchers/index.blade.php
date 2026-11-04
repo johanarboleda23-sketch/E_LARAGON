@@ -10,6 +10,10 @@
                 <a href="{{ route('accounting.puc.index') }}" class="rounded-xl border border-[#d7dfd8] bg-white px-3 py-2 text-xs font-bold text-[#227c70] hover:bg-[#f3f5f1]">PUC</a>
                 <a href="{{ route('reports.index', ['type' => 'all']) }}" class="rounded-xl border border-[#d7dfd8] bg-white px-3 py-2 text-xs font-bold text-[#227c70] hover:bg-[#f3f5f1]">Todos los comprobantes</a>
                 <a href="{{ route('currency.index') }}" class="rounded-xl border border-[#d7dfd8] bg-white px-3 py-2 text-xs font-bold text-[#227c70] hover:bg-[#f3f5f1]">TRM / Monedas</a>
+                @if($voucherType === 'saldos_iniciales')
+                    <a href="{{ route('accounting.opening-balances.index') }}" class="rounded-xl border border-[#d7dfd8] bg-white px-3 py-2 text-xs font-bold text-[#227c70] hover:bg-[#f3f5f1]">Cartera importada</a>
+                    <button type="button" onclick="document.getElementById('opening-balance-import-modal').classList.remove('hidden')" class="rounded-xl bg-[#227c70] px-3 py-2 text-xs font-bold text-white hover:bg-[#1a5f55]">Importar Excel</button>
+                @endif
                 @if(!$voucherType && !$commercialDocument)
                     <button type="button" onclick="document.getElementById('voucher-import-modal').classList.remove('hidden')" class="rounded-xl bg-[#227c70] px-3 py-2 text-xs font-bold text-white hover:bg-[#1a5f55]">Importar servicios</button>
                 @endif
@@ -137,7 +141,38 @@
             </aside>
         </div>
     </div>
-
+    @if($voucherType === 'saldos_iniciales')
+        <div id="opening-balance-import-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center overflow-y-auto bg-black/50 p-4" onclick="if(event.target===this) this.classList.add('hidden')">
+            <section class="w-full max-w-2xl space-y-4 rounded-2xl bg-white p-6 shadow-xl">
+                <div class="flex items-start justify-between gap-4">
+                    <div>
+                        <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-[#227c70]">Importación masiva</p>
+                        <h3 class="mt-1 text-lg font-black text-[#192522]">Saldos iniciales</h3>
+                    </div>
+                    <button type="button" onclick="document.getElementById('opening-balance-import-modal').classList.add('hidden')" class="text-xl text-gray-400" aria-label="Cerrar">×</button>
+                </div>
+                <p class="text-sm leading-6 text-gray-600">
+                    Cada fila crea un movimiento contable. Para cartera, agrega los datos de tercero y factura; el valor de débito/crédito será el saldo pendiente.
+                    Los XML opcionales se usan para leer CUFE y completar fechas. <strong>No se vuelven a crear compras o ventas ni se mueve inventario.</strong>
+                </p>
+                <a href="{{ route('accounting.opening-balances.template') }}" class="inline-flex rounded-lg border border-[#d7dfd8] px-3 py-2 text-xs font-bold text-[#227c70]">Descargar plantilla CSV para Excel</a>
+                <form method="POST" action="{{ route('accounting.opening-balances.import') }}" enctype="multipart/form-data" class="grid gap-3">
+                    @csrf
+                    <label class="grid gap-1 text-xs font-semibold text-gray-600">Fecha del comprobante
+                        <input type="date" name="voucher_date" value="{{ old('voucher_date', now()->toDateString()) }}" required class="rounded-lg border-gray-300 text-sm">
+                    </label>
+                    <label class="grid gap-1 text-xs font-semibold text-gray-600">Archivo Excel o CSV (máximo 500 filas)
+                        <input type="file" name="file" accept=".xlsx,.csv,.txt" required class="rounded-lg border-gray-300 text-sm">
+                    </label>
+                    <label class="grid gap-1 text-xs font-semibold text-gray-600">XML DIAN de facturas (opcional, puede seleccionar varios)
+                        <input type="file" name="xml_files[]" accept=".xml,text/xml,application/xml" multiple class="rounded-lg border-gray-300 text-sm">
+                    </label>
+                    <p class="text-xs leading-5 text-gray-500">Las filas de clientes se registran al débito y las de proveedores al crédito. Las demás filas deben cuadrar el comprobante. Los terceros deben existir en el módulo de terceros.</p>
+                    <button type="submit" class="rounded-lg bg-[#227c70] px-4 py-2.5 text-sm font-bold text-white hover:bg-[#1a5f55]">Importar saldos y crear comprobante</button>
+                </form>
+            </section>
+        </div>
+    @endif
     <script>
         let lineIndex = {{ $commercialDocument ? 2 : 1 }};
         const accountOptions = @json($accounts->map(fn ($account) => ['id' => $account->id, 'label' => $account->code . ' - ' . $account->name]));

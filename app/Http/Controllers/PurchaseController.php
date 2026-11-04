@@ -11,6 +11,7 @@ use App\Models\Purchase;
 use App\Models\PurchaseDetail;
 use App\Models\ThirdParty;
 use App\Services\AccountingEntryService;
+use App\Services\DianInvoiceXmlReader;
 use App\Services\InventoryUnitService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -527,58 +528,40 @@ class PurchaseController extends Controller
      * MOTOR ROBÓTICO XML DIAN + CUFE
      * Abre el archivo XML del proveedor y extrae el número de factura contable en vivo.
      */
-    public function importXML(Request $request)
+    public function importXML(Request $request, DianInvoiceXmlReader $xmlReader)
     {
-        $request->validate([
-            'xml_file' => 'required|file',
+        $data = $request->validate([
+            'xml_file' => ['required', 'file', 'mimes:xml', 'max:4096'],
         ]);
 
         try {
-            $file = $request->file('xml_file');
-            $xmlContent = file_get_contents($file->getRealPath());
-            $xml = simplexml_load_string($xmlContent);
-
-            $invoice_number = 'Factura XML';
+            $invoice = $xmlReader->read($data['xml_file']->getPathname());
             $prefix = '';
             $consecutive = '';
-            if ($xml) {
-                $namespaces = $xml->getDocNamespaces(true);
-                if (isset($namespaces['cbc'])) {
-                    $xml->registerXPathNamespace('cbc', $namespaces['cbc']);
-                    $res = $xml->xpath('//cbc:ID');
-                    if (! empty($res)) {
-                        $invoice_number = (string) $res[0];
-                    }
-                }
-
-                if (isset($namespaces['sts'])) {
-                    $xml->registerXPathNamespace('sts', $namespaces['sts']);
-                    $prefixNodes = $xml->xpath('//sts:Prefix | //sts:InvoiceControl/cbc:Prefix');
-                    if (! empty($prefixNodes)) {
-                        $prefix = (string) $prefixNodes[0];
-                    }
-                }
-
-                if (preg_match('/^([A-Za-z]+)[\s-]?(\d+)$/', trim($invoice_number), $matches)) {
-                    $prefix = $prefix ?: $matches[1];
-                    $consecutive = $matches[2];
-                }
+            if (preg_match('/^([A-Za-z]+)[\s-]?(\d+)$/', trim($invoice['invoice_number']), $matches)) {
+                $prefix = $matches[1];
+                $consecutive = $matches[2];
             }
 
             return response()->json([
                 'success' => true,
-                'invoice_number' => $invoice_number,
+                'invoice_number' => $invoice['invoice_number'],
                 'prefix' => $prefix,
                 'consecutive' => $consecutive,
-                'provider' => 'Proveedor DIAN Automatizado',
-                'cufe' => 'CUFE-VALIDADO-DIAN-72120E895C2763F0',
-                'message' => '¡Código CUFE leído y validado con éxito total desde el XML de la DIAN! ⚡',
+                'provider' => $invoice['supplier_name'] ?? 'Proveedor DIAN',
+                'provider_document' => $invoice['supplier_document'],
+                'customer' => $invoice['customer_name'],
+                'customer_document' => $invoice['customer_document'],
+                'invoice_date' => $invoice['invoice_date'],
+                'due_date' => $invoice['due_date'],
+                'total' => $invoice['total'],
+                'cufe' => $invoice['cufe'],
+                'message' => 'Número de factura y CUFE extraídos del XML. El CUFE no se validó contra la DIAN.',
             ]);
-
-        } catch (\Exception $e) {
+        } catch (ValidationException $exception) {
             return response()->json([
                 'success' => false,
-                'message' => 'No pudimos leer este archivo: '.$e->getMessage(),
+                'message' => $exception->validator->errors()->first(),
             ], 422);
         }
     }

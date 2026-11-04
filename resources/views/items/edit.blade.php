@@ -50,13 +50,14 @@
                             @php($formConversions = old('unit_conversions', $item->unitConversions->map(fn ($conversion) => ['name' => $conversion->name, 'factor' => $conversion->factor, 'sale_price' => $conversion->sale_price])->all()))
                             @foreach($formConversions as $index => $conversion)
                                 <div class="unit-conversion-row grid grid-cols-1 items-end gap-3 rounded-lg bg-gray-50 p-3 sm:grid-cols-[1fr_1fr_1fr_auto]">
-                                    <label class="text-xs font-semibold text-gray-600">Presentación<input name="unit_conversions[{{ $index }}][name]" value="{{ $conversion['name'] }}" type="text" maxlength="80" required class="mt-1 block w-full rounded-md border-gray-300 text-sm"></label>
-                                    <label class="text-xs font-semibold text-gray-600">Equivale a<input name="unit_conversions[{{ $index }}][factor]" value="{{ $conversion['factor'] }}" type="number" min="0.000001" step="0.000001" required class="mt-1 block w-full rounded-md border-gray-300 text-sm"></label>
+                                    <label class="text-xs font-semibold text-gray-600">Presentación<input name="unit_conversions[{{ $index }}][name]" value="{{ $conversion['name'] }}" list="common-units" type="text" maxlength="80" required class="mt-1 block w-full rounded-md border-gray-300 text-sm"></label>
+                                    <label class="text-xs font-semibold text-gray-600">Equivale a unidades base<input name="unit_conversions[{{ $index }}][factor]" value="{{ $conversion['factor'] }}" list="unit-factor-options" type="text" placeholder="1, 1/2 o 1 1/2" required class="mt-1 block w-full rounded-md border-gray-300 text-sm"></label>
                                     <label class="text-xs font-semibold text-gray-600">Precio de venta propio (opcional)<input name="unit_conversions[{{ $index }}][sale_price]" value="{{ $conversion['sale_price'] ?? '' }}" type="number" min="0" step="0.01" class="mt-1 block w-full rounded-md border-gray-300 text-sm"></label>
                                     <button type="button" class="remove-unit-conversion rounded-md px-3 py-2 text-sm font-bold text-red-600">Quitar</button>
                                 </div>
                             @endforeach
                         </div>
+                        <datalist id="unit-factor-options">@foreach($unitFactorOptions as $factor)<option value="{{ $factor }}">@endforeach</datalist>
                         <button type="button" id="add-unit-conversion" class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-teal-700">＋ Agregar presentación</button>
                     </fieldset>
                     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -79,8 +80,8 @@
     </div>
     <template id="unit-conversion-template">
         <div class="unit-conversion-row grid grid-cols-1 items-end gap-3 rounded-lg bg-gray-50 p-3 sm:grid-cols-[1fr_1fr_1fr_auto]">
-            <label class="text-xs font-semibold text-gray-600">Presentación<input data-field="name" type="text" maxlength="80" required class="mt-1 block w-full rounded-md border-gray-300 text-sm"></label>
-            <label class="text-xs font-semibold text-gray-600">Equivale a<input data-field="factor" type="number" min="0.000001" step="0.000001" required class="mt-1 block w-full rounded-md border-gray-300 text-sm"></label>
+            <label class="text-xs font-semibold text-gray-600">Presentación<input data-field="name" list="common-units" type="text" maxlength="80" required class="mt-1 block w-full rounded-md border-gray-300 text-sm"></label>
+            <label class="text-xs font-semibold text-gray-600">Equivale a unidades base<input data-field="factor" list="unit-factor-options" type="text" placeholder="1, 1/2 o 1 1/2" required class="mt-1 block w-full rounded-md border-gray-300 text-sm"></label>
             <label class="text-xs font-semibold text-gray-600">Precio de venta propio (opcional)<input data-field="sale_price" type="number" min="0" step="0.01" class="mt-1 block w-full rounded-md border-gray-300 text-sm"></label>
             <button type="button" class="remove-unit-conversion rounded-md px-3 py-2 text-sm font-bold text-red-600">Quitar</button>
         </div>

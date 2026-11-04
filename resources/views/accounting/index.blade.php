@@ -34,7 +34,7 @@
                     <span class="text-xs font-medium text-[#71807a]">Cada opción abre su espacio de trabajo</span>
                 </div>
 
-                <div class="grid grid-cols-1 gap-5 md:grid-cols-3">
+                <div class="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-4">
                     <a href="{{ route('accounting.vouchers.index.typed', 'egreso') }}" class="group flex min-h-56 flex-col rounded-2xl border border-[#eadbd4] bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:border-[#d96b4c] hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-[#d96b4c] focus:ring-offset-2">
                         <span class="flex h-12 w-12 items-center justify-center rounded-xl bg-[#fbefea] text-2xl text-[#b65338]" aria-hidden="true">↗</span>
                         <h3 class="mt-5 text-xl font-black text-[#192522]">Egreso</h3>
@@ -59,6 +59,15 @@
                         <p class="mt-2 text-sm leading-6 text-[#71807a]">Crea otros comprobantes y revisa el historial contable completo.</p>
                         <span class="mt-auto flex items-center gap-2 pt-5 text-sm font-bold text-[#227c70]">
                             Ver comprobantes <span class="transition group-hover:translate-x-1" aria-hidden="true">→</span>
+                        </span>
+                    </a>
+
+                    <a href="{{ route('accounting.vouchers.index.typed', 'saldos_iniciales') }}" class="group flex min-h-56 flex-col rounded-2xl border border-[#d7e8e2] bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:border-[#227c70] hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-[#227c70] focus:ring-offset-2">
+                        <span class="flex h-12 w-12 items-center justify-center rounded-xl bg-[#edf7f4] text-2xl text-[#227c70]" aria-hidden="true">▤</span>
+                        <h3 class="mt-5 text-xl font-black text-[#192522]">Saldos iniciales</h3>
+                        <p class="mt-2 text-sm leading-6 text-[#71807a]">Carga saldos contables y facturas pendientes de clientes y proveedores desde Excel.</p>
+                        <span class="mt-auto flex items-center gap-2 pt-5 text-sm font-bold text-[#227c70]">
+                            Importar saldos <span class="transition group-hover:translate-x-1" aria-hidden="true">→</span>
                         </span>
                     </a>
                 </div>

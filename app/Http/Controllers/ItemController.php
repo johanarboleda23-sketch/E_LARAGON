@@ -140,7 +140,28 @@ class ItemController extends Controller
 
     public function destroy(Item $item)
     {
-        $item->delete();
+        $deleted = DB::transaction(function () use ($item): bool {
+            $item = Item::query()->lockForUpdate()->findOrFail($item->id);
+
+            $hasHistory = $item->purchaseDetails()->withoutGlobalScopes()->exists()
+                || $item->saleDetails()->withoutGlobalScopes()->exists()
+                || $item->commercialDocumentLines()->withoutGlobalScopes()->exists()
+                || $item->inventoryMovements()->withoutGlobalScopes()->exists();
+
+            if ($hasHistory) {
+                return false;
+            }
+
+            $item->delete();
+
+            return true;
+        });
+
+        if (! $deleted) {
+            return back()->withErrors([
+                'item' => 'No se puede eliminar este registro porque ya tiene movimientos o documentos asociados. Conserva el registro para mantener el historial.',
+            ]);
+        }
 
         return redirect()->route('items.index')->with('success', 'Registro eliminado con éxito.');
     }

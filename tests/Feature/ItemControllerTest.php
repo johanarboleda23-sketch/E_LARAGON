@@ -5,6 +5,8 @@ namespace Tests\Feature;
 use App\Models\ChartOfAccount;
 use App\Models\Company;
 use App\Models\Item;
+use App\Models\Purchase;
+use App\Models\Sale;
 use App\Models\User;
 use App\Support\SpreadsheetReader;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -17,6 +19,75 @@ use Tests\TestCase;
 class ItemControllerTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_it_prevents_deleting_a_product_used_by_a_sales_invoice(): void
+    {
+        $this->authenticateWithCompany();
+        $item = Item::factory()->create();
+        $sale = Sale::create([
+            'invoice_number' => 'FV-DELETE-001',
+            'customer_name' => 'Cliente de prueba',
+            'sale_date' => now()->toDateString(),
+        ]);
+        $saleDetail = $sale->details()->create([
+            'item_id' => $item->id,
+            'quantity' => 1,
+            'unit_price' => 100,
+            'line_total' => 100,
+        ]);
+
+        $this->from(route('items.index'))
+            ->delete(route('items.destroy', $item))
+            ->assertRedirect(route('items.index'))
+            ->assertSessionHasErrors([
+                'item' => 'No se puede eliminar este registro porque ya tiene movimientos o documentos asociados. Conserva el registro para mantener el historial.',
+            ]);
+
+        $this->assertModelExists($item);
+        $this->assertModelExists($saleDetail);
+    }
+
+    public function test_it_prevents_deleting_a_product_from_removing_its_purchase_history(): void
+    {
+        $this->authenticateWithCompany();
+        $item = Item::factory()->create();
+        $purchase = Purchase::create([
+            'invoice_number' => 'COMP-DELETE-001',
+            'provider' => 'Proveedor de prueba',
+            'purchase_date' => now()->toDateString(),
+        ]);
+        $purchaseDetail = $purchase->details()->create([
+            'item_id' => $item->id,
+            'quantity' => 1,
+            'cost_price' => 50,
+            'iva_percentage' => 0,
+            'iva_value' => 0,
+            'utility_percentage' => 0,
+            'calculated_sale_price' => 50,
+        ]);
+
+        $this->from(route('items.index'))
+            ->delete(route('items.destroy', $item))
+            ->assertRedirect(route('items.index'))
+            ->assertSessionHasErrors([
+                'item' => 'No se puede eliminar este registro porque ya tiene movimientos o documentos asociados. Conserva el registro para mantener el historial.',
+            ]);
+
+        $this->assertModelExists($item);
+        $this->assertModelExists($purchaseDetail);
+    }
+
+    public function test_it_deletes_a_product_without_inventory_history(): void
+    {
+        $this->authenticateWithCompany();
+        $item = Item::factory()->create(['stock' => 0]);
+
+        $this->delete(route('items.destroy', $item))
+            ->assertRedirect(route('items.index'))
+            ->assertSessionHas('success', 'Registro eliminado con éxito.');
+
+        $this->assertDatabaseMissing('items', ['id' => $item->id]);
+    }
 
     public function test_it_ties_a_product_to_its_inventory_and_income_puc_accounts(): void
     {

@@ -36,14 +36,29 @@ class Item extends Model
         return $this->belongsTo(ChartOfAccount::class, 'inventory_account_id');
     }
 
+    public function inventoryMovements(): HasMany
+    {
+        return $this->hasMany(InventoryMovement::class);
+    }
+
     public function incomeAccount(): BelongsTo
     {
         return $this->belongsTo(ChartOfAccount::class, 'income_account_id');
     }
 
-    public function purchaseDetails()
+    public function purchaseDetails(): HasMany
     {
         return $this->hasMany(PurchaseDetail::class);
+    }
+
+    public function saleDetails(): HasMany
+    {
+        return $this->hasMany(SaleDetail::class);
+    }
+
+    public function commercialDocumentLines(): HasMany
+    {
+        return $this->hasMany(CommercialDocumentLine::class);
     }
 
     /**

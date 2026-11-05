@@ -414,6 +414,7 @@ class CashRegisterControllerTest extends TestCase
         $this->get(route('cash-register.index', ['route_id' => $route->id]))
             ->assertOk()
             ->assertSee('FAC-VIEW-001')
+            ->assertSee('value="'.$route->id.'" selected', false)
             ->assertSee('DEVOLUCIÓN TOTAL')
             ->assertSee('Efectivo esperado');
     }

@@ -668,27 +668,6 @@ class CashRegisterController extends Controller
             ->value('id');
     }
 
-    public function attachInvoice(Request $request, DeliveryRoute $route): RedirectResponse
-    {
-        $data = $request->validate([
-            'sale_id' => ['required', 'integer'],
-        ]);
-        $sale = Sale::query()->findOrFail($data['sale_id']);
-        abort_if(DeliveryStop::query()->where('sale_id', $sale->id)->exists(), 422, 'La factura ya está asignada a un lote.');
-
-        $route->stops()->create([
-            'sale_id' => $sale->id,
-            'third_party_id' => null,
-            'sequence' => (int) $route->stops()->max('sequence') + 1,
-            'customer_name' => $sale->customer_name,
-            'address' => 'Dirección pendiente',
-            'difficulty_score' => 50,
-            'status' => 'pending',
-        ]);
-
-        return back()->with('success', 'Factura agregada al lote sin modificar el inventario.');
-    }
-
     public function removeInvoice(DeliveryStop $stop): RedirectResponse
     {
         abort_unless($stop->sale_id, 404);

@@ -240,6 +240,56 @@ class CommercialDocumentControllerTest extends TestCase
         $this->assertSame('not_configured', $note->dian_status);
     }
 
+    public function test_sales_invoice_can_start_a_prefilled_credit_note(): void
+    {
+        $this->authenticateWithCompany();
+        $item = $this->createItem();
+        $payload = $this->validPayload('customer_credit_note', $item);
+        $sale = Sale::query()->findOrFail($payload['reference_invoice_id']);
+        $sale->details()->create([
+            'item_id' => $item->id,
+            'quantity' => 1,
+            'unit_price' => 100,
+            'iva_percentage' => 19,
+            'discount_percentage' => 0,
+            'line_total' => 119,
+        ]);
+
+        $this->get(route('sales.show', $sale))
+            ->assertOk()
+            ->assertSee(route('commercial-documents.customer-credit-notes', ['reference_invoice_id' => $sale->id]));
+
+        $this->get(route('commercial-documents.customer-credit-notes', ['reference_invoice_id' => $sale->id]))
+            ->assertOk()
+            ->assertSee('value="'.$sale->id.'" data-party="Tercero de prueba" selected', false)
+            ->assertSee('value="'.$payload['third_party_id'].'" data-email="buyer@example.com" data-document="900123456" data-name="Tercero de prueba" selected', false)
+            ->assertSee('value="'.$item->id.'" data-sale-price="100" data-purchase-price="50" selected', false)
+            ->assertSee('name="items[0][quantity]" type="number" min="0.0001" step="0.0001" max="1000000" value="1"', false);
+    }
+
+    public function test_sales_invoice_without_a_registered_customer_still_opens_credit_note_form(): void
+    {
+        $this->authenticateWithCompany();
+        $sale = Sale::create([
+            'invoice_number' => 'FV-SIN-TERCERO',
+            'customer_name' => 'Cliente histórico',
+            'customer_email' => 'historico@example.com',
+            'sale_date' => '2026-09-01',
+            'subtotal' => 100,
+            'iva_total' => 0,
+            'discount_total' => 0,
+            'withholding_concept' => 'none',
+            'retention_base' => 0,
+            'retention_total' => 0,
+            'total' => 100,
+        ]);
+
+        $this->get(route('commercial-documents.customer-credit-notes', ['reference_invoice_id' => $sale->id]))
+            ->assertOk()
+            ->assertSee('FV-SIN-TERCERO')
+            ->assertSee('historico@example.com');
+    }
+
     public function test_customer_credit_note_cannot_reference_another_customers_sale(): void
     {
         $this->authenticateWithCompany();
@@ -282,6 +332,35 @@ class CommercialDocumentControllerTest extends TestCase
         $note = CommercialDocument::query()->where('document_type', 'supplier_debit_note')->firstOrFail();
         $this->assertSame('FAC-PROVEEDOR-001', $note->referencePurchase->invoice_number);
         $this->assertNull($note->reference_sale_id);
+    }
+
+    public function test_purchase_invoice_can_start_a_prefilled_debit_note(): void
+    {
+        $this->authenticateWithCompany();
+        $item = $this->createItem();
+        $payload = $this->validPayload('supplier_debit_note', $item);
+        $purchase = Purchase::query()->findOrFail($payload['reference_invoice_id']);
+        $purchase->details()->create([
+            'item_id' => $item->id,
+            'quantity' => 2,
+            'cost_price' => 50,
+            'iva_percentage' => 19,
+            'iva_value' => 9.5,
+            'utility_percentage' => 20,
+            'calculated_sale_price' => 60,
+        ]);
+
+        $this->get(route('purchases.show', $purchase))
+            ->assertOk()
+            ->assertSee(route('commercial-documents.supplier-debit-notes', ['reference_invoice_id' => $purchase->id]));
+
+        $this->get(route('commercial-documents.supplier-debit-notes', ['reference_invoice_id' => $purchase->id]))
+            ->assertOk()
+            ->assertSee('value="'.$purchase->id.'" data-party="Tercero de prueba" selected', false)
+            ->assertSee('value="'.$payload['third_party_id'].'" data-email="buyer@example.com" data-document="900123456" data-name="Tercero de prueba" selected', false)
+            ->assertSee('value="'.$item->id.'" data-sale-price="100" data-purchase-price="50" selected', false)
+            ->assertSee('name="items[0][quantity]" type="number" min="0.0001" step="0.0001" max="1000000" value="2"', false)
+            ->assertSee('name="items[0][unit_price]" type="number" min="0" max="999999999" step="0.01" value="50"', false);
     }
 
     public function test_dian_button_does_not_claim_an_unconfigured_note_was_sent(): void

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\DeliveryRoute;
 use App\Models\DeliveryStop;
+use App\Models\Sale;
 use App\Services\MapboxService;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
@@ -48,9 +49,34 @@ class LogisticsController extends Controller
 
     public function show(DeliveryRoute $route): View
     {
-        $route->load('stops');
+        $route->load('stops.sale');
+        $availableSales = Sale::query()
+            ->whereNotIn('id', DeliveryStop::query()->whereNotNull('sale_id')->select('sale_id'))
+            ->latest('sale_date')
+            ->get(['id', 'invoice_number', 'sale_date', 'customer_name', 'total']);
 
-        return view('logistics.show', compact('route'));
+        return view('logistics.show', compact('route', 'availableSales'));
+    }
+
+    public function attachInvoice(Request $request, DeliveryRoute $route): RedirectResponse
+    {
+        $data = $request->validate([
+            'sale_id' => ['required', 'integer'],
+        ]);
+        $sale = Sale::query()->findOrFail($data['sale_id']);
+        abort_if(DeliveryStop::query()->where('sale_id', $sale->id)->exists(), 422, 'La factura ya está asignada a un lote.');
+
+        $route->stops()->create([
+            'sale_id' => $sale->id,
+            'third_party_id' => null,
+            'sequence' => (int) $route->stops()->max('sequence') + 1,
+            'customer_name' => $sale->customer_name,
+            'address' => 'Dirección pendiente',
+            'difficulty_score' => 50,
+            'status' => 'pending',
+        ]);
+
+        return back()->with('success', 'Factura agregada al lote sin modificar el inventario.');
     }
 
     public function importStops(Request $request, DeliveryRoute $route): RedirectResponse

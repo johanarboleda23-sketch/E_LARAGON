@@ -126,7 +126,7 @@ Route::middleware(['auth', 'company'])->group(function () {
         Route::get('/arqueo-de-caja/proveedores/facturas', [CashRegisterController::class, 'supplierInvoices'])->name('cash-register.supplier-invoices');
         Route::post('/arqueo-de-caja/abrir', [CashRegisterController::class, 'open'])->name('cash-register.open');
         Route::post('/arqueo-de-caja/lote/liquidar', [CashRegisterController::class, 'settleBatch'])->name('cash-register.settle-batch');
-        Route::post('/arqueo-de-caja/lote/{route}/facturas', [CashRegisterController::class, 'attachInvoice'])->name('cash-register.attach-invoice');
+        Route::post('/arqueo-de-caja/lote/{route}/facturas', [LogisticsController::class, 'attachInvoice'])->name('cash-register.attach-invoice');
         Route::delete('/arqueo-de-caja/paradas/{stop}/factura', [CashRegisterController::class, 'removeInvoice'])->name('cash-register.remove-invoice');
         Route::post('/arqueo-de-caja/paradas/{stop}/devoluciones', [CashRegisterController::class, 'returnProducts'])->name('cash-register.returns');
         Route::patch('/arqueo-de-caja/rutas/{route}/reprogramar', [CashRegisterController::class, 'reschedule'])->name('cash-register.reschedule');
@@ -169,6 +169,7 @@ Route::middleware(['auth', 'company'])->group(function () {
         Route::get('/logistica', [LogisticsController::class, 'index'])->name('logistics.index');
         Route::post('/logistica/rutas', [LogisticsController::class, 'store'])->name('logistics.store');
         Route::get('/logistica/rutas/{route}', [LogisticsController::class, 'show'])->name('logistics.show');
+        Route::post('/logistica/rutas/{route}/facturas', [LogisticsController::class, 'attachInvoice'])->name('logistics.invoices.store');
         Route::post('/logistica/rutas/{route}/planificar', [LogisticsController::class, 'plan'])->name('logistics.plan');
         Route::get('/logistica/rutas/{route}/manifiesto', [LogisticsController::class, 'manifest'])->name('logistics.manifest');
         Route::post('/logistica/rutas/{route}/paradas/importar', [LogisticsController::class, 'importStops'])->name('logistics.stops.import');

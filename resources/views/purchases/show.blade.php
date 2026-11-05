@@ -12,6 +12,7 @@
     @if(session('success'))<div style="padding:10px;background:#ecfdf5;color:#047857;margin-bottom:14px;border-radius:6px;font-weight:bold;">{{ session('success') }}</div>@endif
     <div class="actions">
         <a href="{{ route('purchases.edit', $purchase) }}">✏ Editar</a>
+        <a href="{{ route('commercial-documents.supplier-debit-notes', ['reference_invoice_id' => $purchase->id]) }}">Crear nota débito</a>
         <button onclick="window.print()">Imprimir / Guardar como PDF</button>
         <a href="{{ route('purchases.statement', $purchase) }}" target="_blank">Ver estado de cartera</a>
         @if($purchase->accounting_voucher_id)

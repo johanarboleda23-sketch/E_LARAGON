@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Company;
 use App\Models\DeliveryRoute;
 use App\Models\DeliveryStop;
+use App\Models\Sale;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -40,6 +41,66 @@ class LogisticsControllerTest extends TestCase
         ])->assertRedirect();
 
         $this->assertDatabaseHas('delivery_routes', ['code' => 'RUTA-001']);
+    }
+
+    public function test_route_page_lists_unassigned_invoices_and_can_add_one_to_the_batch(): void
+    {
+        $this->authenticateWithCompany();
+        $route = $this->createRoute();
+        $sale = $this->createSale('FAC-LOG-001');
+
+        $this->get(route('logistics.show', $route))
+            ->assertOk()
+            ->assertSee('Agregar factura al lote')
+            ->assertSee('value="'.$sale->id.'"', false)
+            ->assertSee('FAC-LOG-001');
+
+        $this->post(route('logistics.invoices.store', $route), ['sale_id' => $sale->id])
+            ->assertRedirect()
+            ->assertSessionHas('success', 'Factura agregada al lote sin modificar el inventario.');
+
+        $this->assertDatabaseHas('delivery_stops', [
+            'delivery_route_id' => $route->id,
+            'sale_id' => $sale->id,
+            'customer_name' => 'Cliente de logística',
+            'status' => 'pending',
+        ]);
+    }
+
+    public function test_invoice_cannot_be_added_to_a_second_route(): void
+    {
+        $this->authenticateWithCompany();
+        $route = $this->createRoute();
+        $otherRoute = $this->createRoute('RUTA-002');
+        $sale = $this->createSale('FAC-LOG-002');
+        DeliveryStop::create([
+            'delivery_route_id' => $otherRoute->id,
+            'sale_id' => $sale->id,
+            'sequence' => 1,
+            'customer_name' => $sale->customer_name,
+            'address' => 'Dirección pendiente',
+            'difficulty_score' => 50,
+            'status' => 'pending',
+        ]);
+
+        $this->post(route('logistics.invoices.store', $route), ['sale_id' => $sale->id])
+            ->assertStatus(422)
+            ->assertSeeText('La factura ya está asignada a un lote.');
+
+        $this->assertDatabaseCount('delivery_stops', 1);
+    }
+
+    public function test_route_cannot_add_an_invoice_from_another_company(): void
+    {
+        $this->authenticateWithCompany();
+        $route = $this->createRoute();
+        $otherCompany = Company::factory()->create();
+        $sale = $this->createSale('FAC-LOG-AJENA', $otherCompany->id);
+
+        $this->post(route('logistics.invoices.store', $route), ['sale_id' => $sale->id])
+            ->assertNotFound();
+
+        $this->assertDatabaseCount('delivery_stops', 0);
     }
 
     public function test_driver_can_confirm_a_delivery_with_a_timestamp(): void
@@ -87,6 +148,31 @@ class LogisticsControllerTest extends TestCase
             'address' => 'Calle 123',
             'difficulty_score' => 50,
             'status' => 'pending',
+        ]);
+    }
+
+    private function createRoute(string $code = 'RUTA-LOG'): DeliveryRoute
+    {
+        return DeliveryRoute::create([
+            'code' => $code,
+            'vehicle_plate' => 'ABC123',
+            'driver_name' => 'Conductor de logística',
+            'route_date' => now()->toDateString(),
+            'status' => 'draft',
+        ]);
+    }
+
+    private function createSale(string $invoiceNumber, ?int $companyId = null): Sale
+    {
+        return Sale::create([
+            'company_id' => $companyId,
+            'invoice_number' => $invoiceNumber,
+            'customer_name' => 'Cliente de logística',
+            'sale_date' => now()->toDateString(),
+            'subtotal' => 100,
+            'iva_total' => 0,
+            'discount_total' => 0,
+            'total' => 100,
         ]);
     }
 

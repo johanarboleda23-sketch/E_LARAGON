@@ -112,6 +112,22 @@ class CommercialDocumentController extends Controller
             abort_if($currentDocument->status !== 'draft', 409);
         }
 
+        $referenceInvoiceId = old(
+            'reference_invoice_id',
+            $request->integer('reference_invoice_id') ?: null,
+        );
+        $prefilledReferenceSale = null;
+        $prefilledReferencePurchase = null;
+        if (! $currentDocument && $referenceInvoiceId && $type === 'customer_credit_note') {
+            $prefilledReferenceSale = Sale::query()
+                ->with('details')
+                ->findOrFail($referenceInvoiceId);
+        } elseif (! $currentDocument && $referenceInvoiceId && $type === 'supplier_debit_note') {
+            $prefilledReferencePurchase = Purchase::query()
+                ->with('details')
+                ->findOrFail($referenceInvoiceId);
+        }
+
         $partyFlag = $configuration['party'] === 'supplier' ? 'is_supplier' : 'is_customer';
         $thirdParties = ThirdParty::query()
             ->where('active', true)
@@ -127,16 +143,58 @@ class CommercialDocumentController extends Controller
 
         $referenceInvoices = collect();
         if ($type === 'customer_credit_note') {
-            $referenceInvoices = Sale::query()
-                ->latest('id')
-                ->limit(100)
-                ->get(['id', 'invoice_number', 'sale_date', 'customer_name', 'customer_document', 'total']);
+            $referenceInvoices = $prefilledReferenceSale
+                ? collect([$prefilledReferenceSale])
+                : Sale::query()
+                    ->latest('id')
+                    ->limit(100)
+                    ->get(['id', 'invoice_number', 'sale_date', 'customer_name', 'customer_document', 'total']);
         } elseif ($type === 'supplier_debit_note') {
-            $referenceInvoices = Purchase::query()
-                ->latest('id')
-                ->limit(100)
-                ->get(['id', 'invoice_number', 'purchase_date', 'provider', 'total_pagar']);
+            $referenceInvoices = $prefilledReferencePurchase
+                ? collect([$prefilledReferencePurchase])
+                : Purchase::query()
+                    ->latest('id')
+                    ->limit(100)
+                    ->get(['id', 'invoice_number', 'purchase_date', 'provider', 'total_pagar']);
         }
+
+        $selectedThirdPartyId = old('third_party_id', $currentDocument?->third_party_id);
+        $prefilledRecipientEmail = null;
+        if ($prefilledReferenceSale) {
+            $customer = $prefilledReferenceSale->customer_document
+                ? $thirdParties->firstWhere('document', $prefilledReferenceSale->customer_document)
+                : $thirdParties->firstWhere('name', $prefilledReferenceSale->customer_name);
+            $selectedThirdPartyId ??= $customer?->id;
+            $prefilledRecipientEmail = $customer?->email ?: $prefilledReferenceSale->customer_email;
+        } elseif ($prefilledReferencePurchase) {
+            $supplier = $thirdParties->firstWhere('name', $prefilledReferencePurchase->provider);
+            $selectedThirdPartyId ??= $supplier?->id;
+            $prefilledRecipientEmail = $supplier?->email;
+        }
+
+        $referenceFormLines = $prefilledReferenceSale
+            ? $prefilledReferenceSale->details->map(fn (SaleDetail $detail): array => [
+                'item_id' => $detail->item_id,
+                'unit_conversion_id' => $detail->unit_conversion_id,
+                'quantity' => $detail->quantity,
+                'unit_price' => $detail->unit_price,
+                'iva_percentage' => $detail->iva_percentage,
+                'discount_percentage' => $detail->discount_percentage,
+                'utility_percentage' => 0,
+            ])->all()
+            : ($prefilledReferencePurchase
+                ? $prefilledReferencePurchase->details
+                    ->whereNotNull('item_id')
+                    ->map(fn (PurchaseDetail $detail): array => [
+                        'item_id' => $detail->item_id,
+                        'unit_conversion_id' => $detail->unit_conversion_id,
+                        'quantity' => $detail->quantity,
+                        'unit_price' => $detail->cost_price,
+                        'iva_percentage' => $detail->iva_percentage,
+                        'discount_percentage' => 0,
+                        'utility_percentage' => 0,
+                    ])->values()->all()
+                : []);
 
         $documents = CommercialDocument::query()
             ->with(['lines.item', 'referenceSale:id,invoice_number', 'referencePurchase:id,invoice_number', 'accountingVoucher'])
@@ -159,14 +217,14 @@ class CommercialDocumentController extends Controller
             'iva_percentage' => $line->iva_percentage,
             'discount_percentage' => $line->discount_percentage,
             'utility_percentage' => $line->utility_percentage,
-        ])->all() ?? [[
+        ])->all() ?? ($referenceFormLines ?: [[
             'item_id' => '',
             'quantity' => 1,
             'unit_price' => '',
             'iva_percentage' => 19,
             'discount_percentage' => 0,
             'utility_percentage' => 0,
-        ]]);
+        ]]));
 
         return view('commercial-documents.index', compact(
             'type',
@@ -179,6 +237,9 @@ class CommercialDocumentController extends Controller
             'isNote',
             'isPurchaseDocument',
             'referenceInvoices',
+            'referenceInvoiceId',
+            'selectedThirdPartyId',
+            'prefilledRecipientEmail',
             'thirdParties',
         ));
     }

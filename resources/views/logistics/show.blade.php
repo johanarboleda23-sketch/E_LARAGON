@@ -36,6 +36,29 @@
     @endif
 
     <div class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <form method="POST" action="{{ route('logistics.invoices.store', $route) }}" class="rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm">
+            @csrf
+            <p class="text-sm font-bold text-[#192522]">🧾 Agregar factura al lote</p>
+            <p class="mt-1 text-xs text-[#71807a]">La factura quedará como parada de entrega y estará disponible al cargar este lote en el arqueo.</p>
+            <div class="mt-3 flex flex-wrap items-end gap-2">
+                <label class="grid min-w-64 flex-1 gap-1 text-xs font-bold text-[#52635b]">
+                    Factura disponible
+                    <select name="sale_id" class="rounded-lg border-[#cbd6cf] text-sm" required>
+                        <option value="">Selecciona factura</option>
+                        @foreach ($availableSales as $sale)
+                            <option value="{{ $sale->id }}" @selected((string) old('sale_id') === (string) $sale->id)>
+                                {{ $sale->invoice_number }} · {{ $sale->customer_name }} · {{ $sale->sale_date->format('d/m/Y') }} · ${{ number_format($sale->total, 2) }}
+                            </option>
+                        @endforeach
+                    </select>
+                </label>
+                <button class="rounded-lg bg-[#227c70] px-4 py-2.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50" @disabled($availableSales->isEmpty())>Agregar factura</button>
+            </div>
+            @if ($availableSales->isEmpty())
+                <p class="mt-2 text-xs text-[#71807a]">No hay facturas disponibles para agregar a este lote.</p>
+            @endif
+        </form>
+
         <form method="POST" action="{{ route('logistics.stops.import', $route) }}" enctype="multipart/form-data" class="rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm">
             @csrf
             <p class="text-sm font-bold text-[#192522]">📥 Importar lote de pedidos (CSV)</p>
@@ -68,8 +91,16 @@
                     <div class="flex items-start gap-3">
                         <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#192522] text-sm font-black text-white">{{ $stop->sequence }}</span>
                         <div>
-                            <p class="font-black text-[#192522]">{{ $stop->customer_name }}</p>
+                            <p class="font-black text-[#192522]">
+                                {{ $stop->customer_name }}
+                                @if ($stop->sale)
+                                    <span class="ml-1 rounded-full bg-teal-50 px-2 py-1 text-[10px] font-bold text-teal-700">Factura {{ $stop->sale->invoice_number }}</span>
+                                @endif
+                            </p>
                             <p class="text-xs text-[#71807a]">{{ $stop->address }}{{ $stop->city ? ', '.$stop->city : '' }}</p>
+                            @if ($stop->sale)
+                                <p class="mt-1 text-xs font-semibold text-[#52635b]">Total factura: ${{ number_format($stop->sale->total, 2) }}</p>
+                            @endif
                             <p class="mt-1 text-[11px] font-bold uppercase tracking-wide text-[#8b9992]">
                                 Dificultad {{ $stop->difficulty_score }}
                                 @if ($stop->distance_meters)

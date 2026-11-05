@@ -86,7 +86,7 @@
                             <select id="third-party" name="third_party_id" required class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-teal-600 focus:ring-teal-600">
                                 <option value="">Selecciona {{ mb_strtolower($configuration['partyLabel']) }}</option>
                                 @foreach ($thirdParties as $thirdParty)
-                                    <option value="{{ $thirdParty->id }}" data-email="{{ $thirdParty->email }}" data-document="{{ $thirdParty->document }}" data-name="{{ $thirdParty->name }}" @selected((string) old('third_party_id', $currentDocument?->third_party_id) === (string) $thirdParty->id)>
+                                    <option value="{{ $thirdParty->id }}" data-email="{{ $thirdParty->email }}" data-document="{{ $thirdParty->document }}" data-name="{{ $thirdParty->name }}" @selected((string) $selectedThirdPartyId === (string) $thirdParty->id)>
                                         {{ $thirdParty->name }}{{ $thirdParty->document ? ' · '.$thirdParty->document : '' }}
                                     </option>
                                 @endforeach
@@ -94,7 +94,7 @@
                         </label>
                         <label class="text-sm font-medium text-gray-700">
                             Correo de envío
-                            <input id="recipient-email" name="recipient_email" type="email" value="{{ old('recipient_email', $currentDocument?->recipient_email) }}" maxlength="255" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-teal-600 focus:ring-teal-600">
+                            <input id="recipient-email" name="recipient_email" type="email" value="{{ old('recipient_email', $currentDocument?->recipient_email ?? $prefilledRecipientEmail) }}" maxlength="255" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-teal-600 focus:ring-teal-600">
                         </label>
                         <label class="text-sm font-medium text-gray-700">
                             Fecha
@@ -111,7 +111,7 @@
                                     <option value="">Selecciona la factura afectada</option>
                                     @foreach ($referenceInvoices as $referenceInvoice)
                                         @php
-                                            $referenceId = $type === 'customer_credit_note' ? $currentDocument?->reference_sale_id : $currentDocument?->reference_purchase_id;
+                                            $referenceId = old('reference_invoice_id', $currentDocument?->reference_sale_id ?? $currentDocument?->reference_purchase_id ?? $referenceInvoiceId);
                                             $referenceDate = $type === 'customer_credit_note' ? $referenceInvoice->sale_date : $referenceInvoice->purchase_date;
                                             $referenceTotal = $type === 'customer_credit_note' ? $referenceInvoice->total : $referenceInvoice->total_pagar;
                                             $referenceParty = $type === 'customer_credit_note' ? $referenceInvoice->customer_name : $referenceInvoice->provider;

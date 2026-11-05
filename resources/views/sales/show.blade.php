@@ -36,6 +36,9 @@
     <section class="meta">
         <div><span class="muted">Cliente</span><br>{{ $sale->customer_name }}</div>
         <div><span class="muted">Fecha</span><br>{{ $sale->sale_date->format('d/m/Y') }}</div>
+        @if($sale->paymentMethod)
+            <div><span class="muted">Forma de pago</span><br>{{ $sale->paymentMethod->name }}</div>
+        @endif
         @if($sale->customer_document)
             <div><span class="muted">Documento</span><br>{{ $sale->customer_document }}</div>
         @endif

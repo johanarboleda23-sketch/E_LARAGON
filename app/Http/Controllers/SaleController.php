@@ -5,16 +5,19 @@ namespace App\Http\Controllers;
 use App\Models\InventoryMovement;
 use App\Models\Item;
 use App\Models\NumberingResolution;
+use App\Models\PaymentMethod;
 use App\Models\Sale;
 use App\Models\SaleDetail;
 use App\Models\ThirdParty;
 use App\Services\AccountingEntryService;
 use App\Services\FactusService;
 use App\Services\InventoryUnitService;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class SaleController extends Controller
 {
@@ -27,7 +30,8 @@ class SaleController extends Controller
     public function index()
     {
         $items = Item::with('unitConversions')->where('type', 'producto')->orderBy('name')->get();
-        $sales = Sale::with(['details.item', 'creator'])->latest()->take(20)->get();
+        $sales = Sale::with(['details.item', 'creator', 'paymentMethod'])->latest()->take(20)->get();
+        $paymentMethods = $this->availablePaymentMethods();
         $customers = ThirdParty::where('is_customer', true)->where('active', true)->orderBy('name')->get();
         $withholdings = config('colombia_withholdings');
         $nextConsecutive = NumberingResolution::peekNext('sale');
@@ -47,7 +51,7 @@ class SaleController extends Controller
             ];
         })->values();
 
-        return view('sales.index', compact('items', 'sales', 'productOptions', 'withholdings', 'customers', 'nextConsecutive'));
+        return view('sales.index', compact('items', 'sales', 'paymentMethods', 'productOptions', 'withholdings', 'customers', 'nextConsecutive'));
     }
 
     public function store(Request $request)
@@ -55,10 +59,17 @@ class SaleController extends Controller
         $hasActiveResolution = NumberingResolution::query()->where('document_type', 'sale')->where('active', true)->exists();
 
         $data = $request->validate([
-            'invoice_number' => [$hasActiveResolution ? 'nullable' : 'required', 'string', 'max:255', 'unique:sales,invoice_number'],
+            'invoice_number' => $hasActiveResolution
+                ? ['nullable', 'string', 'max:255']
+                : ['required', 'string', 'max:255', 'unique:sales,invoice_number'],
             'customer_name' => 'required|string|max:255',
             'customer_document' => 'nullable|string|max:100',
             'customer_email' => 'nullable|email|max:255',
+            'payment_method_id' => [
+                'nullable',
+                'integer',
+                Rule::exists('payment_methods', 'id')->where('company_id', session('company_id')),
+            ],
             'sale_date' => 'required|date',
             'subtotal' => 'required|numeric|min:0',
             'iva_total' => 'required|numeric|min:0',
@@ -89,33 +100,40 @@ class SaleController extends Controller
         $data['total'] = round((float) $data['subtotal'] - (float) $data['discount_total'] + (float) $data['iva_total'] - $retentionTotal, 2);
 
         try {
-            $invoiceNumber = NumberingResolution::allocateNext('sale') ?? $data['invoice_number'];
-        } catch (\RuntimeException $e) {
-            return back()->withErrors(['invoice_number' => $e->getMessage()])->withInput();
+            $sale = DB::transaction(function () use ($data, $request) {
+                try {
+                    $invoiceNumber = NumberingResolution::allocateNext('sale') ?? $data['invoice_number'];
+                } catch (\RuntimeException $e) {
+                    throw ValidationException::withMessages([
+                        'invoice_number' => $e->getMessage(),
+                    ]);
+                }
+
+                $sale = Sale::create([
+                    'invoice_number' => $invoiceNumber,
+                    'customer_name' => $data['customer_name'],
+                    'customer_document' => $data['customer_document'] ?? null,
+                    'customer_email' => $data['customer_email'] ?? null,
+                    'payment_method_id' => $data['payment_method_id'] ?? null,
+                    'sale_date' => $data['sale_date'],
+                    'subtotal' => $data['subtotal'],
+                    'iva_total' => $data['iva_total'],
+                    'discount_total' => $data['discount_total'],
+                    'withholding_concept' => $data['withholding_concept'],
+                    'retention_base' => $data['retention_base'],
+                    'retention_total' => $data['retention_total'],
+                    'total' => $data['total'],
+                    'skip_dian' => $request->boolean('skip_dian'),
+                    'created_by' => auth()->id(),
+                ]);
+
+                $this->syncDetailsAndStock($sale, $data['items']);
+
+                return $sale;
+            });
+        } catch (ValidationException $e) {
+            return back()->withErrors($e->errors())->withInput();
         }
-
-        $sale = DB::transaction(function () use ($data, $invoiceNumber, $request) {
-            $sale = Sale::create([
-                'invoice_number' => $invoiceNumber,
-                'customer_name' => $data['customer_name'],
-                'customer_document' => $data['customer_document'] ?? null,
-                'customer_email' => $data['customer_email'] ?? null,
-                'sale_date' => $data['sale_date'],
-                'subtotal' => $data['subtotal'],
-                'iva_total' => $data['iva_total'],
-                'discount_total' => $data['discount_total'],
-                'withholding_concept' => $data['withholding_concept'],
-                'retention_base' => $data['retention_base'],
-                'retention_total' => $data['retention_total'],
-                'total' => $data['total'],
-                'skip_dian' => $request->boolean('skip_dian'),
-                'created_by' => auth()->id(),
-            ]);
-
-            $this->syncDetailsAndStock($sale, $data['items']);
-
-            return $sale;
-        });
 
         $skipReason = null;
         $accountingVoucher = $this->accountingEntryService->postSale($sale, $skipReason);
@@ -237,15 +255,16 @@ class SaleController extends Controller
 
     public function show(Sale $sale)
     {
-        $sale->load('details.item');
+        $sale->load(['details.item', 'paymentMethod']);
 
         return view('sales.show', compact('sale'));
     }
 
     public function edit(Sale $sale)
     {
-        $sale->load('details.item');
+        $sale->load(['details.item', 'paymentMethod']);
         $items = Item::with('unitConversions')->where('type', 'producto')->orderBy('name')->get();
+        $paymentMethods = $this->availablePaymentMethods();
         $productOptions = $items->map(fn (Item $item) => [
             'id' => $item->id,
             'name' => $item->name,
@@ -262,7 +281,7 @@ class SaleController extends Controller
         $customers = ThirdParty::where('is_customer', true)->where('active', true)->orderBy('name')->get();
         $withholdings = config('colombia_withholdings');
 
-        return view('sales.edit', compact('sale', 'items', 'productOptions', 'customers', 'withholdings'));
+        return view('sales.edit', compact('sale', 'items', 'paymentMethods', 'productOptions', 'customers', 'withholdings'));
     }
 
     public function update(Request $request, Sale $sale)
@@ -272,6 +291,11 @@ class SaleController extends Controller
             'customer_name' => 'required|string|max:255',
             'customer_document' => 'nullable|string|max:100',
             'customer_email' => 'nullable|email|max:255',
+            'payment_method_id' => [
+                'nullable',
+                'integer',
+                Rule::exists('payment_methods', 'id')->where('company_id', session('company_id')),
+            ],
             'sale_date' => 'required|date',
             'subtotal' => 'required|numeric|min:0',
             'iva_total' => 'required|numeric|min:0',
@@ -297,6 +321,7 @@ class SaleController extends Controller
                 'customer_name' => $data['customer_name'],
                 'customer_document' => $data['customer_document'] ?? null,
                 'customer_email' => $data['customer_email'] ?? null,
+                'payment_method_id' => $data['payment_method_id'] ?? null,
                 'sale_date' => $data['sale_date'],
                 'subtotal' => $data['subtotal'],
                 'iva_total' => $data['iva_total'],
@@ -335,6 +360,24 @@ class SaleController extends Controller
             'documents' => $documents,
             'balance' => $balance,
         ]);
+    }
+
+    /**
+     * @return Collection<int, PaymentMethod>
+     */
+    private function availablePaymentMethods(): Collection
+    {
+        $paymentMethods = PaymentMethod::query()->orderBy('name')->get();
+
+        if ($paymentMethods->isEmpty()) {
+            foreach (['Efectivo', 'Bancos', 'Anticipo', 'Crédito'] as $name) {
+                PaymentMethod::create(['name' => $name, 'is_editable' => true]);
+            }
+
+            $paymentMethods = PaymentMethod::query()->orderBy('name')->get();
+        }
+
+        return $paymentMethods;
     }
 
     public function account(Sale $sale)

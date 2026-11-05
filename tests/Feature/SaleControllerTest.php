@@ -7,6 +7,8 @@ use App\Models\ChartOfAccount;
 use App\Models\Company;
 use App\Models\FactusCredential;
 use App\Models\Item;
+use App\Models\NumberingResolution;
+use App\Models\PaymentMethod;
 use App\Models\Sale;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -24,9 +26,57 @@ class SaleControllerTest extends TestCase
 
         $this->get(route('sales.index'))
             ->assertOk()
+            ->assertSeeText('Forma de pago')
             ->assertSeeText('Retención en ventas (practicada por el cliente)')
             ->assertSeeText('Venta de bienes - vendedor declarante (2,5%)')
             ->assertDontSeeText('Compras - proveedor declarante');
+    }
+
+    public function test_sale_saves_payment_method_shows_in_history_and_advances_active_consecutive(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $item = $this->createProduct();
+        $paymentMethod = PaymentMethod::create(['name' => 'Transferencia de prueba', 'is_editable' => true]);
+        NumberingResolution::factory()->create([
+            'company_id' => $company->id,
+            'document_type' => 'sale',
+            'prefix' => 'FV',
+            'range_from' => 50,
+            'range_to' => 99,
+            'next_number' => 50,
+        ]);
+        $payload = $this->salePayload($item, 100_000);
+        $payload['invoice_number'] = 'FV-50';
+        $payload['payment_method_id'] = $paymentMethod->id;
+        $payload['skip_dian'] = true;
+
+        $this->post(route('sales.store'), $payload)
+            ->assertRedirect(route('sales.index'));
+
+        $sale = Sale::query()->where('invoice_number', 'FV-50')->firstOrFail();
+        $this->assertSame($paymentMethod->id, $sale->payment_method_id);
+        $this->assertDatabaseHas('sales', [
+            'id' => $sale->id,
+            'payment_method_id' => $paymentMethod->id,
+        ]);
+
+        $this->get(route('sales.index'))
+            ->assertOk()
+            ->assertSeeText('FV-50')
+            ->assertSeeText('Transferencia de prueba');
+
+        $this->post(route('sales.store'), $payload)
+            ->assertRedirect(route('sales.index'));
+
+        $this->assertDatabaseHas('sales', [
+            'invoice_number' => 'FV-51',
+            'payment_method_id' => $paymentMethod->id,
+        ]);
+        $this->assertDatabaseHas('numbering_resolutions', [
+            'company_id' => $company->id,
+            'document_type' => 'sale',
+            'next_number' => 52,
+        ]);
     }
 
     public function test_sale_is_accounted_automatically_with_balanced_debits_and_credits(): void
@@ -287,7 +337,12 @@ class SaleControllerTest extends TestCase
     {
         $this->authenticateWithCompany();
         $item = $this->createProduct();
-        $this->post(route('sales.store'), $this->salePayload($item, 100_000))
+        $originalPaymentMethod = PaymentMethod::create(['name' => 'Efectivo inicial', 'is_editable' => true]);
+        $updatedPaymentMethod = PaymentMethod::create(['name' => 'Transferencia actualizada', 'is_editable' => true]);
+        $salePayload = $this->salePayload($item, 100_000);
+        $salePayload['payment_method_id'] = $originalPaymentMethod->id;
+
+        $this->post(route('sales.store'), $salePayload)
             ->assertRedirect(route('sales.index'));
         $sale = Sale::query()->where('invoice_number', 'VTA-TEST-001')->firstOrFail();
         $this->assertSame(9.0, $item->fresh()->stock);
@@ -295,11 +350,13 @@ class SaleControllerTest extends TestCase
         $this->get(route('sales.edit', $sale))
             ->assertOk()
             ->assertSee('VTA-TEST-001')
+            ->assertSeeText('Efectivo inicial')
             ->assertSeeText('Retención en ventas (practicada por el cliente)')
             ->assertSeeText('Honorarios o comisiones recibidos (10%)');
 
         $updatePayload = $this->salePayload($item, 50_000);
         $updatePayload['invoice_number'] = 'VTA-TEST-001-B';
+        $updatePayload['payment_method_id'] = $updatedPaymentMethod->id;
         $updatePayload['customer_name'] = 'Cliente actualizado';
         $updatePayload['sale_date'] = now()->toDateString();
         $updatePayload['items'][0]['quantity'] = 3;
@@ -310,6 +367,7 @@ class SaleControllerTest extends TestCase
         $sale->refresh();
         $this->assertSame('VTA-TEST-001-B', $sale->invoice_number);
         $this->assertSame('Cliente actualizado', $sale->customer_name);
+        $this->assertSame($updatedPaymentMethod->id, $sale->payment_method_id);
         $this->assertSame(1, $sale->details()->count());
         $this->assertSame(3.0, $sale->details()->first()->quantity);
 

@@ -11,6 +11,21 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (Schema::hasTable('accounting_period_events')) {
+            $indexes = collect(Schema::getIndexes('accounting_period_events'))->pluck('name');
+
+            if (! $indexes->contains('accounting_period_events_company_period_created_idx')) {
+                Schema::table('accounting_period_events', function (Blueprint $table) {
+                    $table->index(
+                        ['company_id', 'accounting_period_id', 'created_at'],
+                        'accounting_period_events_company_period_created_idx',
+                    );
+                });
+            }
+
+            return;
+        }
+
         Schema::create('accounting_period_events', function (Blueprint $table) {
             $table->id();
             $table->foreignId('company_id')->constrained()->cascadeOnDelete();
@@ -20,7 +35,10 @@ return new class extends Migration
             $table->text('reason')->nullable();
             $table->timestamps();
 
-            $table->index(['company_id', 'accounting_period_id', 'created_at']);
+            $table->index(
+                ['company_id', 'accounting_period_id', 'created_at'],
+                'accounting_period_events_company_period_created_idx',
+            );
         });
     }
 

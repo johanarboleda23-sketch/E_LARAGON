@@ -11,6 +11,21 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (Schema::hasTable('accounting_periods')) {
+            $indexes = collect(Schema::getIndexes('accounting_periods'))->pluck('name');
+
+            if (! $indexes->contains('accounting_periods_company_status_dates_idx')) {
+                Schema::table('accounting_periods', function (Blueprint $table) {
+                    $table->index(
+                        ['company_id', 'status', 'period_start', 'period_end'],
+                        'accounting_periods_company_status_dates_idx',
+                    );
+                });
+            }
+
+            return;
+        }
+
         Schema::create('accounting_periods', function (Blueprint $table) {
             $table->id();
             $table->foreignId('company_id')->constrained()->cascadeOnDelete();

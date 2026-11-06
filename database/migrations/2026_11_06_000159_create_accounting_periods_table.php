@@ -25,7 +25,10 @@ return new class extends Migration
             $table->timestamps();
 
             $table->unique(['company_id', 'period_type', 'period_key']);
-            $table->index(['company_id', 'status', 'period_start', 'period_end']);
+            $table->index(
+                ['company_id', 'status', 'period_start', 'period_end'],
+                'accounting_periods_company_status_dates_idx',
+            );
         });
     }
 

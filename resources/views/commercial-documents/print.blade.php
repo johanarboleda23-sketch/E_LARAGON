@@ -30,6 +30,15 @@
         @if ($document->due_date)
             <div><span class="muted">Vencimiento</span><br>{{ $document->due_date->format('d/m/Y') }}</div>
         @endif
+        @if ($document->paymentMethod)
+            <div><span class="muted">Forma de pago</span><br>{{ $document->paymentMethod->name }}</div>
+        @endif
+        @if ($document->correction_concept_code)
+            <div><span class="muted">Concepto de corrección DIAN</span><br>{{ $document->correction_concept_code }}</div>
+        @endif
+        @if ($document->dian_status === 'sent' && $document->dian_number)
+            <div><span class="muted">Nota DIAN</span><br>{{ $document->dian_number }}</div>
+        @endif
     </section>
 
     <table>
@@ -52,6 +61,9 @@
             <p>Descuentos <span style="float:right">-${{ number_format($document->discount_total, 2) }}</span></p>
         @endif
         <p>IVA <span style="float:right">${{ number_format($document->iva_total, 2) }}</span></p>
+        @if ((float) $document->retention_total > 0)
+            <p>Retención <span style="float:right">-${{ number_format($document->retention_total, 2) }}</span></p>
+        @endif
         <p class="total">Total <span style="float:right">${{ number_format($document->total, 2) }}</span></p>
     </section>
 

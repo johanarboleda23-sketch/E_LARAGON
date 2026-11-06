@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\AccountingPeriod;
 use App\Models\AccountingVoucher;
 use App\Models\ChartOfAccount;
 use App\Models\Company;
@@ -42,6 +43,29 @@ class PurchaseControllerTest extends TestCase
         $this->assertSame(70_000.0, (float) $purchase->retefuente);
         $this->assertSame(1_930_000.0, (float) $purchase->total_pagar);
         $this->assertSame(11.0, $item->fresh()->stock);
+    }
+
+    public function test_purchase_creation_is_rejected_when_the_current_month_is_closed(): void
+    {
+        $this->travelTo('2026-10-15 12:00:00');
+        $company = $this->authenticateWithCompany();
+        $item = $this->createProduct();
+        AccountingPeriod::create([
+            'company_id' => $company->id,
+            'period_type' => 'month',
+            'period_key' => '2026-10',
+            'period_start' => '2026-10-01',
+            'period_end' => '2026-10-31',
+            'status' => 'closed',
+            'locked_modules' => ['purchases', 'income', 'expenses', 'bank'],
+            'closed_at' => now(),
+        ]);
+
+        $this->post(route('purchases.store'), $this->purchasePayload($item, 200))
+            ->assertStatus(409);
+
+        $this->assertDatabaseMissing('purchases', ['invoice_number' => 'DAV-RET-001']);
+        $this->assertSame(10.0, (float) $item->fresh()->stock);
     }
 
     public function test_purchase_converts_received_presentations_into_base_stock_units(): void

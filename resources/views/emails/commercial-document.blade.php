@@ -5,6 +5,9 @@
 @if ($document->referenceSale || $document->referencePurchase)
     <p>Factura origen: {{ $document->referenceSale?->invoice_number ?? $document->referencePurchase?->invoice_number }}</p>
 @endif
+@if ($document->paymentMethod)
+    <p>Forma de pago: {{ $document->paymentMethod->name }}</p>
+@endif
 
 <table style="width:100%;border-collapse:collapse">
     <thead>
@@ -25,6 +28,9 @@
     </tbody>
 </table>
 
+@if ((float) $document->retention_total > 0)
+    <p>Retención: -${{ number_format($document->retention_total, 2) }}</p>
+@endif
 <p><strong>Total: ${{ number_format($document->total, 2) }}</strong></p>
 
 @if ($document->notes)

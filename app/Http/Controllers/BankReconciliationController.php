@@ -2,43 +2,189 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AccountingVoucherLine;
+use App\Models\BankOpeningBalance;
 use App\Models\BankStatement;
+use App\Models\PaymentMethod;
 use App\Models\Purchase;
 use App\Models\Sale;
+use App\Services\AccountingPeriodService;
 use Carbon\Carbon;
 use Illuminate\Contracts\View\View;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 class BankReconciliationController extends Controller
 {
+    public function __construct(private readonly AccountingPeriodService $periodService) {}
+
     public function index(Request $request): View
     {
         $status = $request->string('status')->value();
+        $paymentMethodId = $request->integer('payment_method_id') ?: null;
         $statements = BankStatement::query()
             ->when(in_array($status, ['pending', 'reconciled'], true), fn ($query) => $query->where('status', $status))
+            ->when($paymentMethodId, fn ($query) => $query->where('payment_method_id', $paymentMethodId))
+            ->with('paymentMethod')
             ->latest('transaction_date')
             ->latest('id')
             ->paginate(25)
             ->withQueryString();
 
         $summary = [
-            'pending' => BankStatement::query()->where('status', 'pending')->sum('amount'),
-            'reconciled' => BankStatement::query()->where('status', 'reconciled')->sum('amount'),
-            'count' => BankStatement::query()->count(),
+            'pending' => BankStatement::query()->when($paymentMethodId, fn ($query) => $query->where('payment_method_id', $paymentMethodId))->where('status', 'pending')->sum('amount'),
+            'reconciled' => BankStatement::query()->when($paymentMethodId, fn ($query) => $query->where('payment_method_id', $paymentMethodId))->where('status', 'reconciled')->sum('amount'),
+            'count' => BankStatement::query()->when($paymentMethodId, fn ($query) => $query->where('payment_method_id', $paymentMethodId))->count(),
         ];
+        $bankAccounts = $this->bankAccounts();
+        $unassignedCount = BankStatement::query()->whereNull('payment_method_id')->count();
 
-        return view('bank-reconciliation.index', compact('statements', 'status', 'summary'));
+        return view('bank-reconciliation.index', [
+            'section' => 'movements',
+            'statements' => $statements,
+            'status' => $status,
+            'summary' => $summary,
+            'bankAccounts' => $bankAccounts,
+            'paymentMethodId' => $paymentMethodId,
+            'unassignedCount' => $unassignedCount,
+        ]);
+    }
+
+    public function balances(Request $request): View
+    {
+        $bankAccounts = $this->bankAccounts();
+        $data = $request->validate([
+            'payment_method_id' => ['nullable', 'integer', Rule::exists('payment_methods', 'id')->where('company_id', (int) session('company_id'))],
+            'date' => ['nullable', 'date_format:Y-m-d'],
+        ]);
+        $selectedAccount = isset($data['payment_method_id'])
+            ? $bankAccounts->firstWhere('id', (int) $data['payment_method_id'])
+            : $bankAccounts->first();
+        $date = $data['date'] ?? now()->toDateString();
+        $openingBalance = null;
+        $balance = null;
+
+        if ($selectedAccount) {
+            $openingBalance = BankOpeningBalance::query()
+                ->where('payment_method_id', $selectedAccount->id)
+                ->first();
+
+            if ($openingBalance && $date >= $openingBalance->effective_date->toDateString()) {
+                $statementTotals = BankStatement::query()
+                    ->where('payment_method_id', $selectedAccount->id)
+                    ->whereDate('transaction_date', '>=', $openingBalance->effective_date->toDateString())
+                    ->whereDate('transaction_date', '<=', $date)
+                    ->selectRaw("SUM(CASE WHEN transaction_type = 'credit' THEN amount ELSE 0 END) as credits")
+                    ->selectRaw("SUM(CASE WHEN transaction_type = 'debit' THEN amount ELSE 0 END) as debits")
+                    ->first();
+                $bankBalance = round((float) $openingBalance->opening_balance + (float) $statementTotals->credits - (float) $statementTotals->debits, 2);
+
+                $ledgerTotals = $selectedAccount->chart_of_account_id
+                    ? AccountingVoucherLine::query()
+                        ->where('chart_of_account_id', $selectedAccount->chart_of_account_id)
+                        ->whereHas('voucher', fn ($query) => $query
+                            ->where('voucher_type', '<>', 'saldos_iniciales')
+                            ->whereDate('voucher_date', '>=', $openingBalance->effective_date->toDateString())
+                            ->whereDate('voucher_date', '<=', $date))
+                        ->selectRaw('SUM(debit) as debits, SUM(credit) as credits')
+                        ->first()
+                    : null;
+                $ledgerBalance = $ledgerTotals
+                    ? round((float) $openingBalance->opening_balance
+                        + ((float) $ledgerTotals->debits - (float) $ledgerTotals->credits), 2)
+                    : null;
+
+                if ($selectedAccount->account?->nature === 'credit' && $ledgerTotals) {
+                    $ledgerBalance = round((float) $openingBalance->opening_balance
+                        + ((float) $ledgerTotals->credits - (float) $ledgerTotals->debits), 2);
+                }
+
+                $balance = [
+                    'bank' => $bankBalance,
+                    'ledger' => $ledgerBalance,
+                    'difference' => $ledgerBalance === null ? null : round($bankBalance - $ledgerBalance, 2),
+                    'credits' => (float) $statementTotals->credits,
+                    'debits' => (float) $statementTotals->debits,
+                    'ledger_configured' => $ledgerTotals !== null,
+                ];
+            }
+        }
+
+        $openingBalances = BankOpeningBalance::query()->with('paymentMethod')->get()->keyBy('payment_method_id');
+
+        return view('bank-reconciliation.index', [
+            'section' => 'balances',
+            'bankAccounts' => $bankAccounts,
+            'selectedAccount' => $selectedAccount,
+            'date' => $date,
+            'openingBalance' => $openingBalance,
+            'balance' => $balance,
+            'openingBalances' => $openingBalances,
+            'status' => null,
+            'paymentMethodId' => $selectedAccount?->id,
+            'unassignedCount' => 0,
+            'summary' => ['pending' => 0, 'reconciled' => 0, 'count' => 0],
+        ]);
+    }
+
+    public function storeOpeningBalance(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'payment_method_id' => ['required', 'integer', Rule::exists('payment_methods', 'id')->where('company_id', (int) session('company_id'))],
+            'effective_date' => ['required', 'date_format:Y-m-d', 'before_or_equal:today'],
+            'opening_balance' => ['required', 'numeric', 'between:-999999999999.99,999999999999.99'],
+        ]);
+        $paymentMethod = $this->bankAccountOrFail((int) $data['payment_method_id']);
+        $existing = BankOpeningBalance::query()->where('payment_method_id', $paymentMethod->id)->first();
+        if ($existing) {
+            $this->periodService->assertWritable('bank', $existing->effective_date->toDateString());
+        }
+        $this->periodService->assertWritable('bank', $data['effective_date']);
+
+        BankOpeningBalance::query()->updateOrCreate(
+            [
+                'company_id' => (int) session('company_id'),
+                'payment_method_id' => $paymentMethod->id,
+            ],
+            [
+                'effective_date' => $data['effective_date'],
+                'opening_balance' => $data['opening_balance'],
+                'updated_by' => auth()->id(),
+                'created_by' => $existing?->created_by ?? auth()->id(),
+            ],
+        );
+
+        return redirect()->route('bank-reconciliation.balances', [
+            'payment_method_id' => $paymentMethod->id,
+            'date' => $data['effective_date'],
+        ])->with('success', 'Saldo inicial del banco guardado.');
+    }
+
+    public function assignAccount(Request $request, BankStatement $statement): RedirectResponse
+    {
+        $data = $request->validate([
+            'payment_method_id' => ['required', 'integer', Rule::exists('payment_methods', 'id')->where('company_id', (int) session('company_id'))],
+        ]);
+        $this->periodService->assertWritable('bank', $statement->transaction_date->toDateString());
+        $this->bankAccountOrFail((int) $data['payment_method_id']);
+        $statement->update(['payment_method_id' => $data['payment_method_id']]);
+
+        return back()->with('success', 'Movimiento asociado a la cuenta bancaria.');
     }
 
     public function import(Request $request): RedirectResponse
     {
         $data = $request->validate([
             'file' => ['required', 'file', 'mimes:xlsx,csv,txt', 'max:5120'],
+            'payment_method_id' => ['required', 'integer', Rule::exists('payment_methods', 'id')->where('company_id', (int) session('company_id'))],
         ]);
+        $paymentMethod = $this->bankAccountOrFail((int) $data['payment_method_id']);
 
-        $created = 0;
+        $movements = [];
 
         foreach ($this->rowsFromFile($data['file']->getRealPath(), $data['file']->getClientOriginalExtension()) as $row) {
             if (count(array_filter($row)) === 0) {
@@ -73,7 +219,10 @@ class BankReconciliationController extends Controller
                 $transactionType = 'debit';
             }
 
-            BankStatement::create([
+            $this->periodService->assertWritable('bank', $date);
+            $movements[] = [
+                'company_id' => (int) session('company_id'),
+                'payment_method_id' => $paymentMethod->id,
                 'transaction_date' => $date,
                 'reference' => $compactFormat ? null : (trim($row[1] ?? '') ?: null),
                 'description' => $description ?: null,
@@ -81,9 +230,15 @@ class BankReconciliationController extends Controller
                 'amount' => abs($amount),
                 'status' => 'pending',
                 'created_by' => auth()->id(),
-            ]);
-            $created++;
+            ];
         }
+
+        DB::transaction(function () use ($movements): void {
+            foreach ($movements as $movement) {
+                BankStatement::create($movement);
+            }
+        });
+        $created = count($movements);
 
         return back()->with('success', "Se importaron {$created} movimientos bancarios.");
     }
@@ -189,6 +344,7 @@ class BankReconciliationController extends Controller
 
     public function reconcile(Request $request, BankStatement $statement): RedirectResponse
     {
+        $this->periodService->assertWritable('bank', $statement->transaction_date->toDateString());
         $data = $request->validate([
             'matched_type' => ['nullable', 'string', 'in:sale,purchase,manual'],
             'matched_id' => ['nullable', 'integer'],
@@ -217,6 +373,7 @@ class BankReconciliationController extends Controller
 
     public function unmatch(BankStatement $statement): RedirectResponse
     {
+        $this->periodService->assertWritable('bank', $statement->transaction_date->toDateString());
         $statement->update([
             'status' => 'pending',
             'matched_type' => null,
@@ -251,5 +408,34 @@ class BankReconciliationController extends Controller
                 ->get(['id', 'invoice_number', 'provider', 'purchase_date', 'total_pagar'])
                 ->all(),
         ]);
+    }
+
+    /**
+     * @return Collection<int, PaymentMethod>
+     */
+    private function bankAccounts(): Collection
+    {
+        return PaymentMethod::query()
+            ->with('account')
+            ->where('is_cash', false)
+            ->where(function ($query): void {
+                $query->where(function ($bankQuery): void {
+                    $bankQuery->whereNotNull('bank_name')->where('bank_name', '<>', '');
+                })->orWhere(function ($numberQuery): void {
+                    $numberQuery->whereNotNull('account_number')->where('account_number', '<>', '');
+                })
+                    ->orWhere('name', 'like', '%Banco%')
+                    ->orWhereHas('account', fn ($accountQuery) => $accountQuery->where('code', 'like', '1110%'));
+            })
+            ->orderBy('name')
+            ->get();
+    }
+
+    private function bankAccountOrFail(int $paymentMethodId): PaymentMethod
+    {
+        $paymentMethod = $this->bankAccounts()->firstWhere('id', $paymentMethodId);
+        abort_unless($paymentMethod, 422, 'Selecciona un medio de pago configurado como cuenta bancaria.');
+
+        return $paymentMethod;
     }
 }

@@ -5,12 +5,17 @@ namespace Tests\Feature;
 use App\Mail\CommercialDocumentMail;
 use App\Models\CommercialDocument;
 use App\Models\Company;
+use App\Models\FactusCredential;
 use App\Models\Item;
+use App\Models\PaymentMethod;
 use App\Models\Purchase;
 use App\Models\Sale;
 use App\Models\ThirdParty;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request as ClientRequest;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
 
@@ -238,6 +243,54 @@ class CommercialDocumentControllerTest extends TestCase
         $this->assertSame('FAC-CLIENTE-001', $note->referenceSale->invoice_number);
         $this->assertNull($note->reference_purchase_id);
         $this->assertSame('not_configured', $note->dian_status);
+        $this->assertSame('1', $note->correction_concept_code);
+    }
+
+    public function test_saving_a_customer_credit_note_copies_payment_method_applies_retention_and_reduces_balance(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $item = $this->createItem();
+        $payload = $this->validPayload('customer_credit_note', $item);
+        $sale = Sale::query()->findOrFail($payload['reference_invoice_id']);
+        $paymentMethod = PaymentMethod::create([
+            'name' => 'Transferencia',
+            'is_editable' => true,
+        ]);
+        $sale->update([
+            'payment_method_id' => $paymentMethod->id,
+            'withholding_concept' => 'professional_fee_10',
+        ]);
+        $payload['payment_method_id'] = $paymentMethod->id;
+        $payload['withholding_concept'] = 'professional_fee_10';
+
+        $this->post(route('commercial-documents.customer-credit-notes.store'), $payload)
+            ->assertSessionHasNoErrors();
+
+        $note = CommercialDocument::query()->where('document_type', 'customer_credit_note')->firstOrFail();
+        $this->assertSame($paymentMethod->id, $note->payment_method_id);
+        $this->assertSame(100.0, (float) $note->retention_base);
+        $this->assertSame(10.0, (float) $note->retention_total);
+        $this->assertSame(109.0, (float) $note->total);
+        $this->assertSame(10.0, $sale->fresh()->balanceDue((float) $sale->total));
+        $this->assertSame($company->id, $note->company_id);
+    }
+
+    public function test_customer_credit_notes_cannot_exceed_the_source_sale_total(): void
+    {
+        $this->authenticateWithCompany();
+        $item = $this->createItem();
+        $firstPayload = $this->validPayload('customer_credit_note', $item);
+        $this->post(route('commercial-documents.customer-credit-notes.store'), $firstPayload)
+            ->assertSessionHasNoErrors();
+
+        $secondPayload = $firstPayload;
+        $secondPayload['consecutive'] = 'NC-000002';
+        $this->from(route('commercial-documents.customer-credit-notes'))
+            ->post(route('commercial-documents.customer-credit-notes.store'), $secondPayload)
+            ->assertRedirect(route('commercial-documents.customer-credit-notes'))
+            ->assertSessionHasErrors('items');
+
+        $this->assertDatabaseCount('commercial_documents', 1);
     }
 
     public function test_sales_invoice_can_start_a_prefilled_credit_note(): void
@@ -246,13 +299,21 @@ class CommercialDocumentControllerTest extends TestCase
         $item = $this->createItem();
         $payload = $this->validPayload('customer_credit_note', $item);
         $sale = Sale::query()->findOrFail($payload['reference_invoice_id']);
+        $paymentMethod = PaymentMethod::create([
+            'name' => 'Transferencia',
+            'is_editable' => true,
+        ]);
+        $sale->update([
+            'payment_method_id' => $paymentMethod->id,
+            'withholding_concept' => 'professional_fee_10',
+        ]);
         $sale->details()->create([
             'item_id' => $item->id,
-            'quantity' => 1,
+            'quantity' => 0.5,
             'unit_price' => 100,
             'iva_percentage' => 19,
             'discount_percentage' => 0,
-            'line_total' => 119,
+            'line_total' => 59.5,
         ]);
 
         $this->get(route('sales.show', $sale))
@@ -263,8 +324,21 @@ class CommercialDocumentControllerTest extends TestCase
             ->assertOk()
             ->assertSee('value="'.$sale->id.'" data-party="Tercero de prueba" selected', false)
             ->assertSee('value="'.$payload['third_party_id'].'" data-email="buyer@example.com" data-document="900123456" data-name="Tercero de prueba" selected', false)
+            ->assertSee('name="payment_method_id"', false)
+            ->assertSee('value="'.$paymentMethod->id.'" selected', false)
+            ->assertSee('value="professional_fee_10" data-rate="0.1" data-base-uvt="0" data-base-on="subtotal" selected', false)
             ->assertSee('value="'.$item->id.'" data-sale-price="100" data-purchase-price="50" selected', false)
-            ->assertSee('name="items[0][quantity]" type="number" min="0.0001" step="0.0001" max="1000000" value="1"', false);
+            ->assertSee('name="items[0][quantity]" type="number" min="0.0001" step="0.0001" max="1000000" value="0.5"', false);
+
+        $payload['payment_method_id'] = $paymentMethod->id;
+        $payload['withholding_concept'] = 'professional_fee_10';
+        $payload['items'][0]['quantity'] = 0.5;
+        $this->post(route('commercial-documents.customer-credit-notes.store'), $payload)
+            ->assertSessionHasNoErrors();
+
+        $note = CommercialDocument::query()->where('document_type', 'customer_credit_note')->firstOrFail();
+        $this->assertSame(0.5, (float) $note->lines()->firstOrFail()->quantity);
+        $this->assertSame(5.0, (float) $note->retention_total);
     }
 
     public function test_sales_invoice_without_a_registered_customer_still_opens_credit_note_form(): void
@@ -370,8 +444,119 @@ class CommercialDocumentControllerTest extends TestCase
 
         $this->post(route('commercial-documents.dian', $note))
             ->assertRedirect()
-            ->assertSessionHas('error', 'La nota no se envió: la integración con la DIAN no está configurada.');
+            ->assertSessionHas('error', 'La nota no se envió: Configura las credenciales de Factus en Administración para enviar notas crédito a la DIAN.');
 
+        $this->assertSame('not_configured', $note->fresh()->dian_status);
+    }
+
+    public function test_customer_credit_note_requires_an_electronically_issued_source_invoice(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $note = $this->createDraft('customer_credit_note', $this->createItem());
+        FactusCredential::create([
+            'company_id' => $company->id,
+            'environment' => 'sandbox',
+            'client_id' => 'client-123',
+            'client_secret' => 'secret-123',
+            'username' => 'empresa@example.com',
+            'password' => 'super-secret',
+            'active' => true,
+        ]);
+        Cache::flush();
+        Http::preventStrayRequests();
+        Http::fake();
+
+        $this->post(route('commercial-documents.dian', $note))
+            ->assertRedirect()
+            ->assertSessionHas('error', 'La nota no se envió: La factura origen debe estar emitida electrónicamente por Factus antes de crear su nota crédito.');
+
+        Http::assertNothingSent();
+        $this->assertSame('not_configured', $note->fresh()->dian_status);
+    }
+
+    public function test_customer_credit_note_is_sent_to_factus_and_records_the_dian_response(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $note = $this->createDraft('customer_credit_note', $this->createItem());
+        $note->referenceSale->update([
+            'factus_status' => 'enviada',
+            'factus_number' => 'SETT-90001',
+        ]);
+        FactusCredential::create([
+            'company_id' => $company->id,
+            'environment' => 'sandbox',
+            'client_id' => 'client-123',
+            'client_secret' => 'secret-123',
+            'username' => 'empresa@example.com',
+            'password' => 'super-secret',
+            'credit_note_numbering_range_id' => 28,
+            'active' => true,
+        ]);
+        Cache::flush();
+        Http::preventStrayRequests();
+        Http::fake([
+            'api-sandbox.factus.com.co/oauth/token' => Http::response(['access_token' => 'token-123'], 200),
+            'api-sandbox.factus.com.co/v2/credit-notes/validate' => Http::response([
+                'data' => ['credit_note' => ['number' => 'NC-FACTUS-1', 'cude' => 'cude-abc']],
+            ], 200),
+        ]);
+
+        $this->post(route('commercial-documents.dian', $note))
+            ->assertRedirect()
+            ->assertSessionHas('success', 'Nota crédito enviada y validada por la DIAN.');
+
+        $note->refresh();
+        $this->assertSame('sent', $note->dian_status);
+        $this->assertSame('NC-FACTUS-1', $note->dian_number);
+        $this->assertSame('cude-abc', $note->dian_cude);
+        Http::assertSent(fn (ClientRequest $request): bool => $request->url() === 'https://api-sandbox.factus.com.co/v2/credit-notes/validate'
+            && $request->data()['bill_number'] === 'SETT-90001'
+            && $request->data()['correction_concept_code'] === '1'
+            && $request->data()['customer']['identification'] === '900123456'
+            && $request->data()['numbering_range_id'] === 28
+        );
+    }
+
+    public function test_factus_rejection_is_reported_and_saved_without_marking_the_note_sent(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $note = $this->createDraft('customer_credit_note', $this->createItem());
+        $note->referenceSale->update(['factus_number' => 'SETT-90002']);
+        FactusCredential::create([
+            'company_id' => $company->id,
+            'environment' => 'sandbox',
+            'client_id' => 'client-123',
+            'client_secret' => 'secret-123',
+            'username' => 'empresa@example.com',
+            'password' => 'super-secret',
+            'active' => true,
+        ]);
+        Cache::flush();
+        Http::preventStrayRequests();
+        Http::fake([
+            'api-sandbox.factus.com.co/oauth/token' => Http::response(['access_token' => 'token-123'], 200),
+            'api-sandbox.factus.com.co/v2/credit-notes/validate' => Http::response(['message' => 'Documento inválido'], 422),
+        ]);
+
+        $this->post(route('commercial-documents.dian', $note))
+            ->assertRedirect()
+            ->assertSessionHas('error', 'La nota no se envió: Factus rechazó la nota crédito: Documento inválido');
+
+        $note->refresh();
+        $this->assertSame('error', $note->dian_status);
+        $this->assertNull($note->dian_number);
+        $this->assertSame('Documento inválido', $note->dian_response['message']);
+    }
+
+    public function test_supplier_debit_note_cannot_be_sent_to_dian(): void
+    {
+        $this->authenticateWithCompany();
+        $note = $this->createDraft('supplier_debit_note', $this->createItem());
+
+        $this->get(route('commercial-documents.supplier-debit-notes'))
+            ->assertOk()
+            ->assertDontSee('Enviar a DIAN');
+        $this->post(route('commercial-documents.dian', $note))->assertStatus(422);
         $this->assertSame('not_configured', $note->fresh()->dian_status);
     }
 
@@ -489,13 +674,16 @@ class CommercialDocumentControllerTest extends TestCase
             },
             'third_party_id' => $party->id,
             'reference_invoice_id' => $referenceInvoiceId,
+            'payment_method_id' => null,
+            'withholding_concept' => $type === 'customer_credit_note' ? 'none' : null,
+            'correction_concept_code' => $type === 'customer_credit_note' ? '1' : null,
             'recipient_email' => 'buyer@example.com',
             'document_date' => '2026-09-26',
             'due_date' => '2026-10-26',
             'notes' => 'Documento de prueba',
             'items' => [[
                 'item_id' => $item->id,
-                'quantity' => 2,
+                'quantity' => $type === 'customer_credit_note' ? 1 : 2,
                 'unit_price' => $type === 'purchase_order' ? 50 : 100,
                 'iva_percentage' => 19,
                 'discount_percentage' => 0,

@@ -35,6 +35,8 @@ class CommercialDocument extends Model
             'due_date' => 'date',
             'converted_at' => 'datetime',
             'accounted_at' => 'datetime',
+            'dian_response' => 'array',
+            'dian_sent_at' => 'datetime',
         ];
     }
 
@@ -46,6 +48,11 @@ class CommercialDocument extends Model
     public function thirdParty(): BelongsTo
     {
         return $this->belongsTo(ThirdParty::class);
+    }
+
+    public function paymentMethod(): BelongsTo
+    {
+        return $this->belongsTo(PaymentMethod::class);
     }
 
     public function convertedSale(): BelongsTo

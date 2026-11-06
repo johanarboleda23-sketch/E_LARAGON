@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\AccountingPeriod;
 use App\Models\AccountingVoucher;
 use App\Models\ChartOfAccount;
 use App\Models\CommercialDocument;
@@ -78,6 +79,27 @@ class AccountingVoucherControllerTest extends TestCase
             ->assertSee('action="'.route('accounting.vouchers.store.typed', 'recibo_caja').'"', false)
             ->assertSee('name="voucher_type" value="recibo_caja"', false)
             ->assertDontSee('<select name="voucher_type"', false);
+    }
+
+    public function test_cash_receipt_cannot_be_created_for_a_closed_income_period(): void
+    {
+        $this->travelTo('2026-10-15 12:00:00');
+        $company = $this->authenticateWithCompany();
+        $debitAccount = $this->createAccount('110501', 'Caja', 1);
+        $creditAccount = $this->createAccount('130501', 'Cartera', 1);
+        $this->closeOctober($company);
+
+        $this->post(route('accounting.vouchers.store'), [
+            'voucher_type' => 'recibo_caja',
+            'voucher_date' => '2026-10-15',
+            'consecutive' => 'RC-CLOSED-1',
+            'lines' => [
+                ['chart_of_account_id' => $debitAccount->id, 'debit' => 100, 'credit' => 0],
+                ['chart_of_account_id' => $creditAccount->id, 'debit' => 0, 'credit' => 100],
+            ],
+        ])->assertStatus(409);
+
+        $this->assertDatabaseCount('accounting_vouchers', 0);
     }
 
     public function test_bulk_import_template_can_be_downloaded(): void
@@ -251,6 +273,20 @@ class AccountingVoucherControllerTest extends TestCase
         $this->actingAs($user)->withSession(['company_id' => $company->id]);
 
         return $company;
+    }
+
+    private function closeOctober(Company $company): void
+    {
+        AccountingPeriod::create([
+            'company_id' => $company->id,
+            'period_type' => 'month',
+            'period_key' => '2026-10',
+            'period_start' => '2026-10-01',
+            'period_end' => '2026-10-31',
+            'status' => 'closed',
+            'locked_modules' => ['purchases', 'income', 'expenses', 'bank'],
+            'closed_at' => now(),
+        ]);
     }
 
     private function createNote(string $type, ?Company $company = null): CommercialDocument

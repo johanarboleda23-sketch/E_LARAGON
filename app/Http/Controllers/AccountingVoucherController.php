@@ -8,6 +8,7 @@ use App\Models\CommercialDocument;
 use App\Models\Company;
 use App\Models\ThirdParty;
 use App\Services\AccountingEntryService;
+use App\Services\AccountingPeriodService;
 use App\Support\SpreadsheetReader;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -50,7 +51,10 @@ class AccountingVoucherController extends Controller
         'saldos_iniciales' => 'SI',
     ];
 
-    public function __construct(private readonly AccountingEntryService $accountingEntryService) {}
+    public function __construct(
+        private readonly AccountingEntryService $accountingEntryService,
+        private readonly AccountingPeriodService $periodService,
+    ) {}
 
     /**
      * Genera el siguiente consecutivo interno (solo control, no requiere resolución DIAN).
@@ -136,6 +140,10 @@ class AccountingVoucherController extends Controller
             'lines.*.debit' => 'nullable|numeric|min:0',
             'lines.*.credit' => 'nullable|numeric|min:0',
         ]);
+        $module = $this->periodModule($data['voucher_type']);
+        if ($module) {
+            $this->periodService->assertWritable($module, $data['voucher_date']);
+        }
 
         if ($fixedVoucherType) {
             $data['consecutive'] = self::nextInternalConsecutive($fixedVoucherType);
@@ -175,6 +183,11 @@ class AccountingVoucherController extends Controller
 
     public function destroy(AccountingVoucher $voucher)
     {
+        $module = $this->periodModule($voucher->voucher_type);
+        if ($module) {
+            $this->periodService->assertWritable($module, $voucher->voucher_date->toDateString());
+        }
+
         abort_if($voucher->commercial_document_id, 409, 'No se puede eliminar un comprobante vinculado a una nota contabilizada.');
         $voucher->update(['deleted_by' => auth()->id()]);
         $voucher->delete();
@@ -287,6 +300,7 @@ class AccountingVoucherController extends Controller
             }
 
             try {
+                $this->periodService->assertWritable('expenses', $date);
                 $expenseAccountId = $this->findPostingAccount($expenseCode);
                 $payableAccountId = $this->findPostingAccount($payableCode);
                 $ivaAccountId = $ivaRate > 0 ? $this->findPostingAccount($ivaCode) : null;
@@ -326,6 +340,15 @@ class AccountingVoucherController extends Controller
         }
 
         return back()->with('success', $message);
+    }
+
+    private function periodModule(string $voucherType): ?string
+    {
+        return match ($voucherType) {
+            'recibo_caja' => 'income',
+            'egreso', 'ajuste_contable' => 'expenses',
+            default => null,
+        };
     }
 
     private function findPostingAccount(string $code): int

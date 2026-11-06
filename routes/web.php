@@ -18,6 +18,7 @@ use App\Http\Controllers\NumberingResolutionController;
 use App\Http\Controllers\OpeningBalanceInvoiceController;
 use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\PayrollController;
+use App\Http\Controllers\PeriodClosingController;
 use App\Http\Controllers\PosController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PurchaseController;
@@ -179,10 +180,20 @@ Route::middleware(['auth', 'company'])->group(function () {
 
     Route::middleware('module:bank-reconciliation')->group(function () {
         Route::get('/conciliacion-bancaria', [BankReconciliationController::class, 'index'])->name('bank-reconciliation.index');
+        Route::get('/conciliacion-bancaria/saldos-diarios', [BankReconciliationController::class, 'balances'])->name('bank-reconciliation.balances');
+        Route::post('/conciliacion-bancaria/saldos-iniciales', [BankReconciliationController::class, 'storeOpeningBalance'])->name('bank-reconciliation.opening-balances.store');
         Route::post('/conciliacion-bancaria/importar', [BankReconciliationController::class, 'import'])->name('bank-reconciliation.import');
+        Route::post('/conciliacion-bancaria/{statement}/cuenta', [BankReconciliationController::class, 'assignAccount'])->name('bank-reconciliation.assign-account');
         Route::get('/conciliacion-bancaria/{statement}/sugerencias', [BankReconciliationController::class, 'suggestions'])->name('bank-reconciliation.suggestions');
         Route::post('/conciliacion-bancaria/{statement}/conciliar', [BankReconciliationController::class, 'reconcile'])->name('bank-reconciliation.reconcile');
         Route::post('/conciliacion-bancaria/{statement}/desconciliar', [BankReconciliationController::class, 'unmatch'])->name('bank-reconciliation.unmatch');
+    });
+
+    Route::middleware('module:period-closing')->group(function () {
+        Route::get('/cierres-contables', [PeriodClosingController::class, 'index'])->name('period-closing.index');
+        Route::post('/cierres-contables/cerrar-mes', [PeriodClosingController::class, 'closeMonth'])->name('period-closing.close-month');
+        Route::post('/cierres-contables/cerrar-ano', [PeriodClosingController::class, 'closeYear'])->name('period-closing.close-year');
+        Route::post('/cierres-contables/{period}/reabrir', [PeriodClosingController::class, 'reopen'])->name('period-closing.reopen');
     });
 
     Route::middleware('module:bulk-operations')->group(function () {

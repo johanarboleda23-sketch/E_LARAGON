@@ -5,12 +5,15 @@ namespace App\Http\Controllers;
 use App\Models\Purchase;
 use App\Models\Sale;
 use App\Models\SupportDocument;
+use App\Services\AccountingPeriodService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class PaymentController extends Controller
 {
+    public function __construct(private readonly AccountingPeriodService $periodService) {}
+
     /**
      * Registra un abono/pago sobre una venta, compra o documento soporte. El tipo de documento
      * viene fijo por ruta para no exponer la resolución polimórfica directamente al usuario.
@@ -38,6 +41,8 @@ class PaymentController extends Controller
             'method' => ['nullable', 'string', 'max:100'],
             'notes' => ['nullable', 'string', 'max:255'],
         ]);
+        $module = $document instanceof Sale ? 'income' : 'expenses';
+        $this->periodService->assertWritable($module, $data['payment_date']);
 
         return DB::transaction(function () use ($data, $document, $totalAttribute, $redirectTo): RedirectResponse {
             $lockedDocument = $document->newQuery()

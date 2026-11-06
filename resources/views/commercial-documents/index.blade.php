@@ -56,8 +56,12 @@
                             {{ $currentDocument ? 'Editar borrador '.$currentDocument->consecutive : 'Nuevo '.$configuration['label'] }}
                         </h1>
                         <p class="mt-1 text-sm text-gray-500">
-                            @if ($isNote)
-                                La nota debe referenciar una factura del mismo tercero. El envío a la DIAN requiere integración configurada.
+                            @if ($type === 'customer_credit_note')
+                                La nota guardada reduce el saldo de la factura, incluso como borrador. Para enviarla a la DIAN, la factura origen debe estar emitida por Factus.
+                            @elseif ($type === 'supplier_debit_note')
+                                La nota debe referenciar una factura del mismo proveedor. El envío electrónico corresponde al proveedor.
+                            @elseif ($isNote)
+                                La nota debe referenciar una factura del mismo tercero.
                             @else
                                 Guardar conserva el documento como borrador; la conversión actualiza inventario.
                             @endif
@@ -105,6 +109,15 @@
                             <input name="due_date" type="date" value="{{ old('due_date', $currentDocument?->due_date?->toDateString()) }}" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-teal-600 focus:ring-teal-600">
                         </label>
                         @if ($isNote)
+                            <label class="text-sm font-medium text-gray-700">
+                                Forma de pago
+                                <select name="payment_method_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-teal-600 focus:ring-teal-600">
+                                    <option value="">Sin especificar</option>
+                                    @foreach ($paymentMethods as $paymentMethod)
+                                        <option value="{{ $paymentMethod->id }}" @selected((string) $selectedPaymentMethodId === (string) $paymentMethod->id)>{{ $paymentMethod->name }}</option>
+                                    @endforeach
+                                </select>
+                            </label>
                             <label class="text-sm font-medium text-gray-700 sm:col-span-2">
                                 Factura origen
                                 <select name="reference_invoice_id" required class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-teal-600 focus:ring-teal-600">
@@ -119,6 +132,25 @@
                                         <option value="{{ $referenceInvoice->id }}" data-party="{{ $referenceParty }}" @selected((string) old('reference_invoice_id', $referenceId) === (string) $referenceInvoice->id)>
                                             {{ $referenceInvoice->invoice_number }} · {{ $referenceParty }} · {{ $referenceDate->format('d/m/Y') }} · ${{ number_format($referenceTotal, 2) }}
                                         </option>
+                                    @endforeach
+                                </select>
+                            </label>
+                        @endif
+                        @if ($type === 'customer_credit_note')
+                            <label class="text-sm font-medium text-gray-700">
+                                Concepto de retención
+                                <select id="withholding-concept" name="withholding_concept" required class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-teal-600 focus:ring-teal-600">
+                                    @foreach ($withholdingConcepts as $conceptKey => $concept)
+                                        <option value="{{ $conceptKey }}" data-rate="{{ $concept['rate'] }}" data-base-uvt="{{ $concept['base_uvt'] }}" data-base-on="{{ $concept['base_on'] }}" @selected($selectedWithholdingConcept === $conceptKey)>{{ $concept['label'] }}</option>
+                                    @endforeach
+                                </select>
+                            </label>
+                            <label class="text-sm font-medium text-gray-700">
+                                Concepto de corrección DIAN
+                                <select name="correction_concept_code" required class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-teal-600 focus:ring-teal-600">
+                                    <option value="">Selecciona el motivo</option>
+                                    @foreach ($correctionConcepts as $code => $reason)
+                                        <option value="{{ $code }}" @selected((string) $selectedCorrectionConceptCode === (string) $code)>{{ $code }} · {{ $reason }}</option>
                                     @endforeach
                                 </select>
                             </label>
@@ -192,6 +224,10 @@
                                 <dt class="text-gray-600">Descuentos</dt><dd id="discount-total" class="text-right font-medium tabular-nums">$0.00</dd>
                             @endif
                             <dt class="text-gray-600">IVA</dt><dd id="iva-total" class="text-right font-medium tabular-nums">$0.00</dd>
+                            @if ($type === 'customer_credit_note')
+                                <dt class="text-gray-600">Base de retención</dt><dd id="retention-base" class="text-right font-medium tabular-nums">$0.00</dd>
+                                <dt class="text-gray-600">Retención</dt><dd id="retention-total" class="text-right font-medium tabular-nums">$0.00</dd>
+                            @endif
                             <dt class="border-t border-gray-300 pt-2 font-bold text-gray-900">Total</dt><dd id="grand-total" class="border-t border-gray-300 pt-2 text-right font-bold tabular-nums text-teal-800">$0.00</dd>
                         </dl>
                     </div>
@@ -224,6 +260,12 @@
                             @if ($isNote)
                                 <a href="{{ route('accounting.vouchers.index', ['commercial_document_id' => $currentDocument->id]) }}" class="rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white">Contabilizar</a>
                                 <a href="{{ route('commercial-documents.statement', $currentDocument) }}" class="rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700">Ver estado de cuenta</a>
+                                @if ($type === 'customer_credit_note' && $currentDocument->dian_status !== 'sent')
+                                    <form method="POST" action="{{ route('commercial-documents.dian', $currentDocument) }}" onsubmit="return confirm('¿Enviar esta nota crédito a Factus para validación por la DIAN?')">
+                                        @csrf
+                                        <button class="rounded-md bg-indigo-700 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-800">Enviar a DIAN</button>
+                                    </form>
+                                @endif
                             @elseif (isset($configuration['convertLabel']))
                                 <form method="POST" action="{{ route('commercial-documents.convert', $currentDocument) }}" onsubmit="return confirm('¿Convertir este documento y aplicar sus movimientos de inventario?')">
                                     @csrf
@@ -274,17 +316,22 @@
                                         @if ($isNote)
                                             <span class="block text-xs text-gray-500">Factura origen: {{ $document->referenceSale?->invoice_number ?? $document->referencePurchase?->invoice_number ?? 'Sin referencia' }}</span>
                                         @endif
+                                        @if ($document->dian_status === 'sent' && $document->dian_number)
+                                            <span class="block text-xs text-emerald-700">DIAN: {{ $document->dian_number }}</span>
+                                        @endif
                                     </td>
                                     <td class="whitespace-nowrap px-3 py-3 text-right tabular-nums">${{ number_format($document->total, 2) }}</td>
                                     <td class="px-3 py-3">
                                         <span class="rounded-full px-2 py-1 text-xs font-semibold {{ in_array($document->status, ['converted', 'accounted'], true) ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-700' }}">
-                                            {{ $document->status === 'converted' ? 'Convertido' : ($document->status === 'accounted' ? 'Contabilizada' : 'Borrador') }}
+                                            {{ $document->dian_status === 'sent' ? 'Enviada a DIAN' : ($document->status === 'converted' ? 'Convertido' : ($document->status === 'accounted' ? 'Contabilizada' : 'Borrador')) }}
                                         </span>
                                     </td>
                                     <td class="whitespace-nowrap px-3 py-3">
                                         <div class="flex flex-wrap items-center justify-end gap-2">
                                             @if ($document->status === 'draft')
-                                                <a href="{{ route($configuration['indexRoute'], ['document' => $document->id]) }}" class="font-semibold text-teal-800 hover:underline">Editar</a>
+                                                @if ($document->dian_status !== 'sent')
+                                                    <a href="{{ route($configuration['indexRoute'], ['document' => $document->id]) }}" class="font-semibold text-teal-800 hover:underline">Editar</a>
+                                                @endif
                                                 <form method="POST" action="{{ route('commercial-documents.email', $document) }}" class="flex items-center gap-1">
                                                     @csrf
                                                     <input name="email" type="email" value="{{ $document->recipient_email }}" required aria-label="Correo para {{ $document->consecutive }}" placeholder="Correo" class="w-36 rounded border-gray-300 text-xs">
@@ -296,6 +343,12 @@
                                                     <form method="POST" action="{{ route('commercial-documents.convert', $document) }}" onsubmit="return confirm('¿{{ $configuration['convertLabel'] }} y aplicar movimientos de inventario?')">
                                                         @csrf
                                                         <button class="rounded bg-amber-600 px-2 py-1 text-xs font-semibold text-white">{{ $configuration['convertLabel'] }}</button>
+                                                    </form>
+                                                @endif
+                                                @if ($document->document_type === 'customer_credit_note' && $document->dian_status !== 'sent')
+                                                    <form method="POST" action="{{ route('commercial-documents.dian', $document) }}" onsubmit="return confirm('¿Enviar esta nota crédito a Factus para validación por la DIAN?')">
+                                                        @csrf
+                                                        <button class="rounded bg-indigo-700 px-2 py-1 text-xs font-semibold text-white">Enviar a DIAN</button>
                                                     </form>
                                                 @endif
                                             @endif
@@ -328,6 +381,7 @@
         const catalog = @json($items->values());
         const documentType = @json($type);
         const isPurchaseDocument = @json($isPurchaseDocument);
+        const withholdingUvt = @json($uvt);
         let lineIndex = {{ count($formLines) }};
 
         function escapeHtml(value) {
@@ -407,9 +461,21 @@
                 ivaTotal += iva;
             });
 
+            let retentionBase = 0;
+            let retentionTotal = 0;
+            const withholdingConcept = document.getElementById('withholding-concept')?.selectedOptions[0];
+            if (withholdingConcept) {
+                retentionBase = withholdingConcept.dataset.baseOn === 'iva' ? ivaTotal : subtotal - discountTotal;
+                const minimumBase = Number(withholdingConcept.dataset.baseUvt) * withholdingUvt;
+                if (retentionBase < minimumBase) retentionBase = 0;
+                retentionTotal = retentionBase * Number(withholdingConcept.dataset.rate || 0);
+                document.getElementById('retention-base').textContent = '$' + fmt(retentionBase);
+                document.getElementById('retention-total').textContent = '$' + fmt(retentionTotal);
+            }
+
             document.getElementById('subtotal').textContent = '$' + fmt(subtotal);
             document.getElementById('iva-total').textContent = '$' + fmt(ivaTotal);
-            document.getElementById('grand-total').textContent = '$' + fmt(subtotal - discountTotal + ivaTotal);
+            document.getElementById('grand-total').textContent = '$' + fmt(subtotal - discountTotal + ivaTotal - retentionTotal);
             const discountElement = document.getElementById('discount-total');
             if (discountElement) {
                 discountElement.textContent = '$' + fmt(discountTotal);
@@ -428,6 +494,8 @@
                 calculateTotals();
             } else if (event.target.matches('.unit-select')) {
                 updateDocumentPrice(event.target.closest('.document-line'));
+                calculateTotals();
+            } else if (event.target.matches('#withholding-concept')) {
                 calculateTotals();
             }
         });

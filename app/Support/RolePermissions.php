@@ -23,6 +23,7 @@ class RolePermissions
         'payroll' => ['contador'],
         'bulk-operations' => ['auxiliar', 'vendedor', 'contador'],
         'bank-reconciliation' => ['contador'],
+        'period-closing' => ['contador'],
         'logistics' => ['auxiliar'],
         'numbering-resolutions' => ['contador'],
         'currency' => ['contador', 'auxiliar'],

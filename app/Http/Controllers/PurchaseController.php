@@ -11,6 +11,7 @@ use App\Models\Purchase;
 use App\Models\PurchaseDetail;
 use App\Models\ThirdParty;
 use App\Services\AccountingEntryService;
+use App\Services\AccountingPeriodService;
 use App\Services\DianInvoiceXmlReader;
 use App\Services\InventoryUnitService;
 use Illuminate\Http\Request;
@@ -25,6 +26,7 @@ class PurchaseController extends Controller
     public function __construct(
         private readonly AccountingEntryService $accountingEntryService,
         private readonly InventoryUnitService $inventoryUnitService,
+        private readonly AccountingPeriodService $periodService,
     ) {}
 
     /**
@@ -100,6 +102,7 @@ class PurchaseController extends Controller
             'items.*.depreciation_expense_account_id' => ['nullable', 'integer', 'exists:chart_of_accounts,id'],
             'items.*.accumulated_depreciation_account_id' => ['nullable', 'integer', 'exists:chart_of_accounts,id'],
         ]);
+        $this->periodService->assertWritable('purchases', now()->toDateString());
 
         foreach ($data['items'] as $index => $itemData) {
             $lineType = $itemData['purchase_line_type'];
@@ -387,6 +390,8 @@ class PurchaseController extends Controller
             'items.*.depreciation_expense_account_id' => ['nullable', 'integer', 'exists:chart_of_accounts,id'],
             'items.*.accumulated_depreciation_account_id' => ['nullable', 'integer', 'exists:chart_of_accounts,id'],
         ]);
+        $this->periodService->assertWritable('purchases', $purchase->purchase_date->toDateString());
+        $this->periodService->assertWritable('purchases', $data['purchase_date']);
 
         foreach ($data['items'] as $index => $itemData) {
             $lineType = $itemData['purchase_line_type'];
@@ -454,6 +459,8 @@ class PurchaseController extends Controller
 
     public function account(Purchase $purchase)
     {
+        $this->periodService->assertWritable('purchases', $purchase->purchase_date->toDateString());
+
         if ($purchase->accounting_voucher_id) {
             return back()->with('success', 'Esta factura ya estaba contabilizada.');
         }
@@ -511,6 +518,8 @@ class PurchaseController extends Controller
 
     public function destroy(Purchase $purchase)
     {
+        $this->periodService->assertWritable('purchases', $purchase->purchase_date->toDateString());
+
         $purchase->loadMissing('details.item');
         $affectedItemIds = $purchase->details->where('purchase_line_type', 'producto')->pluck('item_id')->filter()->unique();
 

@@ -18,7 +18,9 @@ trait HasPayments
 
     public function paidAmount(): float
     {
-        return (float) $this->payments()->sum('amount');
+        return $this->relationLoaded('payments')
+            ? (float) $this->payments->sum('amount')
+            : (float) $this->payments()->sum('amount');
     }
 
     public function balanceDue(float $total): float

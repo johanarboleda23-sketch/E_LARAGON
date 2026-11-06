@@ -74,6 +74,7 @@
                     ['name' => 'PUC', 'hint' => 'Plan único de cuentas', 'route' => 'accounting.puc.index', 'icon' => '📒'],
                     ['name' => 'Documento soporte', 'hint' => 'Compras a no obligados', 'route' => 'support-documents.index', 'icon' => '🧾'],
                     ['name' => 'Conciliación bancaria', 'hint' => 'Extractos y cruces', 'route' => 'bank-reconciliation.index', 'icon' => '🏦'],
+                    ['name' => 'Cierres contables', 'hint' => 'Informes y bloqueo de periodos', 'route' => 'period-closing.index', 'icon' => '🔒'],
                     ['name' => 'Nota crédito clientes', 'hint' => 'Devoluciones a clientes', 'route' => 'commercial-documents.customer-credit-notes', 'icon' => '↩️'],
                     ['name' => 'Nota débito proveedores', 'hint' => 'Ajustes a proveedores', 'route' => 'commercial-documents.supplier-debit-notes', 'icon' => '↪️'],
                     ['name' => 'Logística', 'hint' => 'Rutas y entregas', 'route' => 'logistics.index', 'icon' => '🚚'],

@@ -16,6 +16,7 @@ use App\Models\Purchase;
 use App\Models\Sale;
 use App\Models\SaleDetail;
 use App\Services\AccountingEntryService;
+use App\Services\AccountingPeriodService;
 use App\Services\InventoryUnitService;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Query\Builder;
@@ -31,6 +32,7 @@ class CashRegisterController extends Controller
     public function __construct(
         private readonly AccountingEntryService $accountingEntryService,
         private readonly InventoryUnitService $inventoryUnitService,
+        private readonly AccountingPeriodService $periodService,
     ) {}
 
     private const SETTLEMENT_ACTIONS = [
@@ -252,6 +254,16 @@ class CashRegisterController extends Controller
             'expenses.*.concept' => ['required', 'string', 'max:255'],
             'expenses.*.amount' => ['required', 'numeric', 'min:0.01'],
         ]);
+        $hasIncome = collect($data['stops'] ?? [])->contains(
+            fn (array $stop): bool => in_array($stop['payment_action'] ?? null, ['1105', '1120', 'collection'], true)
+                && (float) ($stop['amount_paid'] ?? 0) > 0,
+        );
+        if ($hasIncome) {
+            $this->periodService->assertWritable('income', now()->toDateString());
+        }
+        if (! empty($data['expenses'])) {
+            $this->periodService->assertWritable('expenses', now()->toDateString());
+        }
 
         $route = DeliveryRoute::query()->findOrFail($data['route_id']);
         $session = CashRegisterSession::query()->findOrFail($data['session_id']);
@@ -420,6 +432,7 @@ class CashRegisterController extends Controller
             }
 
             foreach ($session->expenses as $existingExpense) {
+                $this->periodService->assertWritable('expenses', $existingExpense->expense_date->toDateString());
                 $this->removeAccountingVoucher($existingExpense->accounting_voucher_id);
             }
             $session->expenses()->delete();
@@ -717,6 +730,7 @@ class CashRegisterController extends Controller
             'payment_method' => ['required', 'in:1105,1120'],
             'session_id' => ['required', 'integer'],
         ]);
+        $this->periodService->assertWritable('income', now()->toDateString());
         $sale = Sale::query()->findOrFail($data['sale_id']);
         $session = CashRegisterSession::query()->findOrFail($data['session_id']);
 
@@ -759,6 +773,7 @@ class CashRegisterController extends Controller
             'amount' => ['required', 'numeric', 'min:0.01'],
             'payment_method' => ['required', 'in:1105,1120'],
         ]);
+        $this->periodService->assertWritable('expenses', now()->toDateString());
 
         DB::transaction(function () use ($data, $cashRegisterSession): void {
             $cashRegisterSession = CashRegisterSession::query()->lockForUpdate()->findOrFail($cashRegisterSession->id);
@@ -807,6 +822,7 @@ class CashRegisterController extends Controller
             'concept' => ['required', 'string', 'max:255'],
             'amount' => ['required', 'numeric', 'min:0.01'],
         ]);
+        $this->periodService->assertWritable('expenses', now()->toDateString());
 
         DB::transaction(function () use ($data, $cashRegisterSession): void {
             $cashRegisterSession = CashRegisterSession::query()->lockForUpdate()->findOrFail($cashRegisterSession->id);

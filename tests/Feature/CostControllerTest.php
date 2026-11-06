@@ -91,6 +91,37 @@ class CostControllerTest extends TestCase
         $this->assertSame(130.0, (float) $item->sale_price);
     }
 
+    public function test_monthly_cost_report_includes_purchases_on_the_last_day_of_the_month(): void
+    {
+        $this->authenticateWithCompany();
+        $item = Item::create([
+            'type' => 'producto',
+            'name' => 'Producto mensual',
+            'code' => 'SKU-COST-006',
+            'sale_price' => 100,
+            'purchase_price' => 50,
+            'stock' => 0,
+            'min_stock' => 0,
+        ]);
+
+        $this->travelTo('2026-10-31 14:00:00');
+        $this->post(route('purchases.store'), $this->purchasePayload($item, 'DAV-COST-006', 10, 100))
+            ->assertRedirect(route('purchases.index'));
+
+        $this->travelTo('2026-11-01 09:00:00');
+        $this->post(route('purchases.store'), $this->purchasePayload($item, 'DAV-COST-007', 5, 200))
+            ->assertRedirect(route('purchases.index'));
+
+        $this->get(route('costs.index', ['year' => 2026, 'month' => 10]))
+            ->assertViewHas('monthCosts', function ($monthCosts) use ($item): bool {
+                $cost = $monthCosts->get($item->id);
+
+                return $cost !== null
+                    && (float) $cost->purchased_quantity === 10.0
+                    && (float) $cost->purchase_cost === 1000.0;
+            });
+    }
+
     private function authenticateWithCompany(): Company
     {
         $company = Company::factory()->create();

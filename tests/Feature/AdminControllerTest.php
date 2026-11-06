@@ -235,12 +235,14 @@ class AdminControllerTest extends TestCase
             'username' => 'empresa@example.com',
             'password' => 'super-secret',
             'invoice_numbering_range_id' => 4,
+            'credit_note_numbering_range_id' => 8,
         ])->assertRedirect();
 
         $credential = $company->factusCredential()->firstOrFail();
         $this->assertSame('client-123', $credential->client_id);
         $this->assertSame('secret-123', $credential->client_secret);
         $this->assertSame(4, $credential->invoice_numbering_range_id);
+        $this->assertSame(8, $credential->credit_note_numbering_range_id);
     }
 
     public function test_admin_can_configure_the_social_security_operator(): void

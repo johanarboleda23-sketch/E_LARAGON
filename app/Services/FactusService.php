@@ -2,11 +2,13 @@
 
 namespace App\Services;
 
+use App\Models\CommercialDocument;
 use App\Models\Company;
 use App\Models\FactusCredential;
 use App\Models\PayrollLine;
 use App\Models\Sale;
 use App\Models\SupportDocument;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 
@@ -58,6 +60,88 @@ class FactusService
             'factus_status' => 'enviada',
             'factus_number' => $response->json('data.bill.number'),
             'factus_cufe' => $response->json('data.bill.cufe'),
+        ])->save();
+
+        return true;
+    }
+
+    public function sendCustomerCreditNote(CommercialDocument $document, ?int $companyId, ?string &$skipReason = null): bool
+    {
+        if ($document->document_type !== 'customer_credit_note') {
+            $skipReason = 'Solo se pueden enviar a la DIAN notas crédito de clientes.';
+
+            return false;
+        }
+
+        if ($document->status !== 'draft' || $document->dian_status === 'sent') {
+            $skipReason = 'La nota no está disponible para envío a la DIAN.';
+
+            return false;
+        }
+
+        $credential = $this->resolveCredential($companyId);
+        if (! $credential) {
+            $skipReason = 'Configura las credenciales de Factus en Administración para enviar notas crédito a la DIAN.';
+
+            return false;
+        }
+
+        $document->loadMissing(['lines.item', 'referenceSale']);
+        if (! $document->referenceSale?->factus_number) {
+            $skipReason = 'La factura origen debe estar emitida electrónicamente por Factus antes de crear su nota crédito.';
+
+            return false;
+        }
+
+        if (! $document->correction_concept_code) {
+            $skipReason = 'Selecciona el concepto de corrección DIAN antes de enviar la nota.';
+
+            return false;
+        }
+
+        try {
+            $token = $this->getAccessToken($credential);
+        } catch (\Throwable $e) {
+            $skipReason = 'No se pudo autenticar con Factus: '.$e->getMessage();
+
+            return false;
+        }
+
+        try {
+            $response = Http::withToken($token)
+                ->acceptJson()
+                ->connectTimeout(5)
+                ->timeout(30)
+                ->post($this->baseUrl($credential).'/v2/credit-notes/validate', $this->creditNotePayload($document, $credential));
+        } catch (ConnectionException $e) {
+            $document->forceFill([
+                'dian_status' => 'error',
+                'dian_response' => ['message' => $e->getMessage()],
+                'dian_sent_at' => now(),
+            ])->save();
+            $skipReason = 'No se pudo conectar con Factus para enviar la nota crédito.';
+
+            return false;
+        }
+
+        $responseBody = $response->json();
+        $document->forceFill([
+            'dian_response' => is_array($responseBody) ? $responseBody : ['body' => $response->body()],
+            'dian_sent_at' => now(),
+        ]);
+
+        if (! $response->successful()) {
+            $document->forceFill(['dian_status' => 'error'])->save();
+            $skipReason = 'Factus rechazó la nota crédito: '.($response->json('message') ?? $response->body());
+
+            return false;
+        }
+
+        $creditNoteData = $response->json('data.credit_note') ?? $response->json('data.creditNote') ?? [];
+        $document->forceFill([
+            'dian_status' => 'sent',
+            'dian_number' => is_array($creditNoteData) ? ($creditNoteData['number'] ?? null) : null,
+            'dian_cude' => is_array($creditNoteData) ? ($creditNoteData['cude'] ?? null) : null,
         ])->save();
 
         return true;
@@ -159,13 +243,17 @@ class FactusService
             'factus_access_token_'.$credential->company_id,
             now()->addMinutes(55),
             function () use ($credential): string {
-                $response = Http::asForm()->acceptJson()->post($this->baseUrl($credential).'/oauth/token', [
-                    'grant_type' => 'password',
-                    'client_id' => $credential->client_id,
-                    'client_secret' => $credential->client_secret,
-                    'username' => $credential->username,
-                    'password' => $credential->password,
-                ]);
+                $response = Http::asForm()
+                    ->acceptJson()
+                    ->connectTimeout(5)
+                    ->timeout(20)
+                    ->post($this->baseUrl($credential).'/oauth/token', [
+                        'grant_type' => 'password',
+                        'client_id' => $credential->client_id,
+                        'client_secret' => $credential->client_secret,
+                        'username' => $credential->username,
+                        'password' => $credential->password,
+                    ]);
 
                 if (! $response->successful()) {
                     throw new \RuntimeException($response->json('message') ?? 'Credenciales inválidas.');
@@ -228,6 +316,63 @@ class FactusService
                 ]],
             ])->values()->all(),
         ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function creditNotePayload(CommercialDocument $document, FactusCredential $credential): array
+    {
+        $defaults = config('factus.defaults');
+        $sale = $document->referenceSale;
+        $customerDocument = (string) ($sale->customer_document ?? '');
+        $isCompany = strlen(preg_replace('/\D/', '', $customerDocument)) >= 9;
+        $notes = trim((string) $document->notes);
+        $payload = [
+            'reference_code' => $document->consecutive,
+            'correction_concept_code' => $document->correction_concept_code,
+            'bill_number' => $sale->factus_number,
+            'customer' => [
+                'identification_document_code' => $isCompany ? $defaults['nit_identification_document_code'] : $defaults['identification_document_code'],
+                'identification' => $customerDocument !== '' ? $customerDocument : '222222222222',
+                'company' => $sale->customer_name,
+                'trade_name' => $sale->customer_name,
+                'email' => $sale->customer_email,
+                'legal_organization_code' => $isCompany ? $defaults['nit_legal_organization_code'] : $defaults['legal_organization_code'],
+                'tribute_code' => $defaults['tribute_code'],
+                'country_code' => $defaults['country_code'],
+                'municipality_code' => $defaults['municipality_code'],
+            ],
+            'payment_details' => [[
+                'payment_form' => $defaults['payment_form'],
+                'payment_method_code' => $defaults['payment_method_code'],
+                'reference_code' => $document->consecutive,
+                'amount' => number_format((float) $document->total, 2, '.', ''),
+            ]],
+            'items' => $document->lines->map(fn ($line) => [
+                'code_reference' => (string) $line->item_id,
+                'name' => $line->description,
+                'quantity' => number_format((float) $line->quantity, 4, '.', ''),
+                'discount_rate' => number_format((float) $line->discount_percentage, 2, '.', ''),
+                'price' => number_format((float) $line->unit_price, 2, '.', ''),
+                'unit_measure_code' => $defaults['unit_measure_code'],
+                'standard_code' => $defaults['standard_code'],
+                'taxes' => (float) $line->iva_percentage > 0 ? [[
+                    'code' => $defaults['tax_code'],
+                    'rate' => number_format((float) $line->iva_percentage, 2, '.', ''),
+                ]] : [],
+            ])->values()->all(),
+        ];
+
+        if ($credential->credit_note_numbering_range_id) {
+            $payload['numbering_range_id'] = $credential->credit_note_numbering_range_id;
+        }
+
+        if ($notes !== '') {
+            $payload['observation'] = mb_substr($notes, 0, 500);
+        }
+
+        return $payload;
     }
 
     /**

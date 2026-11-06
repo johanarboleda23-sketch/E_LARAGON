@@ -30,4 +30,9 @@ class BankStatement extends Model
     {
         return $this->belongsTo(User::class, 'reconciled_by');
     }
+
+    public function paymentMethod(): BelongsTo
+    {
+        return $this->belongsTo(PaymentMethod::class);
+    }
 }

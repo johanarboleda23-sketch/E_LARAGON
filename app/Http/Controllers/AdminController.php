@@ -180,6 +180,7 @@ class AdminController extends Controller
             'username' => ['required', 'string', 'max:255'],
             'password' => ['required', 'string', 'max:255'],
             'invoice_numbering_range_id' => ['nullable', 'integer'],
+            'credit_note_numbering_range_id' => ['nullable', 'integer'],
             'payroll_numbering_range_id' => ['nullable', 'integer'],
         ]);
         $company = $request->user()->companies()->where('companies.id', session('company_id'))->firstOrFail();

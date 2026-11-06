@@ -12,6 +12,7 @@ use App\Models\ThirdParty;
 use App\Services\AccountingEntryService;
 use App\Services\FactusService;
 use App\Services\InventoryUnitService;
+use App\Services\SalesRetentionCalculator;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -25,6 +26,7 @@ class SaleController extends Controller
         private readonly AccountingEntryService $accountingEntryService,
         private readonly FactusService $factusService,
         private readonly InventoryUnitService $inventoryUnitService,
+        private readonly SalesRetentionCalculator $salesRetentionCalculator,
     ) {}
 
     public function index()
@@ -87,17 +89,15 @@ class SaleController extends Controller
             'items.*.discount_percentage' => 'nullable|numeric|min:0|max:100',
         ]);
 
-        $concept = config('colombia_withholdings.sales_concepts.'.$data['withholding_concept']);
-        $retentionBase = $concept['base_on'] === 'iva' ? (float) $data['iva_total'] : (float) $data['subtotal'] - (float) $data['discount_total'];
-        $minimumBase = (float) $concept['base_uvt'] * (float) config('colombia_withholdings.uvt');
-        $retentionBase = $retentionBase >= $minimumBase ? $retentionBase : 0;
-
-        // CORREGIDO: multiplicación explícita para la retención total
-        $retentionTotal = round($retentionBase * (float) $concept['rate'], 2);
-
-        $data['retention_base'] = $retentionBase;
-        $data['retention_total'] = $retentionTotal;
-        $data['total'] = round((float) $data['subtotal'] - (float) $data['discount_total'] + (float) $data['iva_total'] - $retentionTotal, 2);
+        $retention = $this->salesRetentionCalculator->calculate(
+            $data['withholding_concept'],
+            (float) $data['subtotal'],
+            (float) $data['discount_total'],
+            (float) $data['iva_total'],
+        );
+        $data['retention_base'] = $retention['retention_base'];
+        $data['retention_total'] = $retention['retention_total'];
+        $data['total'] = round((float) $data['subtotal'] - (float) $data['discount_total'] + (float) $data['iva_total'] - $retention['retention_total'], 2);
 
         try {
             $sale = DB::transaction(function () use ($data, $request) {
@@ -313,6 +313,16 @@ class SaleController extends Controller
             'items.*.discount_percentage' => 'nullable|numeric|min:0|max:100',
         ]);
 
+        $retention = $this->salesRetentionCalculator->calculate(
+            $data['withholding_concept'],
+            (float) $data['subtotal'],
+            (float) $data['discount_total'],
+            (float) $data['iva_total'],
+        );
+        $data['retention_base'] = $retention['retention_base'];
+        $data['retention_total'] = $retention['retention_total'];
+        $data['total'] = round((float) $data['subtotal'] - (float) $data['discount_total'] + (float) $data['iva_total'] - $retention['retention_total'], 2);
+
         DB::transaction(function () use ($data, $sale, $request): void {
             $this->reverseDetailsAndStock($sale);
 
@@ -348,7 +358,7 @@ class SaleController extends Controller
     {
         $documents = Sale::query()
             ->where('customer_name', $sale->customer_name)
-            ->with('payments')
+            ->with(['payments', 'creditNotes'])
             ->orderBy('sale_date')
             ->orderBy('id')
             ->get();

@@ -58,7 +58,7 @@
                         <h3 class="mb-2 font-semibold">Usuarios de {{ $company->name }}</h3>
                         <table class="w-full text-left text-sm">
                             <thead class="border-b text-xs uppercase">
-                                <tr><th class="p-2">Usuario</th><th class="p-2">Correo</th><th class="p-2">Rol</th></tr>
+                                <tr><th class="p-2">Usuario</th><th class="p-2">Correo</th><th class="p-2">Rol</th><th class="p-2">Acciones</th></tr>
                             </thead>
                             <tbody>
                                 @forelse($members as $member)
@@ -83,9 +83,22 @@
                                                 </form>
                                             @endif
                                         </td>
+                                        <td class="p-2">
+                                            @if($member->pivot->role === 'owner')
+                                                <span class="text-xs text-gray-500">Protegido</span>
+                                            @elseif($member->is(auth()->user()))
+                                                <span class="text-xs text-gray-500">Tu acceso actual</span>
+                                            @else
+                                                <form method="POST" action="{{ route('admin.members.destroy', $member) }}" onsubmit="return confirm('¿Quitar a este usuario de la empresa activa? Su cuenta y acceso a otras empresas se conservarán.')">
+                                                    @csrf
+                                                    @method('DELETE')
+                                                    <button type="submit" class="font-semibold text-red-600 hover:underline">Quitar de esta empresa</button>
+                                                </form>
+                                            @endif
+                                        </td>
                                     </tr>
                                 @empty
-                                    <tr><td colspan="3" class="p-3 text-center text-sm text-gray-500">Aún no hay usuarios vinculados a esta empresa.</td></tr>
+                                    <tr><td colspan="4" class="p-3 text-center text-sm text-gray-500">Aún no hay usuarios vinculados a esta empresa.</td></tr>
                                 @endforelse
                             </tbody>
                         </table>

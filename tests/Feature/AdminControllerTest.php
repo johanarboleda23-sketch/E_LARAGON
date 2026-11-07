@@ -57,6 +57,8 @@ class AdminControllerTest extends TestCase
         $company = $this->authenticateWithCompany();
         $member = User::factory()->create();
         $company->users()->attach($member->id, ['role' => 'vendedor']);
+        $otherCompany = Company::factory()->create();
+        $otherCompany->users()->attach($member->id, ['role' => 'contador']);
 
         $this->get(route('admin.index'))
             ->assertOk()
@@ -64,7 +66,8 @@ class AdminControllerTest extends TestCase
             ->assertSee('Vincular una cuenta existente')
             ->assertSee($member->name)
             ->assertSee($member->email)
-            ->assertSee('Guardar rol');
+            ->assertSee('Guardar rol')
+            ->assertSee('Quitar de esta empresa');
     }
 
     public function test_admin_can_change_a_member_role_and_the_saved_role_controls_module_access(): void
@@ -137,6 +140,99 @@ class AdminControllerTest extends TestCase
             'company_id' => $company->id,
             'user_id' => $owner->id,
             'role' => 'owner',
+        ]);
+    }
+
+    public function test_admin_can_remove_a_member_from_the_active_company_without_deleting_the_account_or_other_memberships(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $member = User::factory()->create();
+        $company->users()->attach($member->id, ['role' => 'vendedor']);
+        $otherCompany = Company::factory()->create();
+        $otherCompany->users()->attach($member->id, ['role' => 'contador']);
+
+        $this->delete(route('admin.members.destroy', $member))
+            ->assertRedirect()
+            ->assertSessionHas('success', 'Usuario quitado de esta empresa. Su cuenta y acceso a otras empresas se conservaron.');
+
+        $this->assertModelExists($member);
+        $this->assertDatabaseMissing('company_user', [
+            'company_id' => $company->id,
+            'user_id' => $member->id,
+        ]);
+        $this->assertDatabaseHas('company_user', [
+            'company_id' => $otherCompany->id,
+            'user_id' => $member->id,
+            'role' => 'contador',
+        ]);
+    }
+
+    public function test_admin_cannot_remove_their_own_access_from_the_company(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $administrator = auth()->user();
+
+        $this->followingRedirects()
+            ->from(route('admin.index'))
+            ->delete(route('admin.members.destroy', $administrator))
+            ->assertSee('No puedes quitar tu propio acceso a la empresa.');
+
+        $this->assertDatabaseHas('company_user', [
+            'company_id' => $company->id,
+            'user_id' => $administrator->id,
+            'role' => 'admin',
+        ]);
+    }
+
+    public function test_admin_cannot_remove_a_company_owner(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $owner = User::factory()->create();
+        $company->users()->attach($owner->id, ['role' => 'owner']);
+
+        $this->followingRedirects()
+            ->from(route('admin.index'))
+            ->delete(route('admin.members.destroy', $owner))
+            ->assertSee('El propietario de la empresa no se puede quitar.');
+
+        $this->assertDatabaseHas('company_user', [
+            'company_id' => $company->id,
+            'user_id' => $owner->id,
+            'role' => 'owner',
+        ]);
+    }
+
+    public function test_non_admin_cannot_remove_a_company_member(): void
+    {
+        $company = Company::factory()->create();
+        $user = User::factory()->create();
+        $user->companies()->attach($company->id, ['role' => 'contador']);
+        $member = User::factory()->create();
+        $company->users()->attach($member->id, ['role' => 'vendedor']);
+        $this->actingAs($user)->withSession(['company_id' => $company->id]);
+
+        $this->delete(route('admin.members.destroy', $member))->assertForbidden();
+
+        $this->assertDatabaseHas('company_user', [
+            'company_id' => $company->id,
+            'user_id' => $member->id,
+            'role' => 'vendedor',
+        ]);
+    }
+
+    public function test_admin_cannot_remove_a_user_from_another_company(): void
+    {
+        $this->authenticateWithCompany();
+        $otherCompany = Company::factory()->create();
+        $otherCompanyMember = User::factory()->create();
+        $otherCompany->users()->attach($otherCompanyMember->id, ['role' => 'admin']);
+
+        $this->delete(route('admin.members.destroy', $otherCompanyMember))->assertNotFound();
+
+        $this->assertDatabaseHas('company_user', [
+            'company_id' => $otherCompany->id,
+            'user_id' => $otherCompanyMember->id,
+            'role' => 'admin',
         ]);
     }
 

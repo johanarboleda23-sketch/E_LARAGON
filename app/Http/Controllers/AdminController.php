@@ -115,6 +115,38 @@ class AdminController extends Controller
         return back()->with('success', 'Rol actualizado.');
     }
 
+    public function destroyMember(Request $request, User $user)
+    {
+        $this->authorizeAdmin($request);
+        $company = $request->user()->companies()->where('companies.id', session('company_id'))->firstOrFail();
+        $member = $company->users()->whereKey($user->id)->firstOrFail();
+
+        if ($member->pivot->role === 'owner') {
+            throw ValidationException::withMessages([
+                'member' => 'El propietario de la empresa no se puede quitar.',
+            ]);
+        }
+
+        if ($member->is($request->user())) {
+            throw ValidationException::withMessages([
+                'member' => 'No puedes quitar tu propio acceso a la empresa.',
+            ]);
+        }
+
+        if ($member->pivot->role === 'admin') {
+            $administratorCount = $company->users()->wherePivotIn('role', ['admin', 'owner'])->count();
+            if ($administratorCount <= 1) {
+                throw ValidationException::withMessages([
+                    'member' => 'La empresa debe conservar al menos un administrador.',
+                ]);
+            }
+        }
+
+        $company->users()->detach($member->id);
+
+        return back()->with('success', 'Usuario quitado de esta empresa. Su cuenta y acceso a otras empresas se conservaron.');
+    }
+
     public function updatePaymentMethod(Request $request, PaymentMethod $paymentMethod)
     {
         $this->authorizeAdmin($request);

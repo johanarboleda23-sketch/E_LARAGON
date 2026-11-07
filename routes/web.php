@@ -214,6 +214,7 @@ Route::middleware(['auth', 'company'])->group(function () {
     Route::post('/admin/users', [AdminController::class, 'storeUser'])->name('admin.users.store');
     Route::post('/admin/members', [AdminController::class, 'addMember'])->name('admin.members.store');
     Route::put('/admin/members/{user}/role', [AdminController::class, 'updateRole'])->name('admin.members.role');
+    Route::delete('/admin/members/{user}', [AdminController::class, 'destroyMember'])->name('admin.members.destroy');
     Route::put('/admin/payment-methods/{paymentMethod}', [AdminController::class, 'updatePaymentMethod'])->name('admin.payment-methods.puc');
     Route::post('/admin/payment-methods', [AdminController::class, 'storePaymentMethod'])->name('admin.payment-methods.store');
     Route::delete('/admin/payment-methods/{paymentMethod}', [AdminController::class, 'destroyPaymentMethod'])->name('admin.payment-methods.destroy');

@@ -205,12 +205,15 @@ class AccountingVoucherControllerTest extends TestCase
         $response = $this->post(route('accounting.vouchers.store'), $this->voucherPayload($note, $debitAccount, $creditAccount));
 
         $voucher = AccountingVoucher::query()->where('commercial_document_id', $note->id)->firstOrFail();
-        $response->assertRedirect(route('accounting.vouchers.accounting', $voucher));
+        $response->assertRedirect(route('accounting.vouchers.index', ['preview' => $voucher->id]));
         $this->assertSame('accounted', $note->fresh()->status);
         $this->assertNotNull($note->fresh()->accounted_at);
         $this->assertSame(119.0, (float) $voucher->total_debit);
         $this->assertSame(119.0, (float) $voucher->total_credit);
         $this->assertDatabaseCount('accounting_voucher_lines', 2);
+        $this->get(route('accounting.vouchers.index', ['preview' => $voucher->id]))
+            ->assertOk()
+            ->assertSeeText('Comprobante contable · CONT-NC-MANUAL-001');
         $this->get(route('commercial-documents.customer-credit-notes'))
             ->assertSeeText('Ver contabilización')
             ->assertSee(route('accounting.vouchers.accounting', $voucher), false);

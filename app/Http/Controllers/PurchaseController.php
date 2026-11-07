@@ -32,14 +32,20 @@ class PurchaseController extends Controller
     /**
      * Muestra la pantalla principal rosa de compras avanzada con botones arriba.
      */
-    public function index()
+    public function index(Request $request)
     {
         $withholdings = config('colombia_withholdings');
         $recentPurchases = Purchase::withTrashed()
-            ->with(['creator', 'deleter'])
+            ->with(['creator', 'deleter', 'details.item', 'paymentMethod', 'accountingVoucher'])
             ->latest()
             ->take(10)
             ->get();
+        $selectedPurchaseId = $request->integer('preview') ?: $request->session()->get('preview_purchase_id');
+        $selectedPurchase = $selectedPurchaseId
+            ? Purchase::withTrashed()
+                ->with(['details.item', 'paymentMethod', 'accountingVoucher'])
+                ->findOrFail($selectedPurchaseId)
+            : null;
         $paymentMethods = PaymentMethod::query()
             ->orderBy('name')
             ->get();
@@ -64,7 +70,7 @@ class PurchaseController extends Controller
             $paymentMethods = PaymentMethod::query()->orderBy('name')->get();
         }
 
-        return view('purchases.index', compact('paymentMethods', 'postingAccounts', 'products', 'productOptions', 'withholdings', 'recentPurchases', 'suppliers', 'nextConsecutive'));
+        return view('purchases.index', compact('paymentMethods', 'postingAccounts', 'products', 'productOptions', 'withholdings', 'recentPurchases', 'suppliers', 'nextConsecutive', 'selectedPurchase'));
     }
 
     public function create()
@@ -174,9 +180,11 @@ class PurchaseController extends Controller
 
         $accountingVoucher = $this->accountingEntryService->postPurchase($purchase, $skipReason);
 
-        return redirect()->route('purchases.index')->with('success', $accountingVoucher
-            ? '¡Factura guardada, stock actualizado y contabilizada!'
-            : '¡Factura guardada y stock actualizado! No se contabilizó automáticamente: '.($skipReason ?? 'configura las cuentas PUC necesarias.'));
+        return redirect()->route('purchases.index')
+            ->with('success', $accountingVoucher
+                ? '¡Factura guardada, stock actualizado y contabilizada!'
+                : '¡Factura guardada y stock actualizado! No se contabilizó automáticamente: '.($skipReason ?? 'configura las cuentas PUC necesarias.'))
+            ->with('preview_purchase_id', $purchase->id);
     }
 
     /**
@@ -439,9 +447,11 @@ class PurchaseController extends Controller
         $skipReason = null;
         $accountingVoucher = $this->accountingEntryService->postPurchase($purchase->fresh(), $skipReason);
 
-        return redirect()->route('purchases.show', $purchase)->with('success', $accountingVoucher
-            ? '¡Factura actualizada, stock recalculado y vuelta a contabilizar correctamente!'
-            : '¡Factura actualizada y stock recalculado! No se contabilizó automáticamente: '.($skipReason ?? 'configura las cuentas PUC necesarias.'));
+        return redirect()->route('purchases.index')
+            ->with('success', $accountingVoucher
+                ? '¡Factura actualizada, stock recalculado y vuelta a contabilizar correctamente!'
+                : '¡Factura actualizada y stock recalculado! No se contabilizó automáticamente: '.($skipReason ?? 'configura las cuentas PUC necesarias.'))
+            ->with('preview_purchase_id', $purchase->id);
     }
 
     public function email(Request $request, Purchase $purchase)
@@ -468,9 +478,11 @@ class PurchaseController extends Controller
         $skipReason = null;
         $voucher = $this->accountingEntryService->postPurchase($purchase, $skipReason);
 
-        return back()->with('success', $voucher
-            ? '¡Factura contabilizada correctamente!'
-            : 'No se pudo contabilizar: '.($skipReason ?? 'configura las cuentas PUC necesarias.'));
+        return redirect()->route('purchases.index')
+            ->with('success', $voucher
+                ? '¡Factura contabilizada correctamente!'
+                : 'No se pudo contabilizar: '.($skipReason ?? 'configura las cuentas PUC necesarias.'))
+            ->with('preview_purchase_id', $purchase->id);
     }
 
     public function payables()

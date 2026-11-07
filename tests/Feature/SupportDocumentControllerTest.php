@@ -32,6 +32,9 @@ class SupportDocumentControllerTest extends TestCase
 
         $document = SupportDocument::query()->where('consecutive', 'DS-TEST-001')->firstOrFail();
         $this->assertNotNull($document->accounting_voucher_id);
+        $this->get(route('support-documents.index', ['preview' => $document->id]))
+            ->assertOk()
+            ->assertSeeText('Documento soporte · DS-TEST-001');
 
         $voucher = AccountingVoucher::query()->with('lines')->findOrFail($document->accounting_voucher_id);
         $this->assertSame((float) $voucher->total_debit, (float) $voucher->total_credit);
@@ -126,7 +129,7 @@ class SupportDocumentControllerTest extends TestCase
             'subtotal' => 1_500_000,
             'iva_total' => 0,
             'withholding_concept' => 'none',
-        ])->assertRedirect(route('support-documents.show', $document));
+        ])->assertRedirect(route('support-documents.index', ['preview' => $document->id]));
 
         $document->refresh();
         $this->assertSame('Concepto actualizado', $document->concept);

@@ -18,6 +18,31 @@
                 <div class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 shadow-sm">{{ $errors->first() }}</div>
             @endif
 
+            @if($selectedVoucher)
+                <x-document-preview
+                    title="Comprobante de caja"
+                    :number="$selectedVoucher->consecutive"
+                    :date="$selectedVoucher->voucher_date?->format('d/m/Y')"
+                    party-label="Tercero"
+                    :party="$selectedVoucher->third_party"
+                    :fields="[
+                        ['label' => 'Tipo', 'value' => strtoupper(str_replace('_', ' ', $selectedVoucher->voucher_type))],
+                        ['label' => 'Descripción', 'value' => $selectedVoucher->description],
+                        ['label' => 'Creado por', 'value' => $selectedVoucher->creator?->name],
+                    ]"
+                    :columns="[
+                        ['key' => 'account.code', 'label' => 'Cuenta'],
+                        ['key' => 'account.name', 'label' => 'Nombre'],
+                        ['key' => 'detail', 'label' => 'Detalle'],
+                        ['key' => 'debit', 'label' => 'Débito'],
+                        ['key' => 'credit', 'label' => 'Crédito'],
+                    ]"
+                    :rows="$selectedVoucher->lines"
+                    :totals="[['label' => 'Total débito / crédito', 'value' => '$'.number_format((float) $selectedVoucher->total_debit, 2)]]"
+                    :actions="[['label' => 'Ver contabilización', 'url' => route('accounting.vouchers.accounting', $selectedVoucher)]]"
+                />
+            @endif
+
             <section class="overflow-hidden rounded-3xl bg-[#192522] px-6 py-6 text-white shadow-lg sm:px-8 sm:py-7">
                 <div class="flex flex-wrap items-center justify-between gap-6">
                     <div class="max-w-2xl">
@@ -93,6 +118,43 @@
             @endif
 
             @if ($openSession)
+                <section class="rounded-2xl border border-[#b9ddd3] bg-[#edf7f4] p-5 shadow-sm">
+                    <div class="flex flex-wrap items-start justify-between gap-4">
+                        <div>
+                            <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-[#227c70]">Ventas del día</p>
+                            <h3 class="mt-1 text-sm font-black text-[#192522]">Agregar facturas al arqueo</h3>
+                            <p class="mt-1 max-w-3xl text-xs leading-relaxed text-[#52635b]">Importa las facturas POS y las facturas electrónicas o no electrónicas con su forma de pago. El sistema separa efectivo, banco y crédito, evita duplicar recaudos y actualiza el efectivo esperado.</p>
+                        </div>
+                    </div>
+                    <form method="POST" action="{{ route('cash-register.daily-sales.import', $openSession) }}" class="mt-4 flex flex-wrap items-end gap-3">
+                        @csrf
+                        <label class="grid gap-1 text-xs font-bold text-[#52635b]">
+                            Fecha de las facturas
+                            <input type="date" name="sale_date" value="{{ old('sale_date', now()->toDateString()) }}" max="{{ now()->toDateString() }}" class="rounded-lg border-[#cbd6cf] text-sm" required>
+                        </label>
+                        <button class="rounded-lg bg-[#227c70] px-5 py-2.5 text-xs font-bold text-white transition hover:bg-[#1b665c]">Agregar facturas del día</button>
+                    </form>
+                    @if ($dailySaleMovements->isNotEmpty())
+                        <div class="mt-4 overflow-x-auto rounded-xl border border-[#d7dfd8] bg-white">
+                            <table class="w-full min-w-[600px] text-left text-xs">
+                                <thead class="bg-[#192522] uppercase tracking-wider text-white">
+                                    <tr><th class="p-3">Factura</th><th class="p-3">Cliente</th><th class="p-3">Forma de pago</th><th class="p-3 text-right">Valor</th></tr>
+                                </thead>
+                                <tbody class="divide-y divide-[#e6ede8]">
+                                    @foreach ($dailySaleMovements as $movement)
+                                        <tr>
+                                            <td class="p-3 font-semibold text-[#192522]">{{ $movement->sale?->invoice_number ?? 'Factura eliminada' }}</td>
+                                            <td class="p-3 text-[#364640]">{{ $movement->sale?->customer_name ?? '—' }}</td>
+                                            <td class="p-3 text-[#364640]">{{ match ($movement->payment_method) { 'cash' => 'Efectivo', 'bank' => 'Banco', 'credit' => 'Crédito', default => $movement->payment_method } }}</td>
+                                            <td class="p-3 text-right font-semibold text-[#192522]">${{ number_format((float) $movement->amount, 2) }}</td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    @endif
+                </section>
+
                 <section class="rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm">
                     <div>
                         <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-[#b65338]">Cartera de proveedores</p>
@@ -217,7 +279,7 @@
                                                                     $remainingQty = max(0, (float) $detail->quantity - $returnedQty);
                                                                 @endphp
                                                                 <label class="flex items-center justify-between gap-3 rounded-lg bg-[#f8faf8] p-2">
-                                                                    <span>{{ $detail->item?->name }} · disponibles: {{ $remainingQty }} {{ $detail->unit_name ?? $detail->item?->base_unit ?? 'unidad' }}</span>
+                                                                    <span>{{ $detail->item?->code ? $detail->item->code.' · ' : '' }}{{ $detail->item?->name }} · disponibles: {{ $remainingQty }} {{ $detail->unit_name ?? $detail->item?->base_unit ?? 'unidad' }}</span>
                                                                     <input type="number" name="stops[{{ $stop->id }}][return_quantities][{{ $detail->id }}]" min="0" max="{{ $remainingQty }}" step="0.0001" value="0" data-unit-price="{{ $detail->unit_price }}" data-discount="{{ $detail->discount_percentage }}" data-tax="{{ $detail->iva_percentage }}" class="return-quantity w-24 rounded border-[#cbd6cf] text-xs" oninput="calculateTotals()">
                                                                 </label>
                                                             @php endforeach; @endphp
@@ -225,7 +287,7 @@
                                                                 <select name="stops[{{ $stop->id }}][replacement_item_id]" class="replacement-item-select max-w-64 rounded border-[#cbd6cf] text-xs">
                                                                     <option value="">Producto para cruce</option>
                                                                     @php foreach ($availableItems as $item): @endphp
-                                                                        <option value="{{ $item->id }}" data-sale-price="{{ $item->sale_price }}" data-base-unit="{{ $item->base_unit ?? 'unidad' }}" data-units="{{ $item->unitConversions->map(fn ($unit) => ['id' => $unit->id, 'name' => $unit->name, 'factor' => $unit->factor, 'sale_price' => $unit->sale_price])->toJson() }}">{{ $item->name }} · stock {{ $item->stock }} {{ $item->base_unit ?? 'unidad' }}</option>
+                                                                        <option value="{{ $item->id }}" data-sale-price="{{ $item->sale_price }}" data-base-unit="{{ $item->base_unit ?? 'unidad' }}" data-units="{{ $item->unitConversions->map(fn ($unit) => ['id' => $unit->id, 'name' => $unit->name, 'factor' => $unit->factor, 'sale_price' => $unit->sale_price])->toJson() }}">{{ $item->name }} · {{ $item->code ?: 'Sin código' }} · stock {{ $item->stock }} {{ $item->base_unit ?? 'unidad' }}</option>
                                                                     @php endforeach; @endphp
                                                                 </select>
                                                                 <select name="stops[{{ $stop->id }}][replacement_unit_conversion_id]" class="replacement-unit-select max-w-40 rounded border-[#cbd6cf] text-xs">

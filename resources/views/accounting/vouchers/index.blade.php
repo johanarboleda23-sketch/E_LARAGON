@@ -23,6 +23,32 @@
 
     <div class="min-h-screen bg-[#f3f5f1] px-4 py-8 sm:px-8">
         <div class="mx-auto grid max-w-7xl gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+            @if($selectedVoucher)
+                <div class="lg:col-span-2">
+                    <x-document-preview
+                        title="Comprobante contable"
+                        :number="$selectedVoucher->consecutive"
+                        :date="$selectedVoucher->voucher_date?->format('d/m/Y')"
+                        party-label="Tercero"
+                        :party="$selectedVoucher->third_party"
+                        :fields="[
+                            ['label' => 'Tipo', 'value' => strtoupper(str_replace('_', ' ', $selectedVoucher->voucher_type))],
+                            ['label' => 'Descripción', 'value' => $selectedVoucher->description],
+                            ['label' => 'Creado por', 'value' => $selectedVoucher->creator?->name],
+                        ]"
+                        :columns="[
+                            ['key' => 'account.code', 'label' => 'Cuenta'],
+                            ['key' => 'account.name', 'label' => 'Nombre'],
+                            ['key' => 'detail', 'label' => 'Detalle'],
+                            ['key' => 'debit', 'label' => 'Débito'],
+                            ['key' => 'credit', 'label' => 'Crédito'],
+                        ]"
+                        :rows="$selectedVoucher->lines"
+                        :totals="[['label' => 'Total débito / crédito', 'value' => '$'.number_format((float) $selectedVoucher->total_debit, 2)]]"
+                        :actions="[['label' => 'Ver contabilización', 'url' => route('accounting.vouchers.accounting', $selectedVoucher)]]"
+                    />
+                </div>
+            @endif
             <section class="rounded-xl bg-white p-5 shadow-sm">
                 <h1 class="mb-5 text-lg font-bold text-gray-800">{{ $voucherTypeLabel ? 'Nuevo '.$voucherTypeLabel : 'Nuevo comprobante' }}</h1>
                 @if(session('success')) <div class="mb-4 rounded-md bg-emerald-50 p-3 text-sm text-emerald-700">{{ session('success') }}</div> @endif
@@ -124,6 +150,11 @@
                             <p class="mt-1 text-xs text-gray-500">{{ $voucher->voucher_date }} · {{ $voucher->creator?->name ?? 'Sistema' }}</p>
                             <p class="mt-2 text-sm font-semibold text-[#227c70]">${{ number_format($voucher->total_debit, 2) }}</p>
                             <div class="mt-2 flex flex-wrap gap-1 text-xs">
+                                @if($voucherType)
+                                    <a href="{{ route('accounting.vouchers.index.typed', ['voucherType' => $voucher->voucher_type, 'preview' => $voucher->id]) }}" class="rounded border px-2 py-1">Vista previa</a>
+                                @else
+                                    <a href="{{ route('accounting.vouchers.index', ['preview' => $voucher->id]) }}" class="rounded border px-2 py-1">Vista previa</a>
+                                @endif
                                 <a href="{{ route('accounting.vouchers.statement', $voucher) }}" class="rounded border px-2 py-1">Imprimir</a>
                                 <button type="button" onclick="openVoucherModal({{ $voucher->id }})" class="rounded border px-2 py-1">Asiento contable</button>
                                 <a href="{{ route('accounting.vouchers.statement', $voucher) }}?download=1" class="rounded border px-2 py-1">Descargar</a>

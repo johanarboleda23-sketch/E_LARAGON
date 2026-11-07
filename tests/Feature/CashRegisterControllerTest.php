@@ -11,6 +11,7 @@ use App\Models\Company;
 use App\Models\DeliveryRoute;
 use App\Models\DeliveryStop;
 use App\Models\Item;
+use App\Models\PaymentMethod;
 use App\Models\Purchase;
 use App\Models\Sale;
 use App\Models\SaleDetail;
@@ -112,6 +113,9 @@ class CashRegisterControllerTest extends TestCase
         $this->assertSame('egreso', $voucher->voucher_type);
         $this->assertSame(250.0, (float) $voucher->total_debit);
         $this->assertSame(250.0, (float) $voucher->total_credit);
+        $this->get(route('cash-register.index'))
+            ->assertOk()
+            ->assertSeeText('Comprobante de caja · '.$voucher->consecutive);
         $this->assertSame(1250.0, (float) $session->fresh()->expected_cash);
 
         $this->post(route('cash-register.open'), [
@@ -143,6 +147,121 @@ class CashRegisterControllerTest extends TestCase
         $this->assertSame(200.0, $purchase->fresh()->paidAmount());
         $this->assertSame(1000.0, (float) $session->fresh()->expected_cash);
         $this->assertSame(0.0, (float) $session->fresh()->cash_out);
+    }
+
+    public function test_daily_sales_import_registers_cash_once_and_updates_expected_cash(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $cashAccount = $this->createAccount('1105', 'Caja', $company);
+        $this->createAccount('1305', 'Clientes', $company);
+        $paymentMethod = $this->createPaymentMethod($company, 'Efectivo', $cashAccount, true);
+        $sale = $this->createSale('POS-DIA-001', 250);
+        $sale->update(['payment_method_id' => $paymentMethod->id]);
+        $session = $this->openSession(1000);
+        $otherCompany = Company::factory()->create();
+        $otherSale = $this->createSaleForCompany($otherCompany, 'FACT-AJENA-001', 900);
+
+        $payload = ['sale_date' => now()->toDateString()];
+        $this->post(route('cash-register.daily-sales.import', $session), $payload)
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $movement = CashRegisterMovement::query()->where('sale_id', $sale->id)->firstOrFail();
+        $this->assertSame('daily_sale', $movement->movement_type);
+        $this->assertSame('cash', $movement->payment_method);
+        $this->assertSame(250.0, (float) $movement->amount);
+        $this->assertDatabaseHas('payments', [
+            'payable_type' => Sale::class,
+            'payable_id' => $sale->id,
+            'amount' => 250,
+            'method' => '1105',
+        ]);
+        $this->assertDatabaseCount('accounting_vouchers', 1);
+        $this->assertSame(1250.0, (float) $session->fresh()->expected_cash);
+        $this->assertDatabaseMissing('cash_register_movements', ['sale_id' => $otherSale->id]);
+
+        $this->post(route('cash-register.daily-sales.import', $session), $payload)
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseCount('payments', 1);
+        $this->assertDatabaseCount('accounting_vouchers', 1);
+        $this->assertDatabaseCount('cash_register_movements', 1);
+        $this->assertSame(1250.0, (float) $session->fresh()->expected_cash);
+        $this->get(route('cash-register.index'))
+            ->assertOk()
+            ->assertSeeText('POS-DIA-001')
+            ->assertSeeText('Efectivo');
+    }
+
+    public function test_daily_sales_import_keeps_bank_and_credit_sales_out_of_expected_cash(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $bankAccount = $this->createAccount('1120', 'Banco', $company);
+        $this->createAccount('1305', 'Clientes', $company);
+        $bankMethod = $this->createPaymentMethod($company, 'Transferencia bancaria', $bankAccount);
+        $creditMethod = $this->createPaymentMethod($company, 'Crédito');
+        $bankSale = $this->createSale('FACT-BANCO-001', 300);
+        $bankSale->update(['payment_method_id' => $bankMethod->id]);
+        $creditSale = $this->createSale('FACT-CREDITO-001', 500);
+        $creditSale->update(['payment_method_id' => $creditMethod->id]);
+        $session = $this->openSession(800);
+
+        $this->post(route('cash-register.daily-sales.import', $session), [
+            'sale_date' => now()->toDateString(),
+        ])->assertRedirect();
+
+        $bankMovement = CashRegisterMovement::query()->where('sale_id', $bankSale->id)->firstOrFail();
+        $creditMovement = CashRegisterMovement::query()->where('sale_id', $creditSale->id)->firstOrFail();
+        $this->assertSame('bank', $bankMovement->payment_method);
+        $this->assertSame('credit', $creditMovement->payment_method);
+        $this->assertSame(800.0, (float) $session->fresh()->expected_cash);
+        $this->assertDatabaseCount('payments', 1);
+        $this->assertDatabaseCount('accounting_vouchers', 1);
+    }
+
+    public function test_daily_sales_import_rejects_dates_before_the_open_session(): void
+    {
+        $this->authenticateWithCompany();
+        $session = $this->openSession(800);
+
+        $this->post(route('cash-register.daily-sales.import', $session), [
+            'sale_date' => now()->subDay()->toDateString(),
+        ])->assertUnprocessable();
+
+        $this->assertDatabaseCount('cash_register_movements', 0);
+        $this->assertSame(800.0, (float) $session->fresh()->opening_balance);
+    }
+
+    public function test_daily_sales_import_rejects_a_closed_session(): void
+    {
+        $this->authenticateWithCompany();
+        $session = $this->openSession(800);
+        $session->update(['status' => 'closed', 'closed_at' => now()]);
+
+        $this->post(route('cash-register.daily-sales.import', $session), [
+            'sale_date' => now()->toDateString(),
+        ])->assertUnprocessable();
+
+        $this->assertDatabaseCount('cash_register_movements', 0);
+        $this->assertDatabaseCount('payments', 0);
+    }
+
+    public function test_daily_sales_import_rolls_back_if_cash_posting_accounts_are_missing(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $paymentMethod = $this->createPaymentMethod($company, 'Efectivo', isCash: true);
+        $sale = $this->createSale('FACT-SIN-CUENTAS-001', 250);
+        $sale->update(['payment_method_id' => $paymentMethod->id]);
+        $session = $this->openSession(800);
+
+        $this->post(route('cash-register.daily-sales.import', $session), [
+            'sale_date' => now()->toDateString(),
+        ])->assertUnprocessable();
+
+        $this->assertDatabaseCount('payments', 0);
+        $this->assertDatabaseCount('accounting_vouchers', 0);
+        $this->assertDatabaseCount('cash_register_movements', 0);
     }
 
     public function test_supplier_payment_cannot_exceed_the_invoice_balance(): void
@@ -559,6 +678,37 @@ class CashRegisterControllerTest extends TestCase
                 'active' => true,
             ],
         );
+    }
+
+    private function createPaymentMethod(
+        Company $company,
+        string $name,
+        ?ChartOfAccount $account = null,
+        bool $isCash = false,
+    ): PaymentMethod {
+        return PaymentMethod::create([
+            'company_id' => $company->id,
+            'name' => $name,
+            'chart_of_account_id' => $account?->id,
+            'is_cash' => $isCash,
+        ]);
+    }
+
+    private function createSaleForCompany(Company $company, string $invoiceNumber, float $total): Sale
+    {
+        return Sale::create([
+            'company_id' => $company->id,
+            'invoice_number' => $invoiceNumber,
+            'customer_name' => 'Cliente de otra empresa',
+            'sale_date' => now()->toDateString(),
+            'subtotal' => $total,
+            'iva_total' => 0,
+            'discount_total' => 0,
+            'withholding_concept' => 'none',
+            'retention_base' => 0,
+            'retention_total' => 0,
+            'total' => $total,
+        ]);
     }
 
     private function createPurchase(Company $company, string $invoiceNumber, string $provider, float $total): Purchase

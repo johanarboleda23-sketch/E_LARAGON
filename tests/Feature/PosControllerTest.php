@@ -6,6 +6,7 @@ use App\Models\ChartOfAccount;
 use App\Models\Company;
 use App\Models\FactusCredential;
 use App\Models\Item;
+use App\Models\PaymentMethod;
 use App\Models\Sale;
 use App\Models\SaleDetail;
 use App\Models\User;
@@ -19,14 +20,16 @@ class PosControllerTest extends TestCase
 
     public function test_pos_sale_decrements_stock_and_is_accounted_automatically(): void
     {
-        $this->authenticateWithCompany();
+        $company = $this->authenticateWithCompany();
         $product = $this->createProduct();
+        $paymentMethod = $this->createPaymentMethod($company);
         $this->createAccount('4135', 'Comercio al por mayor y al por menor', 4, 'credit');
         $this->createAccount('2408', 'Impuesto a las ventas por pagar', 2, 'credit');
         $this->createAccount('1305', 'Clientes', 1, 'credit');
 
         $this->post(route('pos.store'), [
             'customer_name' => 'Cliente mostrador',
+            'payment_method_id' => $paymentMethod->id,
             'items' => [
                 ['item_id' => $product->id, 'quantity' => 2],
             ],
@@ -35,7 +38,9 @@ class PosControllerTest extends TestCase
         $sale = Sale::query()->latest('id')->firstOrFail();
         $this->assertStringStartsWith('POS-', $sale->invoice_number);
         $this->assertSame('Cliente mostrador', $sale->customer_name);
+        $this->assertSame($paymentMethod->id, $sale->payment_method_id);
         $this->assertSame(200.0, (float) $sale->subtotal);
+        $this->assertSame(38.0, (float) $sale->iva_total);
 
         $product->refresh();
         $this->assertSame(8.0, $product->stock);
@@ -45,6 +50,7 @@ class PosControllerTest extends TestCase
     {
         $company = $this->authenticateWithCompany();
         $product = $this->createProduct();
+        $paymentMethod = $this->createPaymentMethod($company);
         $conversion = $product->unitConversions()->create([
             'company_id' => $company->id,
             'name' => 'caja',
@@ -54,6 +60,7 @@ class PosControllerTest extends TestCase
 
         $this->post(route('pos.store'), [
             'customer_name' => 'Cliente de caja',
+            'payment_method_id' => $paymentMethod->id,
             'items' => [[
                 'item_id' => $product->id,
                 'quantity' => 0.5,
@@ -74,6 +81,7 @@ class PosControllerTest extends TestCase
     {
         $company = $this->authenticateWithCompany();
         $product = $this->createProduct();
+        $paymentMethod = $this->createPaymentMethod($company);
         $this->createFactusCredential($company);
         Http::fake([
             '*/oauth/token' => Http::response(['access_token' => 'token-123', 'expires_in' => 600]),
@@ -81,6 +89,7 @@ class PosControllerTest extends TestCase
         ]);
 
         $this->post(route('pos.store'), [
+            'payment_method_id' => $paymentMethod->id,
             'items' => [
                 ['item_id' => $product->id, 'quantity' => 1],
             ],
@@ -90,6 +99,75 @@ class PosControllerTest extends TestCase
         $this->assertSame('enviada', $sale->factus_status);
         $this->assertSame('cufe-pos', $sale->factus_cufe);
         $this->assertSame('Consumidor final', $sale->customer_name);
+    }
+
+    public function test_pos_sale_can_be_saved_without_iva(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $product = $this->createProduct();
+        $paymentMethod = $this->createPaymentMethod($company);
+        $this->createAccount('4135', 'Ingresos por ventas', 4, 'credit');
+        $this->createAccount('1305', 'Clientes', 1, 'credit');
+
+        $this->post(route('pos.store'), [
+            'payment_method_id' => $paymentMethod->id,
+            'apply_iva' => '0',
+            'items' => [
+                ['item_id' => $product->id, 'quantity' => 1],
+            ],
+        ])->assertSessionHasNoErrors();
+
+        $sale = Sale::query()->latest('id')->firstOrFail();
+        $this->assertSame(0.0, (float) $sale->iva_total);
+        $this->assertSame(100.0, (float) $sale->total);
+        $this->assertSame(0.0, (float) $sale->details()->firstOrFail()->iva_percentage);
+    }
+
+    public function test_pos_requires_a_payment_method(): void
+    {
+        $this->authenticateWithCompany();
+        $product = $this->createProduct();
+
+        $this->post(route('pos.store'), [
+            'items' => [
+                ['item_id' => $product->id, 'quantity' => 1],
+            ],
+        ])->assertSessionHasErrors('payment_method_id');
+
+        $this->assertDatabaseCount('sales', 0);
+        $this->assertSame(10.0, (float) $product->fresh()->stock);
+    }
+
+    public function test_pos_rejects_a_payment_method_from_another_company(): void
+    {
+        $this->authenticateWithCompany();
+        $product = $this->createProduct();
+        $otherCompany = Company::factory()->create();
+        $foreignMethod = $this->createPaymentMethod($otherCompany);
+        $foreignMethod->company_id = $otherCompany->id;
+        $foreignMethod->save();
+
+        $this->post(route('pos.store'), [
+            'payment_method_id' => $foreignMethod->id,
+            'items' => [
+                ['item_id' => $product->id, 'quantity' => 1],
+            ],
+        ])->assertSessionHasErrors('payment_method_id');
+
+        $this->assertDatabaseCount('sales', 0);
+        $this->assertSame(10.0, (float) $product->fresh()->stock);
+    }
+
+    public function test_pos_page_shows_product_code_search_and_payment_method(): void
+    {
+        $this->authenticateWithCompany();
+        $this->createProduct();
+
+        $this->get(route('pos.index'))
+            ->assertOk()
+            ->assertSeeText('SKU-POS-001')
+            ->assertSee('id="pos-product-search"', false)
+            ->assertSeeText('Forma de pago');
     }
 
     private function authenticateWithCompany(): Company
@@ -112,6 +190,15 @@ class PosControllerTest extends TestCase
             'purchase_price' => 50,
             'stock' => 10,
             'min_stock' => 1,
+        ]);
+    }
+
+    private function createPaymentMethod(Company $company): PaymentMethod
+    {
+        return PaymentMethod::create([
+            'company_id' => $company->id,
+            'name' => 'Efectivo',
+            'is_cash' => true,
         ]);
     }
 

@@ -88,7 +88,7 @@ class CashRegisterSession extends Model
 
         $movementCashIn = (float) $this->movements()
             ->whereIn('payment_method', ['cash', '1105'])
-            ->whereIn('movement_type', ['collection', 'receivable_collection', 'exchange_difference'])
+            ->whereIn('movement_type', ['collection', 'receivable_collection', 'exchange_difference', 'daily_sale'])
             ->whereNull('accounting_voucher_id')
             ->sum('amount');
         $expenseTotal = (float) $this->expenses()->whereNull('accounting_voucher_id')->sum('amount');

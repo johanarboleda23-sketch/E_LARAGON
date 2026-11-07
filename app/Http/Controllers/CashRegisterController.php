@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\AccountingVoucher;
 use App\Models\CashRegisterExpense;
+use App\Models\CashRegisterMovement;
 use App\Models\CashRegisterSession;
 use App\Models\ChartOfAccount;
 use App\Models\DeliveryRoute;
@@ -12,6 +13,7 @@ use App\Models\DeliveryStopReturn;
 use App\Models\InventoryMovement;
 use App\Models\Item;
 use App\Models\Payment;
+use App\Models\PaymentMethod;
 use App\Models\Purchase;
 use App\Models\Sale;
 use App\Models\SaleDetail;
@@ -23,6 +25,7 @@ use Illuminate\Database\Query\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -66,6 +69,10 @@ class CashRegisterController extends Controller
     {
         $fundType = $request->query('fund_type', 'general');
         abort_unless(is_string($fundType) && array_key_exists($fundType, CashRegisterSession::FUND_TYPES), 404);
+        $selectedVoucherId = $request->integer('preview') ?: $request->session()->get('preview_accounting_voucher_id');
+        $selectedVoucher = $selectedVoucherId
+            ? AccountingVoucher::with(['lines.account', 'creator'])->findOrFail($selectedVoucherId)
+            : null;
 
         $openSession = CashRegisterSession::query()
             ->where('fund_type', $fundType)
@@ -73,8 +80,11 @@ class CashRegisterController extends Controller
             ->first();
         if ($openSession) {
             $openSession->recalculateExpectedCash();
-            $openSession->load('expenses');
+            $openSession->load(['expenses', 'movements.sale']);
         }
+        $dailySaleMovements = $openSession
+            ? $openSession->movements->where('movement_type', 'daily_sale')->sortBy('id')->values()
+            : collect();
         $payableProviders = $openSession
             ? Purchase::query()
                 ->whereNotNull('provider')
@@ -135,7 +145,163 @@ class CashRegisterController extends Controller
             'receivableSales' => $receivableSales,
             'availableItems' => $availableItems,
             'settlementActions' => self::SETTLEMENT_ACTIONS,
+            'selectedVoucher' => $selectedVoucher,
+            'dailySaleMovements' => $dailySaleMovements,
         ]);
+    }
+
+    public function importDailySales(Request $request, CashRegisterSession $cashRegisterSession): RedirectResponse
+    {
+        $data = $request->validate([
+            'sale_date' => ['required', 'date', 'before_or_equal:today'],
+        ]);
+        $saleDate = Carbon::parse($data['sale_date'])->toDateString();
+        $this->periodService->assertWritable('income', $saleDate);
+
+        $totals = DB::transaction(function () use ($cashRegisterSession, $saleDate): array {
+            $session = CashRegisterSession::query()->lockForUpdate()->findOrFail($cashRegisterSession->id);
+            abort_unless($session->isOpen(), 422, 'La sesión de caja ya está cerrada.');
+            abort_if(
+                $saleDate < $session->opened_at->toDateString(),
+                422,
+                'La fecha de las facturas no puede ser anterior a la apertura de caja.',
+            );
+
+            $sales = Sale::query()
+                ->whereDate('sale_date', $saleDate)
+                ->with(['paymentMethod.account', 'payments', 'creditNotes'])
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get();
+
+            $totals = [
+                'invoices' => 0,
+                'cash' => 0.0,
+                'bank' => 0.0,
+                'credit' => 0.0,
+            ];
+
+            foreach ($sales as $sale) {
+                $existingMovements = CashRegisterMovement::query()
+                    ->where('sale_id', $sale->id)
+                    ->whereIn('movement_type', ['collection', 'receivable_collection', 'daily_sale'])
+                    ->get();
+                $existingPaymentIds = $existingMovements->pluck('payment_id')->filter()->all();
+                $createdMovement = false;
+
+                if ($sale->payments->isEmpty()) {
+                    $hasPriorReceipt = $existingMovements->contains(
+                        fn (CashRegisterMovement $movement): bool => in_array($movement->movement_type, ['collection', 'receivable_collection'], true)
+                            || ($movement->movement_type === 'daily_sale' && $movement->payment_id === null),
+                    );
+
+                    if ($hasPriorReceipt) {
+                        continue;
+                    }
+
+                    $amount = $sale->balanceDue((float) $sale->total);
+                    if ($amount <= 0) {
+                        continue;
+                    }
+
+                    $method = $this->resolveCashMethod($sale->paymentMethod);
+                    if ($method !== null) {
+                        $payment = $sale->payments()->create([
+                            'amount' => $amount,
+                            'payment_date' => $saleDate,
+                            'method' => $method,
+                            'notes' => 'Importado al arqueo diario',
+                            'created_by' => auth()->id(),
+                        ]);
+                        $voucher = $this->postCashPayment($payment, $sale, $method);
+                        $paymentMethod = $this->cashMovementMethod($method, $sale->paymentMethod);
+                        $session->movements()->create([
+                            'company_id' => $session->company_id,
+                            'sale_id' => $sale->id,
+                            'payment_id' => $payment->id,
+                            'accounting_voucher_id' => $voucher->id,
+                            'created_by' => auth()->id(),
+                            'movement_type' => 'daily_sale',
+                            'payment_method' => $paymentMethod,
+                            'amount' => $amount,
+                            'notes' => 'Factura '.$sale->invoice_number,
+                        ]);
+                        $totals[$paymentMethod] += $amount;
+                        $createdMovement = true;
+                    } else {
+                        $this->createDailySaleCreditMovement($session, $sale, $amount);
+                        $totals['credit'] += $amount;
+                        $createdMovement = true;
+                    }
+                } else {
+                    foreach ($sale->payments as $payment) {
+                        if (in_array($payment->id, $existingPaymentIds, true)) {
+                            continue;
+                        }
+
+                        $method = $this->resolveCashMethod($sale->paymentMethod, $payment->method);
+                        if ($method === null) {
+                            $session->movements()->create([
+                                'company_id' => $session->company_id,
+                                'sale_id' => $sale->id,
+                                'payment_id' => $payment->id,
+                                'created_by' => auth()->id(),
+                                'movement_type' => 'daily_sale',
+                                'payment_method' => 'credit',
+                                'amount' => $payment->amount,
+                                'notes' => 'Pago sin medio de caja identificable · '.$sale->invoice_number,
+                            ]);
+                            $totals['credit'] += (float) $payment->amount;
+                        } else {
+                            $voucher = $this->postCashPayment($payment, $sale, $method);
+                            $paymentMethod = $this->cashMovementMethod($method, $sale->paymentMethod);
+                            $session->movements()->create([
+                                'company_id' => $session->company_id,
+                                'sale_id' => $sale->id,
+                                'payment_id' => $payment->id,
+                                'accounting_voucher_id' => $voucher->id,
+                                'created_by' => auth()->id(),
+                                'movement_type' => 'daily_sale',
+                                'payment_method' => $paymentMethod,
+                                'amount' => $payment->amount,
+                                'notes' => 'Factura '.$sale->invoice_number,
+                            ]);
+                            $totals[$paymentMethod] += (float) $payment->amount;
+                        }
+
+                        $createdMovement = true;
+                    }
+
+                    $balance = $sale->balanceDue((float) $sale->total);
+                    $hasCreditMovement = $existingMovements->contains(
+                        fn (CashRegisterMovement $movement): bool => $movement->movement_type === 'daily_sale'
+                            && $movement->payment_method === 'credit'
+                            && $movement->payment_id === null,
+                    );
+                    if ($balance > 0 && ! $hasCreditMovement) {
+                        $this->createDailySaleCreditMovement($session, $sale, $balance);
+                        $totals['credit'] += $balance;
+                        $createdMovement = true;
+                    }
+                }
+
+                if ($createdMovement) {
+                    $totals['invoices']++;
+                }
+            }
+
+            $session->recalculateExpectedCash();
+            $session->save();
+
+            return $totals;
+        });
+
+        return back()->with(
+            'success',
+            "Facturas procesadas: {$totals['invoices']}. Efectivo: $".number_format($totals['cash'], 2)
+                .' · Banco: $'.number_format($totals['bank'], 2)
+                .' · Crédito/sin recaudo: $'.number_format($totals['credit'], 2).'.',
+        );
     }
 
     public function supplierInvoices(Request $request): JsonResponse
@@ -269,7 +435,8 @@ class CashRegisterController extends Controller
         $session = CashRegisterSession::query()->findOrFail($data['session_id']);
         abort_unless($session->isOpen(), 422, 'La sesión de caja ya está cerrada.');
 
-        DB::transaction(function () use ($data, $route, $session): void {
+        $previewVoucherId = DB::transaction(function () use ($data, $route, $session): ?int {
+            $lastVoucherId = null;
             $session = CashRegisterSession::query()->lockForUpdate()->findOrFail($session->id);
             abort_unless($session->isOpen(), 422, 'La sesión de caja ya está cerrada.');
             foreach ($data['stops'] ?? [] as $stopId => $stopData) {
@@ -344,6 +511,7 @@ class CashRegisterController extends Controller
                             $adjustmentMethod = $stopData['collection_method'] ?? null;
                             abort_unless(in_array($adjustmentMethod, ['1105', '1120'], true), 422, 'Selecciona la cuenta para ajustar la diferencia del cruce.');
                             $voucher = $this->postExchangeAdjustment($stop, $difference, $adjustmentMethod);
+                            $lastVoucherId = $voucher->id;
                             $session->movements()->create([
                                 'company_id' => $session->company_id,
                                 'delivery_stop_id' => $stop->id,
@@ -393,6 +561,7 @@ class CashRegisterController extends Controller
                         $existingPayment = $sale->payments()->create($paymentData);
                     }
                     $accountingVoucher = $this->postCashPayment($existingPayment, $sale, $method);
+                    $lastVoucherId = $accountingVoucher->id;
                 } elseif ($existingPayment) {
                     $this->removeAccountingVoucher($movement?->accounting_voucher_id);
                     $existingPayment->delete();
@@ -444,17 +613,21 @@ class CashRegisterController extends Controller
                     ...$expense,
                 ]);
                 $voucher = $this->postExpense($expenseRecord);
+                $lastVoucherId = $voucher->id;
                 $expenseRecord->update(['accounting_voucher_id' => $voucher->id]);
             }
 
             $session->recalculateExpectedCash();
             $session->save();
+
+            return $lastVoucherId;
         });
 
         return redirect()->route('cash-register.index', [
             'fund_type' => $session->fund_type,
             'route_id' => $route->id,
-        ])->with('success', 'Liquidación del lote guardada.');
+        ])->with('success', 'Liquidación del lote guardada.')
+            ->with('preview_accounting_voucher_id', $previewVoucherId);
     }
 
     /**
@@ -614,6 +787,53 @@ class CashRegisterController extends Controller
         ]));
     }
 
+    private function resolveCashMethod(?PaymentMethod $paymentMethod, ?string $storedMethod = null): ?string
+    {
+        $storedMethod = trim((string) $storedMethod);
+        if (in_array($storedMethod, ['1105', '1120'], true) || preg_match('/^11\d{2}$/', $storedMethod) === 1) {
+            return $storedMethod;
+        }
+
+        $accountCode = $paymentMethod?->account?->code;
+        if ($paymentMethod?->is_cash) {
+            return $accountCode ?: '1105';
+        }
+        if ($accountCode === '1105') {
+            return '1105';
+        }
+        if ($accountCode && str_starts_with($accountCode, '11')) {
+            return $accountCode;
+        }
+
+        $name = Str::lower(Str::ascii($paymentMethod?->name ?? $storedMethod));
+        if (Str::contains($name, ['efectivo', 'caja'])) {
+            return '1105';
+        }
+        if (Str::contains($name, ['banco', 'transfer', 'tarjeta', 'pse'])) {
+            return '1120';
+        }
+
+        return null;
+    }
+
+    private function cashMovementMethod(string $method, ?PaymentMethod $paymentMethod): string
+    {
+        return $method === '1105' || $paymentMethod?->is_cash ? 'cash' : 'bank';
+    }
+
+    private function createDailySaleCreditMovement(CashRegisterSession $session, Sale $sale, float $amount): void
+    {
+        $session->movements()->create([
+            'company_id' => $session->company_id,
+            'sale_id' => $sale->id,
+            'created_by' => auth()->id(),
+            'movement_type' => 'daily_sale',
+            'payment_method' => 'credit',
+            'amount' => $amount,
+            'notes' => 'Saldo pendiente factura '.$sale->invoice_number,
+        ]);
+    }
+
     private function removeAccountingVoucher(?int $voucherId): void
     {
         if (! $voucherId) {
@@ -734,7 +954,7 @@ class CashRegisterController extends Controller
         $sale = Sale::query()->findOrFail($data['sale_id']);
         $session = CashRegisterSession::query()->findOrFail($data['session_id']);
 
-        DB::transaction(function () use ($data, $sale, $session): void {
+        $voucherId = DB::transaction(function () use ($data, $sale, $session): int {
             $lockedSession = CashRegisterSession::query()->lockForUpdate()->findOrFail($session->id);
             abort_unless($lockedSession->isOpen(), 422, 'La sesión de caja ya está cerrada.');
             $sale = Sale::query()->lockForUpdate()->findOrFail($sale->id);
@@ -761,9 +981,12 @@ class CashRegisterController extends Controller
             ]);
             $lockedSession->recalculateExpectedCash();
             $lockedSession->save();
+
+            return $accountingVoucher->id;
         });
 
-        return back()->with('success', 'Cobro de cartera registrado sin afectar el inventario.');
+        return back()->with('success', 'Cobro de cartera registrado sin afectar el inventario.')
+            ->with('preview_accounting_voucher_id', $voucherId);
     }
 
     public function storeSupplierPayment(Request $request, CashRegisterSession $cashRegisterSession): RedirectResponse
@@ -775,7 +998,7 @@ class CashRegisterController extends Controller
         ]);
         $this->periodService->assertWritable('expenses', now()->toDateString());
 
-        DB::transaction(function () use ($data, $cashRegisterSession): void {
+        $voucherId = DB::transaction(function () use ($data, $cashRegisterSession): int {
             $cashRegisterSession = CashRegisterSession::query()->lockForUpdate()->findOrFail($cashRegisterSession->id);
             abort_unless($cashRegisterSession->isOpen(), 422, 'La sesión de caja ya está cerrada.');
 
@@ -810,9 +1033,12 @@ class CashRegisterController extends Controller
 
             $cashRegisterSession->recalculateExpectedCash();
             $cashRegisterSession->save();
+
+            return $accountingVoucher->id;
         });
 
-        return back()->with('success', 'Abono a proveedor registrado y aplicado a la factura.');
+        return back()->with('success', 'Abono a proveedor registrado y aplicado a la factura.')
+            ->with('preview_accounting_voucher_id', $voucherId);
     }
 
     public function storeExpense(Request $request, CashRegisterSession $cashRegisterSession): RedirectResponse
@@ -824,7 +1050,7 @@ class CashRegisterController extends Controller
         ]);
         $this->periodService->assertWritable('expenses', now()->toDateString());
 
-        DB::transaction(function () use ($data, $cashRegisterSession): void {
+        $voucherId = DB::transaction(function () use ($data, $cashRegisterSession): int {
             $cashRegisterSession = CashRegisterSession::query()->lockForUpdate()->findOrFail($cashRegisterSession->id);
             abort_unless($cashRegisterSession->isOpen(), 422, 'La sesión de caja ya está cerrada.');
             $expense = $cashRegisterSession->expenses()->create([
@@ -837,8 +1063,11 @@ class CashRegisterController extends Controller
             $expense->update(['accounting_voucher_id' => $voucher->id]);
             $cashRegisterSession->recalculateExpectedCash();
             $cashRegisterSession->save();
+
+            return $voucher->id;
         });
 
-        return back()->with('success', 'Gasto registrado y contabilizado.');
+        return back()->with('success', 'Gasto registrado y contabilizado.')
+            ->with('preview_accounting_voucher_id', $voucherId);
     }
 }

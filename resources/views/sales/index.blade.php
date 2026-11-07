@@ -11,20 +11,60 @@
 </head>
 <body>
 <div class="sale-shell">
+    @if($selectedSale)
+        <x-document-preview
+            title="Factura de venta"
+            :number="$selectedSale->invoice_number"
+            :date="$selectedSale->sale_date?->format('d/m/Y')"
+            party-label="Cliente"
+            :party="$selectedSale->customer_name"
+            :fields="[
+                ['label' => 'Documento', 'value' => $selectedSale->customer_document],
+                ['label' => 'Forma de pago', 'value' => $selectedSale->paymentMethod?->name],
+                ['label' => 'Retención', 'value' => '$'.number_format((float) $selectedSale->retention_total, 2)],
+            ]"
+            :columns="[
+                ['key' => 'item.code', 'label' => 'Código'],
+                ['key' => 'item.name', 'label' => 'Producto'],
+                ['key' => 'quantity', 'label' => 'Cantidad'],
+                ['key' => 'unit_price', 'label' => 'Precio unitario'],
+                ['key' => 'iva_percentage', 'label' => 'IVA %'],
+            ]"
+            :rows="$selectedSale->details"
+            :totals="[
+                ['label' => 'Subtotal', 'value' => '$'.number_format((float) $selectedSale->subtotal, 2)],
+                ['label' => 'IVA', 'value' => '$'.number_format((float) $selectedSale->iva_total, 2)],
+                ['label' => 'Descuentos', 'value' => '$'.number_format((float) $selectedSale->discount_total, 2)],
+                ['label' => 'Total', 'value' => '$'.number_format((float) $selectedSale->total, 2)],
+            ]"
+            :accounting-url="$selectedSale->accounting_voucher_id ? route('accounting.vouchers.accounting', $selectedSale->accounting_voucher_id) : null"
+            :accounting-action="$selectedSale->accounting_voucher_id ? null : route('sales.account', $selectedSale)"
+            :accounting-message="$selectedSale->accounting_voucher_id ? null : 'La factura aún no tiene contabilización.'"
+            :actions="[['label' => 'Abrir documento', 'url' => route('sales.show', $selectedSale)]]"
+        />
+    @endif
     <form method="POST" action="{{ route('sales.store') }}" id="sale-form">
         @csrf
         <div class="top-bar">
             <div class="flex items-center gap-3"><a href="{{ route('dashboard') }}" class="btn" style="text-decoration:none;">⌂ Tablero</a><div class="title">🧾 Factura de venta</div></div>
             <div class="btn-group">
-                <button type="button" class="btn" onclick="editSale()">Editar</button>
-                <button type="button" class="btn" onclick="clearSale()">Eliminar</button>
-                <button type="button" class="btn btn-green" onclick="showMessage('Notas crédito y débito se gestionan desde la factura guardada.')">NC/NB</button>
-                <button type="button" class="btn" onclick="document.getElementById('customer-email').focus()">Estado de cuenta</button>
-                @php($latestSaleVoucherId = optional($sales->first())->accounting_voucher_id)
-                @if($latestSaleVoucherId)
-                    <a target="_blank" href="{{ route('accounting.vouchers.accounting', $latestSaleVoucherId) }}" class="btn" style="text-decoration:none;">Ver contabilización</a>
+                @if($selectedSale)
+                    <a href="{{ route('sales.edit', $selectedSale) }}" class="btn" style="text-decoration:none;">Editar</a>
                 @else
-                    <button type="button" class="btn" onclick="showMessage('Guarda la factura para generar su asiento contable; luego podrás verlo aquí o en Facturas recientes.')">Ver contabilización</button>
+                    <button type="button" class="btn" onclick="showMessage('Selecciona una factura del historial para editarla.')">Editar</button>
+                @endif
+                <button type="button" class="btn" onclick="clearSale()">Eliminar</button>
+                @if($selectedSale)
+                    <a href="{{ route('commercial-documents.customer-credit-notes', ['reference_invoice_id' => $selectedSale->id]) }}" class="btn btn-green" style="text-decoration:none;">NC/NB</a>
+                    <a href="{{ route('sales.statement', $selectedSale) }}" class="btn" style="text-decoration:none;" target="_blank" rel="noopener">Estado de cuenta</a>
+                @else
+                    <button type="button" class="btn btn-green" onclick="showMessage('Selecciona una factura del historial para crear una nota crédito.')">NC/NB</button>
+                    <button type="button" class="btn" onclick="showMessage('Selecciona una factura del historial para consultar su estado de cuenta.')">Estado de cuenta</button>
+                @endif
+                @if($selectedSale?->accounting_voucher_id)
+                    <a target="_blank" href="{{ route('accounting.vouchers.accounting', $selectedSale->accounting_voucher_id) }}" class="btn" style="text-decoration:none;">Ver contabilización</a>
+                @else
+                    <button type="button" class="btn" onclick="showMessage('{{ $selectedSale ? 'Esta factura aún no tiene contabilización.' : 'Selecciona una factura del historial para ver su contabilización.' }}')">Ver contabilización</button>
                 @endif
                 <button type="button" class="btn" style="background:#db2777;color:#fff;border-color:#db2777" onclick="sendToDian()">⚡ Enviar a la DIAN</button>
                 <a href="{{ route('items.index') }}" class="btn btn-green">📦 Inventario</a>
@@ -61,7 +101,7 @@
         </div>
 
         <p class="section-label">02 / Productos y descuentos</p>
-        <div class="table-wrap"><table><thead><tr><th style="width:30%">Producto</th><th>Presentación</th><th>Cantidad</th><th>Precio</th><th>IVA %</th><th>Descuento %</th><th>Total</th><th></th></tr></thead><tbody id="sale-lines"><tr class="sale-line"><td><select class="input product" name="items[0][item_id]" required><option value="">Seleccione producto</option>@foreach($items as $item)<option value="{{ $item->id }}">{{ $item->name }} (stock {{ $item->stock }} {{ $item->base_unit ?? 'unidad' }})</option>@endforeach</select></td><td><select class="input unit-select" name="items[0][unit_conversion_id]"><option value="">Unidad base</option></select></td><td><input class="input quantity" name="items[0][quantity]" type="number" min="0.0001" step="0.0001" value="1" required></td><td><input class="input price" name="items[0][unit_price]" type="number" step="0.01" min="0" required></td><td><select class="input iva" name="items[0][iva_percentage]"><option value="19">19%</option><option value="5">5%</option><option value="0">0%</option></select></td><td><input class="input discount" name="items[0][discount_percentage]" type="number" min="0" max="100" value="0"></td><td class="line-total">$0.00</td><td><button type="button" class="btn" onclick="removeLine(this)">×</button></td></tr></tbody></table></div>
+        <div class="table-wrap"><table><thead><tr><th style="width:30%">Producto</th><th>Presentación</th><th>Cantidad</th><th>Precio</th><th>IVA %</th><th>Descuento %</th><th>Total</th><th></th></tr></thead><tbody id="sale-lines"><tr class="sale-line"><td><select class="input product" name="items[0][item_id]" required><option value="">Seleccione producto</option>@foreach($items as $item)<option value="{{ $item->id }}">{{ $item->name }} ({{ $item->code ?: 'Sin código' }} · stock {{ $item->stock }} {{ $item->base_unit ?? 'unidad' }})</option>@endforeach</select></td><td><select class="input unit-select" name="items[0][unit_conversion_id]"><option value="">Unidad base</option></select></td><td><input class="input quantity" name="items[0][quantity]" type="number" min="0.0001" step="0.0001" value="1" required></td><td><input class="input price" name="items[0][unit_price]" type="number" step="0.01" min="0" required></td><td><select class="input iva" name="items[0][iva_percentage]"><option value="19">19%</option><option value="5">5%</option><option value="0">0%</option></select></td><td><input class="input discount" name="items[0][discount_percentage]" type="number" min="0" max="100" value="0"></td><td class="line-total">$0.00</td><td><button type="button" class="btn" onclick="removeLine(this)">×</button></td></tr></tbody></table></div>
         <button type="button" class="btn btn-green" onclick="addLine()" style="margin-top:10px">＋ Agregar renglón</button>
         <p class="section-label" style="margin-top:18px;">03 / Forma de pago</p>
         <div class="grid">
@@ -72,14 +112,14 @@
         <input type="hidden" name="subtotal" id="subtotal-value"><input type="hidden" name="iva_total" id="iva-value"><input type="hidden" name="discount_total" id="discount-value"><input type="hidden" name="retention_base" id="retention-base-value"><input type="hidden" name="retention_total" id="retention-value"><input type="hidden" name="total" id="total-value">
     </form>
 
-    <div class="history"><h3 class="title">Facturas recientes</h3><div class="table-wrap"><table><thead><tr><th>Factura</th><th>Cliente</th><th>Forma de pago</th><th>Total</th><th>Acciones</th></tr></thead><tbody>@forelse($sales as $sale)<tr><td>{{ $sale->invoice_number }}</td><td>{{ $sale->customer_name }}</td><td>{{ $sale->paymentMethod?->name ?? 'No especificada' }}</td><td>${{ number_format($sale->total, 2) }}</td><td><a class="btn" href="{{ route('sales.show', $sale) }}" target="_blank">Ver documento</a> <a class="btn" href="{{ route('sales.edit', $sale) }}">✏ Editar</a> <a class="btn" href="{{ route('sales.xml', $sale) }}">XML</a> <a class="btn" href="{{ route('sales.statement', $sale) }}" target="_blank">Cartera</a>@if($sale->accounting_voucher_id)<a class="btn" target="_blank" href="{{ route('accounting.vouchers.accounting', $sale->accounting_voucher_id) }}">Ver contabilización</a>@else<form method="POST" action="{{ route('sales.account', $sale) }}" style="display:inline-block" onsubmit="return confirm('¿Contabilizar esta factura ahora?')">@csrf<button type="submit" class="btn">Contabilizar ahora</button></form>@endif<form method="POST" action="{{ route('sales.email', $sale) }}" style="display:inline-flex;gap:3px">@csrf<input name="email" type="email" value="{{ $sale->customer_email }}" placeholder="correo" required class="input" style="width:140px"><button class="btn btn-main">Enviar</button></form></td></tr>@empty<tr><td colspan="5">No hay facturas de venta registradas.</td></tr>@endforelse</tbody></table></div></div>
+    <div class="history"><h3 class="title">Facturas recientes</h3><div class="table-wrap"><table><thead><tr><th>Factura</th><th>Cliente</th><th>Forma de pago</th><th>Total</th><th>Acciones</th></tr></thead><tbody>@forelse($sales as $sale)<tr><td>{{ $sale->invoice_number }}</td><td>{{ $sale->customer_name }}</td><td>{{ $sale->paymentMethod?->name ?? 'No especificada' }}</td><td>${{ number_format($sale->total, 2) }}</td><td><a class="btn" href="{{ route('sales.index', ['preview' => $sale->id]) }}">Vista previa</a> <a class="btn" href="{{ route('sales.show', $sale) }}" target="_blank">Ver documento</a> <a class="btn" href="{{ route('sales.edit', $sale) }}">✏ Editar</a> <a class="btn" href="{{ route('sales.xml', $sale) }}">XML</a> <a class="btn" href="{{ route('sales.statement', $sale) }}" target="_blank">Cartera</a>@if($sale->accounting_voucher_id)<a class="btn" target="_blank" href="{{ route('accounting.vouchers.accounting', $sale->accounting_voucher_id) }}">Ver contabilización</a>@else<form method="POST" action="{{ route('sales.account', $sale) }}" style="display:inline-block" onsubmit="return confirm('¿Contabilizar esta factura ahora?')">@csrf<button type="submit" class="btn">Contabilizar ahora</button></form>@endif<form method="POST" action="{{ route('sales.email', $sale) }}" style="display:inline-flex;gap:3px">@csrf<input name="email" type="email" value="{{ $sale->customer_email }}" placeholder="correo" required class="input" style="width:140px"><button class="btn btn-main">Enviar</button></form></td></tr>@empty<tr><td colspan="5">No hay facturas de venta registradas.</td></tr>@endforelse</tbody></table></div></div>
 </div>
 <script>
 let lineIndex=1;
 const products=@json($productOptions);
 function fmt(n){return (Number(n)||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}
 function escapeHtml(value){return String(value??'').replace(/[&<>"']/g,character=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[character]))}
-function options(){return '<option value="">Seleccione producto</option>'+products.map(product=>`<option value="${product.id}">${escapeHtml(product.name)} (stock ${product.stock} ${escapeHtml(product.base_unit)})</option>`).join('')}
+function options(){return '<option value="">Seleccione producto</option>'+products.map(product=>`<option value="${product.id}">${escapeHtml(product.name)} (${escapeHtml(product.code||'Sin código')} · stock ${product.stock} ${escapeHtml(product.base_unit)})</option>`).join('')}
 function syncUnitOptions(row,resetPrice=false){const product=products.find(entry=>String(entry.id)===row.querySelector('.product').value),select=row.querySelector('.unit-select'),previous=select.value||select.dataset.selected||'';select.innerHTML=`<option value="">${escapeHtml(product?.base_unit||'unidad')} (base)</option>`+(product?.units||[]).map(unit=>`<option value="${unit.id}" data-factor="${unit.factor}">${escapeHtml(unit.name)} × ${unit.factor}</option>`).join('');if(!resetPrice&&[...select.options].some(option=>option.value===previous))select.value=previous;delete select.dataset.selected;if(resetPrice)updatePrice(row)}
 function updatePrice(row){const product=products.find(entry=>String(entry.id)===row.querySelector('.product').value),unit=product?.units.find(entry=>String(entry.id)===row.querySelector('.unit-select').value),unitPrice=unit&&unit.sale_price!==null&&unit.sale_price!==undefined?Number(unit.sale_price):Number(product?.price)*(Number(unit?.factor)||1);if(product)row.querySelector('.price').value=unitPrice.toFixed(2)}
 function addLine(){const row=document.createElement('tr');row.className='sale-line';row.innerHTML=`<td><select class="input product" name="items[${lineIndex}][item_id]" required>${options()}</select></td><td><select class="input unit-select" name="items[${lineIndex}][unit_conversion_id]"><option value="">Unidad base</option></select></td><td><input class="input quantity" name="items[${lineIndex}][quantity]" type="number" min="0.0001" step="0.0001" value="1" required></td><td><input class="input price" name="items[${lineIndex}][unit_price]" type="number" step="0.01" min="0" required></td><td><select class="input iva" name="items[${lineIndex}][iva_percentage]"><option value="19">19%</option><option value="5">5%</option><option value="0">0%</option></select></td><td><input class="input discount" name="items[${lineIndex}][discount_percentage]" type="number" min="0" max="100" value="0"></td><td class="line-total">$0.00</td><td><button type="button" class="btn" onclick="removeLine(this)">×</button></td>`;document.getElementById('sale-lines').appendChild(row);lineIndex++}

@@ -5,15 +5,14 @@ namespace App\Http\Controllers;
 use App\Models\InventoryMovement;
 use App\Models\Item;
 use App\Models\NumberingResolution;
-use App\Models\PaymentMethod;
 use App\Models\Sale;
 use App\Models\SaleDetail;
 use App\Models\ThirdParty;
 use App\Services\AccountingEntryService;
 use App\Services\FactusService;
 use App\Services\InventoryUnitService;
+use App\Services\PaymentMethodService;
 use App\Services\SalesRetentionCalculator;
-use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
@@ -27,13 +26,18 @@ class SaleController extends Controller
         private readonly FactusService $factusService,
         private readonly InventoryUnitService $inventoryUnitService,
         private readonly SalesRetentionCalculator $salesRetentionCalculator,
+        private readonly PaymentMethodService $paymentMethodService,
     ) {}
 
-    public function index()
+    public function index(Request $request)
     {
         $items = Item::with('unitConversions')->where('type', 'producto')->orderBy('name')->get();
         $sales = Sale::with(['details.item', 'creator', 'paymentMethod'])->latest()->take(20)->get();
-        $paymentMethods = $this->availablePaymentMethods();
+        $selectedSaleId = $request->integer('preview') ?: $request->session()->get('preview_sale_id');
+        $selectedSale = $selectedSaleId
+            ? Sale::with(['details.item', 'paymentMethod', 'accountingVoucher'])->findOrFail($selectedSaleId)
+            : null;
+        $paymentMethods = $this->paymentMethodService->available();
         $customers = ThirdParty::where('is_customer', true)->where('active', true)->orderBy('name')->get();
         $withholdings = config('colombia_withholdings');
         $nextConsecutive = NumberingResolution::peekNext('sale');
@@ -41,6 +45,7 @@ class SaleController extends Controller
             return [
                 'id' => $item->id,
                 'name' => $item->name,
+                'code' => $item->code,
                 'price' => $item->sale_price,
                 'stock' => $item->stock,
                 'base_unit' => $item->base_unit ?: 'unidad',
@@ -53,7 +58,7 @@ class SaleController extends Controller
             ];
         })->values();
 
-        return view('sales.index', compact('items', 'sales', 'paymentMethods', 'productOptions', 'withholdings', 'customers', 'nextConsecutive'));
+        return view('sales.index', compact('items', 'sales', 'paymentMethods', 'productOptions', 'withholdings', 'customers', 'nextConsecutive', 'selectedSale'));
     }
 
     public function store(Request $request)
@@ -150,7 +155,9 @@ class SaleController extends Controller
                 ? ' Enviada a la DIAN a través de Factus.'
                 : ' No se envió a la DIAN: '.($factusSkipReason ?? 'error desconocido.'));
 
-        return redirect()->route('sales.index')->with('success', $message);
+        return redirect()->route('sales.index')
+            ->with('success', $message)
+            ->with('preview_sale_id', $sale->id);
     }
 
     /**
@@ -264,10 +271,11 @@ class SaleController extends Controller
     {
         $sale->load(['details.item', 'paymentMethod']);
         $items = Item::with('unitConversions')->where('type', 'producto')->orderBy('name')->get();
-        $paymentMethods = $this->availablePaymentMethods();
+        $paymentMethods = $this->paymentMethodService->available();
         $productOptions = $items->map(fn (Item $item) => [
             'id' => $item->id,
             'name' => $item->name,
+            'code' => $item->code,
             'price' => $item->sale_price,
             'stock' => $item->stock,
             'base_unit' => $item->base_unit ?: 'unidad',
@@ -349,7 +357,7 @@ class SaleController extends Controller
         $skipReason = null;
         $accountingVoucher = $this->accountingEntryService->postSale($sale->fresh(), $skipReason);
 
-        return redirect()->route('sales.show', $sale)->with('success', $accountingVoucher
+        return redirect()->route('sales.index', ['preview' => $sale->id])->with('success', $accountingVoucher
             ? '¡Factura actualizada, stock recalculado y vuelta a contabilizar correctamente!'
             : '¡Factura actualizada y stock recalculado! No se contabilizó automáticamente: '.($skipReason ?? 'configura las cuentas PUC necesarias.'));
     }
@@ -370,24 +378,6 @@ class SaleController extends Controller
             'documents' => $documents,
             'balance' => $balance,
         ]);
-    }
-
-    /**
-     * @return Collection<int, PaymentMethod>
-     */
-    private function availablePaymentMethods(): Collection
-    {
-        $paymentMethods = PaymentMethod::query()->orderBy('name')->get();
-
-        if ($paymentMethods->isEmpty()) {
-            foreach (['Efectivo', 'Bancos', 'Anticipo', 'Crédito'] as $name) {
-                PaymentMethod::create(['name' => $name, 'is_editable' => true]);
-            }
-
-            $paymentMethods = PaymentMethod::query()->orderBy('name')->get();
-        }
-
-        return $paymentMethods;
     }
 
     public function account(Sale $sale)

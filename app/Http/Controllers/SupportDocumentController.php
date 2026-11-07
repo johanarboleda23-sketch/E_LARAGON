@@ -18,14 +18,18 @@ class SupportDocumentController extends Controller
         private readonly FactusService $factusService,
     ) {}
 
-    public function index()
+    public function index(Request $request)
     {
         $suppliers = ThirdParty::where('is_supplier', true)->where('active', true)->orderBy('name')->get();
         $documents = SupportDocument::with(['supplier', 'creator'])->latest()->take(20)->get();
+        $selectedDocumentId = $request->integer('preview') ?: $request->session()->get('preview_support_document_id');
+        $selectedDocument = $selectedDocumentId
+            ? SupportDocument::with(['supplier', 'accountingVoucher'])->findOrFail($selectedDocumentId)
+            : null;
         $withholdings = config('colombia_withholdings');
         $nextConsecutive = NumberingResolution::peekNext('support_document');
 
-        return view('support-documents.index', compact('suppliers', 'documents', 'withholdings', 'nextConsecutive'));
+        return view('support-documents.index', compact('suppliers', 'documents', 'withholdings', 'nextConsecutive', 'selectedDocument'));
     }
 
     public function show(SupportDocument $document)
@@ -77,7 +81,7 @@ class SupportDocumentController extends Controller
         $skipReason = null;
         $accountingVoucher = $this->accountingEntryService->postSupportDocument($document->fresh(), $skipReason);
 
-        return redirect()->route('support-documents.show', $document)->with('success', $accountingVoucher
+        return redirect()->route('support-documents.index', ['preview' => $document->id])->with('success', $accountingVoucher
             ? '¡Documento actualizado y vuelto a contabilizar correctamente!'
             : '¡Documento actualizado! No se contabilizó automáticamente: '.($skipReason ?? 'configura las cuentas PUC necesarias.'));
     }
@@ -109,7 +113,7 @@ class SupportDocumentController extends Controller
         $skipReason = null;
         $voucher = $this->accountingEntryService->postSupportDocument($document, $skipReason);
 
-        return back()->with('success', $voucher
+        return redirect()->route('support-documents.index', ['preview' => $document->id])->with('success', $voucher
             ? '¡Documento contabilizado correctamente!'
             : 'No se pudo contabilizar: '.($skipReason ?? 'configura las cuentas PUC necesarias.'));
     }
@@ -161,7 +165,9 @@ class SupportDocumentController extends Controller
                 ? ' Enviado a la DIAN a través de Factus.'
                 : ' No se envió a la DIAN: '.($factusSkipReason ?? 'error desconocido.'));
 
-        return back()->with('success', $message);
+        return redirect()->route('support-documents.index')
+            ->with('success', $message)
+            ->with('preview_support_document_id', $document->id);
     }
 
     public function xml(SupportDocument $document)

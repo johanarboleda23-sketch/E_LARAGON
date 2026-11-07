@@ -49,6 +49,41 @@
                 </div>
             @endif
 
+            @if ($previewDocument)
+                <x-document-preview
+                    :title="$configuration['label']"
+                    :number="$previewDocument->consecutive"
+                    :date="$previewDocument->document_date?->format('d/m/Y')"
+                    :party-label="$configuration['partyLabel']"
+                    :party="$previewDocument->third_party_name"
+                    :status="$previewDocument->dian_status === 'sent' ? 'Enviada a DIAN' : ucfirst($previewDocument->status)"
+                    :fields="[
+                        ['label' => 'Factura origen', 'value' => $previewDocument->referenceSale?->invoice_number ?? $previewDocument->referencePurchase?->invoice_number],
+                        ['label' => 'Forma de pago', 'value' => $previewDocument->paymentMethod?->name],
+                        ['label' => 'Retención', 'value' => '$'.number_format((float) $previewDocument->retention_total, 2)],
+                    ]"
+                    :columns="[
+                        ['key' => 'item.code', 'label' => 'Código'],
+                        ['key' => 'item.name', 'label' => 'Producto'],
+                        ['key' => 'quantity', 'label' => 'Cantidad'],
+                        ['key' => 'unit_price', 'label' => 'Precio unitario'],
+                        ['key' => 'iva_percentage', 'label' => 'IVA %'],
+                    ]"
+                    :rows="$previewDocument->lines"
+                    :totals="[
+                        ['label' => 'Subtotal', 'value' => '$'.number_format((float) $previewDocument->subtotal, 2)],
+                        ['label' => 'Descuentos', 'value' => '$'.number_format((float) $previewDocument->discount_total, 2)],
+                        ['label' => 'IVA', 'value' => '$'.number_format((float) $previewDocument->iva_total, 2)],
+                        ['label' => 'Total', 'value' => '$'.number_format((float) $previewDocument->total, 2)],
+                    ]"
+                    :accounting-url="$previewDocument->accountingVoucher ? route('accounting.vouchers.accounting', $previewDocument->accountingVoucher) : null"
+                    :accounting-message="$previewDocument->accountingVoucher ? null : 'La contabilización de este documento aún no se ha generado.'"
+                    :actions="$isNote && $previewDocument->status === 'draft' && ! $previewDocument->accountingVoucher
+                        ? [['label' => 'Contabilizar', 'url' => route('accounting.vouchers.index', ['commercial_document_id' => $previewDocument->id])]]
+                        : []"
+                />
+            @endif
+
             <section aria-labelledby="document-form-title" class="border-b border-gray-200 pb-7">
                 <div class="mb-4 flex flex-wrap items-end justify-between gap-3">
                     <div>
@@ -185,7 +220,7 @@
                                             <select name="items[{{ $index }}][item_id]" required class="item-select block w-full rounded-md border-gray-300 text-sm">
                                                 <option value="">Selecciona producto</option>
                                                 @foreach ($items as $item)
-                                                    <option value="{{ $item->id }}" data-sale-price="{{ $item->sale_price }}" data-purchase-price="{{ $item->purchase_price }}" @selected((string) ($line['item_id'] ?? '') === (string) $item->id)>{{ $item->name }}</option>
+                                                    <option value="{{ $item->id }}" data-sale-price="{{ $item->sale_price }}" data-purchase-price="{{ $item->purchase_price }}" @selected((string) ($line['item_id'] ?? '') === (string) $item->id)>{{ $item->name }} · {{ $item->code ?: 'Sin código' }}</option>
                                                 @endforeach
                                             </select>
                                             <select name="items[{{ $index }}][unit_conversion_id]" data-selected="{{ $line['unit_conversion_id'] ?? '' }}" class="unit-select mt-1 block w-full rounded-md border-gray-300 text-sm">
@@ -328,6 +363,7 @@
                                     </td>
                                     <td class="whitespace-nowrap px-3 py-3">
                                         <div class="flex flex-wrap items-center justify-end gap-2">
+                                            <a href="{{ route($configuration['indexRoute'], ['preview' => $document->id]) }}" class="font-semibold text-teal-800 hover:underline">Vista previa</a>
                                             @if ($document->status === 'draft')
                                                 @if ($document->dian_status !== 'sent')
                                                     <a href="{{ route($configuration['indexRoute'], ['document' => $document->id]) }}" class="font-semibold text-teal-800 hover:underline">Editar</a>
@@ -396,7 +432,7 @@
 
         function itemOptions() {
             return '<option value="">Selecciona producto</option>' + catalog.map((item) => {
-                return `<option value="${item.id}" data-sale-price="${item.sale_price}" data-purchase-price="${item.purchase_price ?? 0}">${escapeHtml(item.name)}</option>`;
+                return `<option value="${item.id}" data-sale-price="${item.sale_price}" data-purchase-price="${item.purchase_price ?? 0}">${escapeHtml(item.name)} · ${escapeHtml(item.code || 'Sin código')}</option>`;
             }).join('');
         }
 

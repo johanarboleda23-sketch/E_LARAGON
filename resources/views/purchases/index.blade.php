@@ -52,6 +52,39 @@
 <body>
 
     <div class="form-container">
+        @if($selectedPurchase && !$selectedPurchase->trashed())
+            <x-document-preview
+                title="Factura de compra"
+                :number="$selectedPurchase->invoice_number"
+                :date="$selectedPurchase->purchase_date?->format('d/m/Y')"
+                party-label="Proveedor"
+                :party="$selectedPurchase->provider"
+                :status="$selectedPurchase->trashed() ? 'Eliminada' : 'Activa'"
+                :fields="[
+                    ['label' => 'NIT', 'value' => $selectedPurchase->provider_nit],
+                    ['label' => 'Forma de pago', 'value' => $selectedPurchase->paymentMethod?->name],
+                    ['label' => 'Retención', 'value' => '$'.number_format((float) $selectedPurchase->retefuente, 2)],
+                ]"
+                :columns="[
+                    ['key' => 'item.code', 'label' => 'Código'],
+                    ['key' => 'item.name', 'label' => 'Producto / concepto'],
+                    ['key' => 'quantity', 'label' => 'Cantidad'],
+                    ['key' => 'cost_price', 'label' => 'Costo unitario'],
+                    ['key' => 'iva_percentage', 'label' => 'IVA %'],
+                ]"
+                :rows="$selectedPurchase->details"
+                :totals="[
+                    ['label' => 'Subtotal', 'value' => '$'.number_format((float) $selectedPurchase->subtotal, 2)],
+                    ['label' => 'IVA', 'value' => '$'.number_format((float) $selectedPurchase->iva_total, 2)],
+                    ['label' => 'Retención', 'value' => '$'.number_format((float) $selectedPurchase->retefuente, 2)],
+                    ['label' => 'Total a pagar', 'value' => '$'.number_format((float) $selectedPurchase->total_pagar, 2)],
+                ]"
+                :accounting-url="$selectedPurchase->accounting_voucher_id ? route('accounting.vouchers.accounting', $selectedPurchase->accounting_voucher_id) : null"
+                :accounting-action="$selectedPurchase->accounting_voucher_id || $selectedPurchase->trashed() ? null : route('purchases.account', $selectedPurchase)"
+                :accounting-message="$selectedPurchase->accounting_voucher_id || $selectedPurchase->trashed() ? null : 'La factura aún no tiene contabilización.'"
+                :actions="[['label' => 'Abrir documento', 'url' => route('purchases.show', $selectedPurchase)]]"
+            />
+        @endif
         <!-- FORMULARIO GENERAL DE COMPRAS -->
         @if(session('success'))<div style="padding:10px;background:#ecfdf5;color:#047857;margin-bottom:12px;border-radius:8px;font-weight:bold;font-size:12px;">{{ session('success') }}</div>@endif
         <form action="{{ route('purchases.store') }}" method="POST" id="purchase-form">
@@ -61,15 +94,23 @@
             <div class="top-bar">
                 <div class="flex items-center gap-3"><a href="{{ route('dashboard') }}" class="btn-white" style="text-decoration:none;">⌂ Tablero</a><h2 class="title-pink">🛒 Módulo de Gestión de Compras Avanzado</h2></div>
                 <div class="btn-group">
-                    <button type="button" onclick="editInvoice()" class="btn-white">Editar</button>
-                    <button type="button" onclick="clearInvoice()" class="btn-white">Eliminar</button>
-                    <button type="button" onclick="showCreditNote()" class="btn-pink-light">Notas Crédito / Débito</button>
-                    <a href="{{ route('purchases.payables') }}" target="_blank" class="btn-white" style="border-color:#bfdbfe; color:#1d4ed8; text-decoration:none; display:inline-block;">Estado Cartera (C x P)</a>
-                    @php($latestPurchaseVoucherId = optional($recentPurchases->first())->accounting_voucher_id)
-                    @if($latestPurchaseVoucherId)
-                        <a href="{{ route('accounting.vouchers.accounting', $latestPurchaseVoucherId) }}" target="_blank" class="btn-white" style="border-color:#e9d5ff; color:#6b21a8; text-decoration:none; display:inline-block;">Ver contabilización</a>
+                    @if($selectedPurchase && !$selectedPurchase->trashed())
+                        <a href="{{ route('purchases.edit', $selectedPurchase) }}" class="btn-white" style="text-decoration:none;">Editar</a>
                     @else
-                        <button type="button" onclick="showAccountingEntry()" class="btn-white" style="border-color:#e9d5ff; color:#6b21a8;">Ver contabilización</button>
+                        <button type="button" onclick="showMessage('Selecciona una factura activa del historial para editarla.')" class="btn-white">Editar</button>
+                    @endif
+                    <button type="button" onclick="clearInvoice()" class="btn-white">Eliminar</button>
+                    @if($selectedPurchase)
+                        <a href="{{ route('commercial-documents.supplier-debit-notes', ['reference_invoice_id' => $selectedPurchase->id]) }}" class="btn-pink-light" style="text-decoration:none;">Nota débito</a>
+                        <a href="{{ route('purchases.statement', $selectedPurchase) }}" class="btn-white" style="text-decoration:none;">Estado de cuenta</a>
+                    @else
+                        <button type="button" onclick="showMessage('Selecciona una factura del historial para crear una nota débito de proveedor.')" class="btn-pink-light">Nota débito</button>
+                    @endif
+                    <a href="{{ route('purchases.payables') }}" target="_blank" class="btn-white" style="border-color:#bfdbfe; color:#1d4ed8; text-decoration:none; display:inline-block;">Estado Cartera (C x P)</a>
+                    @if($selectedPurchase?->accounting_voucher_id)
+                        <a href="{{ route('accounting.vouchers.accounting', $selectedPurchase->accounting_voucher_id) }}" target="_blank" class="btn-white" style="border-color:#e9d5ff; color:#6b21a8; text-decoration:none; display:inline-block;">Ver contabilización</a>
+                    @else
+                        <button type="button" onclick="showMessage('{{ $selectedPurchase ? 'Esta factura aún no tiene contabilización.' : 'Selecciona una factura del historial para ver su contabilización.' }}')" class="btn-white" style="border-color:#e9d5ff; color:#6b21a8;">Ver contabilización</button>
                     @endif
                     <a href="/items" class="btn-pink-light" style="text-decoration:none; display:inline-block; line-height:14px;">📦 Almacén / Inventario</a>
                     <div class="download-menu" id="download-menu">
@@ -267,6 +308,7 @@
                             <td>{{ $purchase->deleter?->name ?? 'N/A' }}</td>
                             <td>{{ $purchase->trashed() ? 'Eliminada' : 'Activa' }}</td>
                             <td>
+                                <a class="btn-white" style="text-decoration:none;display:inline-block" href="{{ route('purchases.index', ['preview' => $purchase->id]) }}">Vista previa</a>
                                 <a class="btn-white" style="text-decoration:none;display:inline-block" href="{{ route('purchases.show', $purchase) }}" target="_blank">Ver documento</a>
                                 @if($purchase->accounting_voucher_id)
                                     <a class="btn-white" style="text-decoration:none;display:inline-block" target="_blank" href="{{ route('accounting.vouchers.accounting', $purchase->accounting_voucher_id) }}">Ver contabilización</a>

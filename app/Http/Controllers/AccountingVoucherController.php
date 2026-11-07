@@ -72,6 +72,12 @@ class AccountingVoucherController extends Controller
         $fixedVoucherType = $request->route('voucherType');
         $commercialDocument = null;
         $voucherPrefill = [];
+        $selectedVoucherId = $request->integer('preview') ?: $request->session()->get('preview_voucher_id');
+        $selectedVoucher = $selectedVoucherId
+            ? AccountingVoucher::with(['lines.account', 'creator'])
+                ->when($fixedVoucherType, fn ($query) => $query->where('voucher_type', $fixedVoucherType))
+                ->findOrFail($selectedVoucherId)
+            : null;
 
         if ($request->filled('commercial_document_id')) {
             $commercialDocument = CommercialDocument::query()->findOrFail($request->integer('commercial_document_id'));
@@ -112,7 +118,7 @@ class AccountingVoucherController extends Controller
         $voucherTypeLabel = $fixedVoucherType ? (self::VOUCHER_TYPES[$fixedVoucherType] ?? $fixedVoucherType) : null;
         $nextConsecutive = $fixedVoucherType ? self::nextInternalConsecutive($fixedVoucherType) : null;
 
-        return view('accounting.vouchers.index', compact('accounts', 'vouchers', 'customers', 'suppliers', 'commercialDocument', 'voucherPrefill', 'voucherType', 'voucherTypeLabel', 'nextConsecutive'));
+        return view('accounting.vouchers.index', compact('accounts', 'vouchers', 'customers', 'suppliers', 'commercialDocument', 'voucherPrefill', 'voucherType', 'voucherTypeLabel', 'nextConsecutive', 'selectedVoucher'));
     }
 
     public function store(Request $request)
@@ -177,8 +183,8 @@ class AccountingVoucherController extends Controller
         $voucher = $this->accountingEntryService->post($data, $lines, $commercialDocument);
 
         return $commercialDocument
-            ? redirect()->route('accounting.vouchers.accounting', $voucher)->with('success', 'Nota contabilizada correctamente.')
-            : back()->with('success', 'Comprobante contable guardado correctamente.');
+            ? redirect()->route('accounting.vouchers.index', ['preview' => $voucher->id])->with('success', 'Nota contabilizada correctamente.')
+            : back()->with('success', 'Comprobante contable guardado correctamente.')->with('preview_voucher_id', $voucher->id);
     }
 
     public function destroy(AccountingVoucher $voucher)

@@ -65,6 +65,9 @@ class CommercialDocumentControllerTest extends TestCase
         $this->assertSame(10.0, $item->fresh()->stock);
         $this->assertDatabaseCount('commercial_document_lines', 1);
         $this->assertDatabaseCount('inventory_movements', 0);
+        $this->get(route('commercial-documents.quotations', ['document' => $document->id]))
+            ->assertOk()
+            ->assertSeeText('Cotización · '.$document->consecutive);
     }
 
     public function test_converting_a_sales_document_creates_one_invoice_and_deducts_stock_once(): void

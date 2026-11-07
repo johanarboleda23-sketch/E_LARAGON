@@ -45,6 +45,37 @@
                 <div class="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{{ session('success') }}</div>
             @endif
 
+            @if($selectedRun)
+                <div class="mt-5">
+                    <x-document-preview
+                        title="Nómina"
+                        :number="$selectedRun->period"
+                        :date="$selectedRun->payment_date?->format('d/m/Y')"
+                        :status="ucfirst($selectedRun->status)"
+                        :fields="[
+                            ['label' => 'Empleados', 'value' => $selectedRun->lines->count()],
+                            ['label' => 'Total devengado', 'value' => '$'.number_format((float) $selectedRun->total_gross, 2)],
+                            ['label' => 'Deducciones', 'value' => '$'.number_format((float) $selectedRun->total_deductions, 2)],
+                        ]"
+                        :columns="[
+                            ['key' => 'employee.name', 'label' => 'Empleado'],
+                            ['key' => 'salary', 'label' => 'Salario'],
+                            ['key' => 'net_pay', 'label' => 'Neto a pagar'],
+                            ['key' => 'employer_cost', 'label' => 'Costo empresa'],
+                        ]"
+                        :rows="$selectedRun->lines"
+                        :totals="[
+                            ['label' => 'Neto a pagar', 'value' => '$'.number_format((float) $selectedRun->total_net, 2)],
+                            ['label' => 'Costo empleador', 'value' => '$'.number_format((float) $selectedRun->total_employer_cost, 2)],
+                        ]"
+                        :accounting-url="$selectedRun->accounting_voucher_id ? route('accounting.vouchers.accounting', $selectedRun->accounting_voucher_id) : null"
+                        :accounting-action="$selectedRun->accounting_voucher_id ? null : route('payroll.account', $selectedRun)"
+                        :accounting-message="$selectedRun->accounting_voucher_id ? null : 'La nómina aún no tiene contabilización.'"
+                        :actions="[['label' => 'Abrir nómina', 'url' => route('payroll.show', $selectedRun)]]"
+                    />
+                </div>
+            @endif
+
             <div class="mt-5 grid gap-5 lg:grid-cols-[1fr_360px]">
                 <section id="liquidacion" class="rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm sm:p-6">
                     <div class="flex flex-wrap items-start justify-between gap-3">
@@ -111,7 +142,8 @@
                             </div>
                             <p class="mt-2 text-xs text-[#71807a]">Pago: {{ $run->payment_date->format('d/m/Y') }}</p>
                             <p class="mt-3 text-sm font-bold text-[#192522]">Neto: ${{ number_format($run->total_net, 2) }}</p>
-                            <a href="{{ route('payroll.show', $run) }}" class="mt-2 inline-block text-xs font-bold text-[#227c70]">Ver nómina</a>
+                            <a href="{{ route('payroll.index', ['preview' => $run->id]) }}" class="mt-2 inline-block text-xs font-bold text-[#227c70]">Vista previa</a>
+                            <a href="{{ route('payroll.show', $run) }}" class="mt-2 ml-3 inline-block text-xs font-bold text-[#227c70]">Ver nómina</a>
                             @if($run->accounting_voucher_id)
                                 <a href="{{ route('accounting.vouchers.accounting', $run->accounting_voucher_id) }}" target="_blank" class="mt-2 ml-3 inline-block text-xs font-bold text-[#227c70]">Ver contabilización</a>
                             @else

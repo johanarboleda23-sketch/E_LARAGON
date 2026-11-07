@@ -51,7 +51,8 @@ class PayrollControllerTest extends TestCase
 
         $this->get(route('payroll.index'))
             ->assertOk()
-            ->assertSee('2026-10');
+            ->assertSee('2026-10')
+            ->assertSeeText('Nómina · 2026-10');
     }
 
     public function test_calculate_derives_arl_and_parafiscals_from_the_employee_contract(): void

@@ -10,8 +10,12 @@ use App\Models\SaleDetail;
 use App\Services\AccountingEntryService;
 use App\Services\FactusService;
 use App\Services\InventoryUnitService;
+use App\Services\PaymentMethodService;
+use Illuminate\Contracts\View\View;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 class PosController extends Controller
 {
@@ -19,16 +23,19 @@ class PosController extends Controller
         private readonly AccountingEntryService $accountingEntryService,
         private readonly FactusService $factusService,
         private readonly InventoryUnitService $inventoryUnitService,
+        private readonly PaymentMethodService $paymentMethodService,
     ) {}
 
-    public function index()
+    public function index(): View
     {
         $items = Item::with('unitConversions')->where('type', 'producto')->where('stock', '>', 0)->orderBy('name')->get();
         $sales = Sale::where('invoice_number', 'like', 'POS-%')->with('details.item')->latest()->take(15)->get();
+        $paymentMethods = $this->paymentMethodService->available();
 
         $productOptions = $items->map(fn (Item $item) => [
             'id' => $item->id,
             'name' => $item->name,
+            'code' => $item->code,
             'price' => $item->sale_price,
             'stock' => $item->stock,
             'base_unit' => $item->base_unit ?: 'unidad',
@@ -40,13 +47,19 @@ class PosController extends Controller
             ])->values(),
         ])->values();
 
-        return view('pos.index', compact('productOptions', 'sales'));
+        return view('pos.index', compact('productOptions', 'sales', 'paymentMethods'));
     }
 
-    public function store(Request $request)
+    public function store(Request $request): RedirectResponse
     {
         $data = $request->validate([
             'customer_name' => 'nullable|string|max:255',
+            'payment_method_id' => [
+                'required',
+                'integer',
+                Rule::exists('payment_methods', 'id')->where('company_id', session('company_id')),
+            ],
+            'apply_iva' => ['sometimes', 'boolean'],
             'items' => 'required|array|min:1',
             'items.*.item_id' => 'required|exists:items,id',
             'items.*.quantity' => ['required', 'numeric', 'gt:0'],
@@ -54,6 +67,7 @@ class PosController extends Controller
         ]);
 
         $ivaRate = 19.0;
+        $applyIva = ! array_key_exists('apply_iva', $data) || (bool) $data['apply_iva'];
 
         try {
             $invoiceNumber = NumberingResolution::allocateNext('sale') ?? 'POS-'.now()->format('YmdHis').'-'.random_int(100, 999);
@@ -61,7 +75,7 @@ class PosController extends Controller
             return back()->withErrors(['items' => $e->getMessage()]);
         }
 
-        [$sale, $subtotal, $ivaTotal, $total] = DB::transaction(function () use ($data, $invoiceNumber, $ivaRate) {
+        [$sale, $subtotal, $ivaTotal, $total] = DB::transaction(function () use ($data, $invoiceNumber, $ivaRate, $applyIva) {
             $subtotal = 0.0;
             $lines = [];
 
@@ -89,12 +103,13 @@ class PosController extends Controller
                 ];
             }
 
-            $ivaTotal = round($subtotal * ($ivaRate / 100), 2);
+            $ivaTotal = $applyIva ? round($subtotal * ($ivaRate / 100), 2) : 0.0;
             $total = round($subtotal + $ivaTotal, 2);
 
             $sale = Sale::create([
                 'invoice_number' => $invoiceNumber,
                 'customer_name' => $data['customer_name'] ?? 'Consumidor final',
+                'payment_method_id' => $data['payment_method_id'],
                 'sale_date' => now()->toDateString(),
                 'subtotal' => $subtotal,
                 'iva_total' => $ivaTotal,
@@ -115,7 +130,7 @@ class PosController extends Controller
                     'unit_factor' => $line['unit_factor'],
                     'quantity' => $line['quantity'],
                     'unit_price' => $line['unit_price'],
-                    'iva_percentage' => $ivaRate,
+                    'iva_percentage' => $applyIva ? $ivaRate : 0,
                     'discount_percentage' => 0,
                     'line_total' => $line['line_total'],
                 ]);

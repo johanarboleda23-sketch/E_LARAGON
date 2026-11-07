@@ -63,7 +63,8 @@ class SaleControllerTest extends TestCase
         $this->get(route('sales.index'))
             ->assertOk()
             ->assertSeeText('FV-50')
-            ->assertSeeText('Transferencia de prueba');
+            ->assertSeeText('Transferencia de prueba')
+            ->assertSeeText('Factura de venta · FV-50');
 
         $this->post(route('sales.store'), $payload)
             ->assertRedirect(route('sales.index'));
@@ -362,7 +363,7 @@ class SaleControllerTest extends TestCase
         $updatePayload['items'][0]['quantity'] = 3;
 
         $this->put(route('sales.update', $sale), $updatePayload)
-            ->assertRedirect(route('sales.show', $sale));
+            ->assertRedirect(route('sales.index', ['preview' => $sale->id]));
 
         $sale->refresh();
         $this->assertSame('VTA-TEST-001-B', $sale->invoice_number);

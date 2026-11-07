@@ -52,10 +52,11 @@
     </section>
 
     <table>
-        <thead><tr><th>Producto</th><th class="numeric">Cantidad</th><th class="numeric">Valor unitario</th><th class="numeric">Total</th></tr></thead>
+        <thead><tr><th>Código</th><th>Producto</th><th class="numeric">Cantidad</th><th class="numeric">Valor unitario</th><th class="numeric">Total</th></tr></thead>
         <tbody>
             @foreach($sale->details as $detail)
                 <tr>
+                    <td>{{ $detail->item->code ?: '—' }}</td>
                     <td>{{ $detail->item->name }}</td>
                     <td class="numeric">{{ $detail->quantity }} {{ $detail->unit_name ?? $detail->item->base_unit ?? 'unidad' }}</td>
                     <td class="numeric">${{ number_format($detail->unit_price, 2) }}</td>

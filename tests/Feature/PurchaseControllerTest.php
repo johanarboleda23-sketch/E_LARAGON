@@ -43,6 +43,9 @@ class PurchaseControllerTest extends TestCase
         $this->assertSame(70_000.0, (float) $purchase->retefuente);
         $this->assertSame(1_930_000.0, (float) $purchase->total_pagar);
         $this->assertSame(11.0, $item->fresh()->stock);
+        $this->get(route('purchases.index'))
+            ->assertOk()
+            ->assertSeeText('Factura de compra · DAV-RET-001');
     }
 
     public function test_purchase_creation_is_rejected_when_the_current_month_is_closed(): void
@@ -350,7 +353,7 @@ class PurchaseControllerTest extends TestCase
         $updatePayload['items'][0]['quantity'] = 3;
 
         $this->put(route('purchases.update', $purchase), $updatePayload)
-            ->assertRedirect(route('purchases.show', $purchase));
+            ->assertRedirect(route('purchases.index'));
 
         $purchase->refresh();
         $this->assertSame('DAV-RET-001-B', $purchase->invoice_number);
@@ -358,6 +361,9 @@ class PurchaseControllerTest extends TestCase
         $this->assertSame(1, $purchase->details()->count());
         $this->assertSame(3.0, $purchase->details()->first()->quantity);
         $this->assertSame(150_000.0, (float) $purchase->subtotal);
+        $this->get(route('purchases.index'))
+            ->assertOk()
+            ->assertSeeText('Factura de compra · DAV-RET-001-B');
 
         // El stock debe reflejar solo la nueva cantidad (10 + 3 = 13): la entrada original de 1
         // unidad fue revertida antes de aplicar la edición.

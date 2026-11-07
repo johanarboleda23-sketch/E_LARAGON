@@ -126,6 +126,7 @@ Route::middleware(['auth', 'company'])->group(function () {
         Route::get('/arqueo-de-caja', [CashRegisterController::class, 'index'])->name('cash-register.index');
         Route::get('/arqueo-de-caja/proveedores/facturas', [CashRegisterController::class, 'supplierInvoices'])->name('cash-register.supplier-invoices');
         Route::post('/arqueo-de-caja/abrir', [CashRegisterController::class, 'open'])->name('cash-register.open');
+        Route::post('/arqueo-de-caja/{cashRegisterSession}/facturas-del-dia', [CashRegisterController::class, 'importDailySales'])->name('cash-register.daily-sales.import');
         Route::post('/arqueo-de-caja/lote/liquidar', [CashRegisterController::class, 'settleBatch'])->name('cash-register.settle-batch');
         Route::post('/arqueo-de-caja/lote/{route}/facturas', [LogisticsController::class, 'attachInvoice'])->name('cash-register.attach-invoice');
         Route::delete('/arqueo-de-caja/paradas/{stop}/factura', [CashRegisterController::class, 'removeInvoice'])->name('cash-register.remove-invoice');

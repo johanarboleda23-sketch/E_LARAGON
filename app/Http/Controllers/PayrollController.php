@@ -23,7 +23,7 @@ class PayrollController extends Controller
         private readonly FactusService $factusService,
     ) {}
 
-    public function index()
+    public function index(Request $request)
     {
         $employees = ThirdParty::where('is_employee', true)
             ->where('active', true)
@@ -34,6 +34,10 @@ class PayrollController extends Controller
             ->orderBy('name')
             ->get();
         $runs = PayrollRun::with('lines.employee')->latest()->take(12)->get();
+        $selectedRunId = $request->integer('preview') ?: $request->session()->get('preview_payroll_run_id');
+        $selectedRun = $selectedRunId
+            ? PayrollRun::with(['lines.employee', 'accountingVoucher'])->findOrFail($selectedRunId)
+            : null;
         $socialSecurityErrors = PayrollSocialSecurityError::with('employee')
             ->where('resolved', false)
             ->latest()
@@ -41,7 +45,7 @@ class PayrollController extends Controller
             ->get();
         $socialSecurityOperator = Company::find(session('company_id'));
 
-        return view('payroll.index', compact('employees', 'runs', 'socialSecurityErrors', 'socialSecurityOperator'));
+        return view('payroll.index', compact('employees', 'runs', 'socialSecurityErrors', 'socialSecurityOperator', 'selectedRun'));
     }
 
     public function calculate(Request $request)
@@ -125,7 +129,7 @@ class PayrollController extends Controller
             ? ' Enviada a la DIAN a través de Factus.'
             : " No se envió a la DIAN ({$factusSent}/{$run->lines->count()} empleados enviados): ".($factusSkipReason ?? 'revisa la configuración de Factus.');
 
-        return back()->with('success', $message);
+        return back()->with('success', $message)->with('preview_payroll_run_id', $run->id);
     }
 
     public function email(Request $request, PayrollLine $line)
@@ -180,7 +184,7 @@ class PayrollController extends Controller
         $skipReason = null;
         $voucher = $this->accountingEntryService->postPayroll($run, $skipReason);
 
-        return back()->with('success', $voucher
+        return redirect()->route('payroll.index', ['preview' => $run->id])->with('success', $voucher
             ? '¡Nómina contabilizada correctamente!'
             : 'No se pudo contabilizar: '.($skipReason ?? 'configura las cuentas PUC necesarias.'));
     }

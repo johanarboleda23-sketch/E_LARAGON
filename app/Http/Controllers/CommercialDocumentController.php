@@ -129,6 +129,14 @@ class CommercialDocumentController extends Controller
             abort_if($currentDocument->dian_status === 'sent', 409);
         }
 
+        $previewDocumentId = $request->integer('preview') ?: $request->session()->get('preview_commercial_document_id');
+        $previewDocument = $previewDocumentId
+            ? CommercialDocument::query()
+                ->with(['lines.item', 'referenceSale', 'referencePurchase', 'accountingVoucher', 'paymentMethod'])
+                ->where('document_type', $type)
+                ->findOrFail($previewDocumentId)
+            : null;
+
         $referenceInvoiceId = old(
             'reference_invoice_id',
             $request->integer('reference_invoice_id') ?: null,
@@ -157,7 +165,7 @@ class CommercialDocumentController extends Controller
             ->with('unitConversions')
             ->when($configuration['party'] !== 'supplier', fn ($query) => $query->where('type', 'producto'))
             ->orderBy('name')
-            ->get(['id', 'name', 'type', 'sale_price', 'purchase_price', 'stock', 'base_unit']);
+            ->get(['id', 'name', 'code', 'type', 'sale_price', 'purchase_price', 'stock', 'base_unit']);
 
         $referenceInvoices = collect();
         if ($type === 'customer_credit_note') {
@@ -264,6 +272,7 @@ class CommercialDocumentController extends Controller
             'type',
             'configuration',
             'currentDocument',
+            'previewDocument',
             'defaultConsecutive',
             'documents',
             'formLines',
@@ -475,7 +484,8 @@ class CommercialDocumentController extends Controller
 
         return redirect()
             ->route($configuration['indexRoute'], ['document' => $document->id])
-            ->with('success', $configuration['label'].' guardada.');
+            ->with('success', $configuration['label'].' guardada.')
+            ->with('preview_commercial_document_id', $document->id);
     }
 
     public function updateConsecutive(Request $request, CommercialDocument $document): RedirectResponse

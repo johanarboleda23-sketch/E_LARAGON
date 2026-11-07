@@ -41,10 +41,11 @@
     </section>
 
     <table>
-        <thead><tr><th>Detalle</th><th class="numeric">Cantidad</th><th class="numeric">Valor unitario</th><th class="numeric">IVA %</th></tr></thead>
+        <thead><tr><th>Código</th><th>Detalle</th><th class="numeric">Cantidad</th><th class="numeric">Valor unitario</th><th class="numeric">IVA %</th></tr></thead>
         <tbody>
             @foreach($purchase->details as $detail)
                 <tr>
+                    <td>{{ $detail->item?->code ?? '—' }}</td>
                     <td>{{ $detail->item?->name ?? $detail->line_description ?? 'Línea' }}</td>
                     <td class="numeric">{{ $detail->quantity }} {{ $detail->unit_name ?? $detail->item?->base_unit ?? 'unidad' }}</td>
                     <td class="numeric">${{ number_format($detail->cost_price, 2) }}</td>

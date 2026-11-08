@@ -42,6 +42,9 @@
                 @if (session('success'))
                     <p class="mb-4 rounded-md bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{{ session('success') }}</p>
                 @endif
+                @if (session('warning'))
+                    <p class="mb-4 rounded-md bg-amber-50 px-4 py-3 text-sm text-amber-800" role="status">{{ session('warning') }}</p>
+                @endif
                 @if ($errors->any())
                     <div class="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
                         <ul class="list-inside list-disc space-y-1">
@@ -61,10 +64,25 @@
                     <label class="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" name="low_stock" value="1" @checked(request('low_stock'))> Solo bajo mínimo</label>
                     <button class="rounded-md bg-pink-500 px-4 py-2 text-sm font-semibold text-white">Filtrar</button>
                 </form>
+                <div class="mb-3 flex items-center gap-3">
+                    <form id="bulk-delete-items" method="POST" action="{{ route('items.bulk-destroy') }}" onsubmit="return confirm('¿Eliminar los registros seleccionados? Los que tengan movimientos o documentos asociados se conservarán.')">
+                        @csrf
+                        @method('DELETE')
+                        <button id="bulk-delete-items-button" type="submit" disabled aria-label="Eliminar productos seleccionados" title="Eliminar productos seleccionados" class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-red-200 bg-white text-red-600 shadow-sm transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M4 7h16M10 11v6m4-6v6M5 7l1 13h12l1-13M9 7V4h6v3" />
+                            </svg>
+                        </button>
+                    </form>
+                    <span id="bulk-delete-items-count" class="text-sm text-gray-500" aria-live="polite">Selecciona registros para eliminarlos (máximo 1.000 por operación)</span>
+                </div>
                 <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-pink-100">
                         <thead class="bg-pink-50">
                             <tr>
+                                <th class="px-4 py-3 text-left">
+                                    <input id="select-all-items" type="checkbox" aria-label="Seleccionar todos los registros visibles" class="rounded border-gray-300 text-pink-600 focus:ring-pink-500">
+                                </th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-pink-700 uppercase">Código</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-pink-700 uppercase">Nombre</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-pink-700 uppercase">P. Venta</th>
@@ -77,6 +95,9 @@
                         <tbody class="bg-white divide-y divide-gray-100">
                             @forelse ($items as $item)
                                 <tr>
+                                    <td class="px-4 py-4">
+                                        <input type="checkbox" name="items[]" value="{{ $item->id }}" form="bulk-delete-items" class="bulk-delete-item rounded border-gray-300 text-pink-600 focus:ring-pink-500" aria-label="Seleccionar {{ $item->name }}">
+                                    </td>
                                     <td class="px-6 py-4 text-sm font-semibold text-pink-600">{{ $item->code ?: '—' }}</td>
                                     <td class="px-6 py-4 text-sm text-gray-900">{{ $item->name }}</td>
                                     <td class="px-6 py-4 text-sm text-gray-900">${{ number_format($item->sale_price, 2) }}</td>
@@ -131,7 +152,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="7" class="px-6 py-4 text-center text-sm text-gray-400">No hay registros aún.</td>
+                                    <td colspan="8" class="px-6 py-4 text-center text-sm text-gray-400">No hay registros aún.</td>
                                 </tr>
                             @endforelse
                         </tbody>
@@ -248,6 +269,30 @@
         </div>
     </template>
     <script>
+        const selectAllItems = document.getElementById('select-all-items');
+        const bulkDeleteItemCheckboxes = Array.from(document.querySelectorAll('.bulk-delete-item'));
+        const bulkDeleteItemsButton = document.getElementById('bulk-delete-items-button');
+        const bulkDeleteItemsCount = document.getElementById('bulk-delete-items-count');
+
+        const updateBulkDeleteItemsState = () => {
+            const selectedCount = bulkDeleteItemCheckboxes.filter((checkbox) => checkbox.checked).length;
+            bulkDeleteItemsButton.disabled = selectedCount === 0;
+            bulkDeleteItemsCount.textContent = selectedCount > 0
+                ? `${selectedCount} registro${selectedCount === 1 ? '' : 's'} seleccionado${selectedCount === 1 ? '' : 's'} (máximo 1.000)`
+                : 'Selecciona registros para eliminarlos (máximo 1.000 por operación)';
+            selectAllItems.checked = bulkDeleteItemCheckboxes.length > 0 && selectedCount === bulkDeleteItemCheckboxes.length;
+            selectAllItems.indeterminate = selectedCount > 0 && selectedCount < bulkDeleteItemCheckboxes.length;
+        };
+
+        selectAllItems.addEventListener('change', () => {
+            bulkDeleteItemCheckboxes.forEach((checkbox) => {
+                checkbox.checked = selectAllItems.checked;
+            });
+            updateBulkDeleteItemsState();
+        });
+        bulkDeleteItemCheckboxes.forEach((checkbox) => checkbox.addEventListener('change', updateBulkDeleteItemsState));
+        updateBulkDeleteItemsState();
+
         const quickUnitFields = document.getElementById('quick-unit-fields');
         const quickItemType = document.getElementById('quick-item-type');
         const quickUnitConversions = document.getElementById('quick-unit-conversions');

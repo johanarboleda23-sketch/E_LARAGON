@@ -89,6 +89,78 @@ class ItemControllerTest extends TestCase
         $this->assertDatabaseMissing('items', ['id' => $item->id]);
     }
 
+    public function test_it_bulk_deletes_selected_products_without_history_and_leaves_unselected_products(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $firstItem = Item::factory()->create(['company_id' => $company->id, 'name' => 'Extintor de muestra']);
+        $secondItem = Item::factory()->create(['company_id' => $company->id, 'name' => 'Teléfono de muestra']);
+        $unselectedItem = Item::factory()->create(['company_id' => $company->id, 'name' => 'Producto conservado']);
+
+        $this->from(route('items.index'))
+            ->delete(route('items.bulk-destroy'), [
+                'items' => [$firstItem->id, $secondItem->id],
+            ])
+            ->assertRedirect(route('items.index'))
+            ->assertSessionHas('success', 'Se eliminaron 2 registros.');
+
+        $this->assertDatabaseMissing('items', ['id' => $firstItem->id]);
+        $this->assertDatabaseMissing('items', ['id' => $secondItem->id]);
+        $this->assertModelExists($unselectedItem);
+    }
+
+    public function test_it_preserves_selected_products_with_history_while_deleting_eligible_products(): void
+    {
+        $this->authenticateWithCompany();
+        $historicalItem = Item::factory()->create(['name' => 'Producto con venta']);
+        $eligibleItem = Item::factory()->create(['name' => 'Producto sin movimientos']);
+        $sale = Sale::create([
+            'invoice_number' => 'FV-BULK-DELETE-001',
+            'customer_name' => 'Cliente de prueba',
+            'sale_date' => now()->toDateString(),
+        ]);
+        $sale->details()->create([
+            'item_id' => $historicalItem->id,
+            'quantity' => 1,
+            'unit_price' => 100,
+            'line_total' => 100,
+        ]);
+
+        $this->delete(route('items.bulk-destroy'), [
+            'items' => [$historicalItem->id, $eligibleItem->id],
+        ])
+            ->assertRedirect(route('items.index'))
+            ->assertSessionHas('warning', 'Se eliminaron 1 registros. Se conservaron 1 porque tienen movimientos o documentos asociados.');
+
+        $this->assertModelExists($historicalItem);
+        $this->assertDatabaseMissing('items', ['id' => $eligibleItem->id]);
+    }
+
+    public function test_it_rejects_bulk_deletion_of_products_from_another_company(): void
+    {
+        $this->authenticateWithCompany();
+        $otherCompany = Company::factory()->create();
+        $otherCompanyItem = Item::factory()->create(['company_id' => $otherCompany->id]);
+
+        $this->from(route('items.index'))
+            ->delete(route('items.bulk-destroy'), [
+                'items' => [$otherCompanyItem->id],
+            ])
+            ->assertRedirect(route('items.index'))
+            ->assertSessionHasErrors('items');
+
+        $this->assertModelExists($otherCompanyItem);
+    }
+
+    public function test_it_requires_at_least_one_selected_product_for_bulk_deletion(): void
+    {
+        $this->authenticateWithCompany();
+
+        $this->from(route('items.index'))
+            ->delete(route('items.bulk-destroy'), ['items' => []])
+            ->assertRedirect(route('items.index'))
+            ->assertSessionHasErrors('items');
+    }
+
     public function test_it_ties_a_product_to_its_inventory_and_income_puc_accounts(): void
     {
         $this->authenticateWithCompany();
@@ -164,6 +236,8 @@ class ItemControllerTest extends TestCase
 
         $this->get(route('items.index'))
             ->assertSee('Unidades, existencias y conversiones')
+            ->assertSee('Seleccionar todos los registros visibles')
+            ->assertSee('Eliminar productos seleccionados')
             ->assertSee('Agregar presentación y conversión')
             ->assertSee('Código')
             ->assertSee('SKU-EMP-001')

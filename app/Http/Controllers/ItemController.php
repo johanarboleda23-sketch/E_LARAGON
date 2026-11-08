@@ -143,12 +143,7 @@ class ItemController extends Controller
         $deleted = DB::transaction(function () use ($item): bool {
             $item = Item::query()->lockForUpdate()->findOrFail($item->id);
 
-            $hasHistory = $item->purchaseDetails()->withoutGlobalScopes()->exists()
-                || $item->saleDetails()->withoutGlobalScopes()->exists()
-                || $item->commercialDocumentLines()->withoutGlobalScopes()->exists()
-                || $item->inventoryMovements()->withoutGlobalScopes()->exists();
-
-            if ($hasHistory) {
+            if ($this->hasHistory($item)) {
                 return false;
             }
 
@@ -164,6 +159,72 @@ class ItemController extends Controller
         }
 
         return redirect()->route('items.index')->with('success', 'Registro eliminado con éxito.');
+    }
+
+    public function bulkDestroy(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'items' => ['required', 'array', 'min:1', 'max:1000'],
+            'items.*' => [
+                'required',
+                'integer',
+                'distinct',
+            ],
+        ], [
+            'items.required' => 'Selecciona al menos un registro para eliminar.',
+            'items.min' => 'Selecciona al menos un registro para eliminar.',
+            'items.max' => 'Puedes eliminar hasta 1.000 registros a la vez.',
+        ]);
+
+        [$deletedCount, $protectedCount] = DB::transaction(function () use ($data): array {
+            $items = Item::query()
+                ->whereKey($data['items'])
+                ->lockForUpdate()
+                ->get();
+
+            if ($items->count() !== count($data['items'])) {
+                throw ValidationException::withMessages([
+                    'items' => 'Uno o más registros no pertenecen a la empresa activa.',
+                ]);
+            }
+
+            $itemIds = $items->modelKeys();
+            $itemIdsWithHistory = collect([
+                DB::table('purchase_details')->whereIn('item_id', $itemIds)->distinct()->pluck('item_id'),
+                DB::table('sale_details')->whereIn('item_id', $itemIds)->distinct()->pluck('item_id'),
+                DB::table('commercial_document_lines')->whereIn('item_id', $itemIds)->distinct()->pluck('item_id'),
+                DB::table('inventory_movements')->whereIn('item_id', $itemIds)->distinct()->pluck('item_id'),
+            ])->flatten()->unique()->flip();
+            $deletedCount = 0;
+            $protectedCount = 0;
+
+            foreach ($items as $item) {
+                if ($itemIdsWithHistory->has($item->id)) {
+                    $protectedCount++;
+
+                    continue;
+                }
+
+                $item->delete();
+                $deletedCount++;
+            }
+
+            return [$deletedCount, $protectedCount];
+        });
+
+        if ($protectedCount > 0) {
+            return back()->with('warning', "Se eliminaron {$deletedCount} registros. Se conservaron {$protectedCount} porque tienen movimientos o documentos asociados.");
+        }
+
+        return back()->with('success', "Se eliminaron {$deletedCount} registros.");
+    }
+
+    private function hasHistory(Item $item): bool
+    {
+        return $item->purchaseDetails()->withoutGlobalScopes()->exists()
+            || $item->saleDetails()->withoutGlobalScopes()->exists()
+            || $item->commercialDocumentLines()->withoutGlobalScopes()->exists()
+            || $item->inventoryMovements()->withoutGlobalScopes()->exists();
     }
 
     public function updateAccounts(Request $request, Item $item)

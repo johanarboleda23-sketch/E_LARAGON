@@ -69,8 +69,8 @@
                 $modules = [
                     ['name' => 'Compras', 'hint' => 'Facturas y XML', 'route' => 'purchases.index', 'icon' => '📥'],
                     ['name' => 'Ventas', 'hint' => 'Facturación emitida', 'route' => 'sales.index', 'icon' => '📤'],
-                    ['name' => 'Nómina', 'hint' => 'Gestión de personal', 'route' => 'payroll.index', 'icon' => '👥'],
-                    ['name' => 'Contabilidad', 'hint' => 'Egresos, recibos y comprobantes', 'route' => 'accounting.index', 'icon' => '📊'],
+                    ['name' => 'Nómina', 'hint' => 'Gestión de personal', 'keywords' => 'nomina nominas seguridad social pila aportes planilla', 'route' => 'payroll.index', 'icon' => '👥'],
+                    ['name' => 'Contabilidad', 'hint' => 'Egresos, recibos y comprobantes', 'keywords' => 'egreso egresos recibo recibos de caja comprobante comprobantes contable contables', 'route' => 'accounting.index', 'icon' => '📊'],
                     ['name' => 'PUC', 'hint' => 'Plan único de cuentas', 'route' => 'accounting.puc.index', 'icon' => '📒'],
                     ['name' => 'Documento soporte', 'hint' => 'Compras a no obligados', 'route' => 'support-documents.index', 'icon' => '🧾'],
                     ['name' => 'Conciliación bancaria', 'hint' => 'Extractos y cruces', 'route' => 'bank-reconciliation.index', 'icon' => '🏦'],
@@ -96,7 +96,7 @@
 
             <div id="modules-grid" class="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
                 @foreach($modules as $module)
-                    <a href="{{ route($module['route']) }}" data-module-name="{{ strtolower($module['name'].' '.$module['hint']) }}" class="flex items-center gap-4 rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-md">
+                    <a href="{{ route($module['route']) }}" data-module-name="{{ $module['name'].' '.$module['hint'].' '.($module['keywords'] ?? '') }}" class="flex items-center gap-4 rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-md">
                         <div class="text-3xl">{{ $module['icon'] }}</div>
                         <div>
                             <h3 class="font-bold text-[#192522]">{{ $module['name'] }}</h3>
@@ -203,11 +203,11 @@
         const vacio = document.getElementById('modules-empty');
 
         inputModulo?.addEventListener('input', () => {
-            const termino = inputModulo.value.trim().toLowerCase();
+            const termino = window.normalizeSearchText(inputModulo.value.trim());
             let visibles = 0;
 
             tarjetas.forEach((tarjeta) => {
-                const coincide = tarjeta.dataset.moduleName.includes(termino);
+                const coincide = window.normalizeSearchText(tarjeta.dataset.moduleName).includes(termino);
                 tarjeta.classList.toggle('hidden', !coincide);
                 if (coincide) visibles++;
             });

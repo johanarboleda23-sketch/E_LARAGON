@@ -44,7 +44,8 @@
                     <form method="POST" action="{{ route('third-parties.store') }}" class="space-y-3">
                         @csrf
                         <input name="name" value="{{ old('name') }}" required placeholder="Nombre o razón social" class="w-full rounded border-gray-300 text-sm">
-                        <input name="document" value="{{ old('document') }}" placeholder="Documento / NIT" class="w-full rounded border-gray-300 text-sm">
+                        <input name="document" value="{{ old('document') }}" placeholder="Documento / NIT (sin DV)" class="w-full rounded border-gray-300 text-sm">
+                        <input name="verification_digit" value="{{ old('verification_digit') }}" inputmode="numeric" maxlength="1" placeholder="DV (si aplica)" class="w-full rounded border-gray-300 text-sm" aria-label="Dígito de verificación">
                         <select name="type" class="w-full rounded border-gray-300 text-sm">
                             <option value="natural" @selected(old('type', 'natural') === 'natural')>Persona natural</option>
                             <option value="juridica" @selected(old('type') === 'juridica')>Persona jurídica</option>
@@ -110,7 +111,7 @@
                         <thead class="border-b bg-gray-50 text-xs uppercase">
                             <tr>
                                 <th class="p-2">Nombre</th>
-                                <th class="p-2">Documento</th>
+                                <th class="p-2">Documento / NIT</th>
                                 <th class="p-2">Perfiles</th>
                                 <th class="p-2">Contrato</th>
                                 <th class="p-2">Correo</th>
@@ -123,7 +124,12 @@
                             @forelse ($thirdParties as $thirdParty)
                                 <tr class="border-b">
                                     <td class="p-2 font-semibold">{{ $thirdParty->name }}</td>
-                                    <td class="p-2">{{ $thirdParty->document }}</td>
+                                    <td class="p-2">
+                                        {{ $thirdParty->document }}
+                                        @if ($thirdParty->verification_digit !== null)
+                                            - {{ $thirdParty->verification_digit }}
+                                        @endif
+                                    </td>
                                     <td class="p-2">
                                         @if ($thirdParty->is_customer)
                                             <span class="mr-1 rounded bg-blue-100 px-1 text-xs text-blue-700">CLIENTE</span>
@@ -154,6 +160,7 @@
                                     </td>
                                     <td class="p-2">{{ $thirdParty->active ? 'Activo' : 'Inactivo' }}</td>
                                     <td class="space-y-2 p-2">
+                                        <a href="{{ route('third-parties.show', $thirdParty) }}" class="inline-block rounded bg-[#227c70] px-2 py-1 text-xs font-bold text-white">Ver ficha</a>
                                         <button type="button" onclick="document.getElementById('edit-third-party-{{ $thirdParty->id }}').showModal()" class="rounded bg-blue-600 px-2 py-1 text-xs font-bold text-white">Editar</button>
                                         <form method="POST" action="{{ route('third-parties.toggle-active', $thirdParty) }}">
                                             @csrf
@@ -173,7 +180,8 @@
                                                 @csrf
                                                 @method('PUT')
                                                 <input name="name" value="{{ $thirdParty->name }}" required placeholder="Nombre o razón social" class="rounded border-gray-300 text-sm">
-                                                <input name="document" value="{{ $thirdParty->document }}" placeholder="Documento / NIT" class="rounded border-gray-300 text-sm">
+                                                <input name="document" value="{{ $thirdParty->document }}" placeholder="Documento / NIT (sin DV)" class="rounded border-gray-300 text-sm">
+                                                <input name="verification_digit" value="{{ $thirdParty->verification_digit }}" inputmode="numeric" maxlength="1" placeholder="DV (si aplica)" class="rounded border-gray-300 text-sm" aria-label="Dígito de verificación">
                                                 <select name="type" class="rounded border-gray-300 text-sm">
                                                     <option value="natural" @selected($thirdParty->type === 'natural')>Persona natural</option>
                                                     <option value="juridica" @selected($thirdParty->type === 'juridica')>Persona jurídica</option>
@@ -215,6 +223,50 @@
     </div>
 
     <script>
+        const thirdPartyEditId = new URLSearchParams(window.location.search).get('edit');
+        if (thirdPartyEditId) {
+            document.getElementById(`edit-third-party-${thirdPartyEditId}`)?.showModal();
+        }
+
+        const calculateNitVerificationDigit = (value) => {
+            const nit = String(value ?? '').trim();
+            const weights = [3, 7, 13, 17, 19, 23, 29, 37, 41, 43, 47, 53, 59, 67, 71];
+
+            if (!nit || !/^[\d\s.,]+$/.test(nit)) {
+                return '';
+            }
+
+            const digits = nit.replace(/\D/g, '');
+            if (!digits || digits.length > weights.length) {
+                return '';
+            }
+
+            const sum = [...digits].reverse().reduce((total, digit, index) => {
+                return total + Number(digit) * weights[index];
+            }, 0);
+            const remainder = sum % 11;
+
+            return String(remainder < 2 ? remainder : 11 - remainder);
+        };
+
+        const thirdPartyForms = document.querySelectorAll('[data-third-party-editor] form[method="POST"]:not([data-rut-upload])');
+        thirdPartyForms.forEach((dataForm) => {
+            const documentInput = dataForm.querySelector('[name="document"]');
+            const typeInput = dataForm.querySelector('[name="type"]');
+            const verificationDigitInput = dataForm.querySelector('[name="verification_digit"]');
+            const updateVerificationDigit = () => {
+                const isLegalEntity = typeInput.value === 'juridica';
+                verificationDigitInput.readOnly = isLegalEntity;
+                if (isLegalEntity) {
+                    verificationDigitInput.value = calculateNitVerificationDigit(documentInput.value);
+                }
+            };
+
+            documentInput.addEventListener('input', updateVerificationDigit);
+            typeInput.addEventListener('change', updateVerificationDigit);
+            updateVerificationDigit();
+        });
+
         document.addEventListener('click', async (event) => {
             const button = event.target.closest('[data-rut-extract]');
 
@@ -259,11 +311,12 @@
                 Object.entries(result.data).forEach(([name, value]) => {
                     const input = dataForm.querySelector(`[name="${name}"]`);
 
-                    if (input && value) {
+                    if (input && value !== null && value !== '') {
                         input.value = value;
                     }
                 });
 
+                dataForm.querySelector('[name="type"]')?.dispatchEvent(new Event('change'));
                 feedback.textContent = 'Datos extraídos. Revísalos antes de guardar.';
                 feedback.className = 'mt-2 text-xs text-emerald-700';
             } catch (error) {

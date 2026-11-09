@@ -150,10 +150,12 @@ Route::middleware(['auth', 'company'])->group(function () {
 
     Route::middleware('module:third-parties')->group(function () {
         Route::get('/terceros', [ThirdPartyController::class, 'index'])->name('third-parties.index');
+        Route::get('/terceros/buscar', [ThirdPartyController::class, 'search'])->middleware('throttle:60,1')->name('third-parties.search');
+        Route::get('/terceros/plantilla', [ThirdPartyController::class, 'template'])->name('third-parties.template');
+        Route::get('/terceros/{thirdParty}', [ThirdPartyController::class, 'show'])->name('third-parties.show');
         Route::post('/terceros', [ThirdPartyController::class, 'store'])->name('third-parties.store');
         Route::put('/terceros/{thirdParty}', [ThirdPartyController::class, 'update'])->name('third-parties.update');
         Route::post('/terceros/rut/extraer', [ThirdPartyController::class, 'extractRut'])->middleware('throttle:10,1')->name('third-parties.rut.extract');
-        Route::get('/terceros/plantilla', [ThirdPartyController::class, 'template'])->name('third-parties.template');
         Route::post('/terceros/migrar', [ThirdPartyController::class, 'import'])->name('third-parties.import');
         Route::patch('/terceros/{thirdParty}/estado', [ThirdPartyController::class, 'toggleActive'])->name('third-parties.toggle-active');
         Route::post('/contratos-empleado', [ThirdPartyController::class, 'storeContract'])->name('employee-contracts.store');

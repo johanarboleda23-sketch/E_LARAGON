@@ -23,6 +23,14 @@ class ThirdPartyControllerTest extends TestCase
         $this->post(route('third-parties.rut.extract'))->assertRedirect(route('login'));
     }
 
+    public function test_guest_cannot_search_or_view_third_parties(): void
+    {
+        $this->get(route('third-parties.search', ['q' => 'Acme']))
+            ->assertRedirect(route('login'));
+        $this->get(route('third-parties.show', 1))
+            ->assertRedirect(route('login'));
+    }
+
     public function test_template_can_be_downloaded(): void
     {
         $this->authenticateWithCompany();
@@ -30,7 +38,8 @@ class ThirdPartyControllerTest extends TestCase
         $response = $this->get(route('third-parties.template'));
 
         $response->assertOk();
-        $response->assertSee('Es cliente (si/no)', false);
+        $response->assertSee('Es cliente (si/no)', false)
+            ->assertSee('DV (si aplica)', false);
     }
 
     public function test_index_displays_edit_and_rut_autocomplete_actions(): void
@@ -41,6 +50,7 @@ class ThirdPartyControllerTest extends TestCase
             'type' => 'natural',
             'name' => 'Ana Pérez',
             'document' => '123456789',
+            'verification_digit' => '0',
             'address' => 'Calle 10 # 20-30',
             'city' => 'Bogotá',
             'neighborhood' => 'Centro',
@@ -51,6 +61,8 @@ class ThirdPartyControllerTest extends TestCase
 
         $response->assertSee('Editar')
             ->assertSee('Autocompletar desde PDF del RUT')
+            ->assertSee('DV (si aplica)')
+            ->assertSee('Ver ficha')
             ->assertSee('Calle 10 # 20-30')
             ->assertSee(route('third-parties.update', $thirdParty));
     }
@@ -63,6 +75,7 @@ class ThirdPartyControllerTest extends TestCase
             'type' => 'natural',
             'name' => 'Ana Pérez',
             'document' => '123456789',
+            'verification_digit' => '0',
             'address' => 'Calle 10 # 20-30',
             'city' => 'Bogotá',
             'neighborhood' => 'Centro',
@@ -73,10 +86,49 @@ class ThirdPartyControllerTest extends TestCase
         $this->assertDatabaseHas('third_parties', [
             'company_id' => $company->id,
             'name' => 'Ana Pérez',
+            'created_by' => auth()->id(),
+            'verification_digit' => '0',
             'address' => 'Calle 10 # 20-30',
             'city' => 'Bogotá',
             'neighborhood' => 'Centro',
         ]);
+    }
+
+    public function test_third_party_creation_calculates_the_nit_verification_digit(): void
+    {
+        $company = $this->authenticateWithCompany();
+
+        $response = $this->post(route('third-parties.store'), [
+            'type' => 'juridica',
+            'name' => 'Empresa de prueba',
+            'document' => '800197268',
+            'verification_digit' => '9',
+            'is_supplier' => '1',
+        ]);
+
+        $response->assertRedirect();
+        $this->assertDatabaseHas('third_parties', [
+            'company_id' => $company->id,
+            'document' => '800197268',
+            'verification_digit' => '4',
+        ]);
+    }
+
+    public function test_third_party_creation_rejects_a_verification_digit_longer_than_one_character(): void
+    {
+        $this->authenticateWithCompany();
+
+        $response = $this->postJson(route('third-parties.store'), [
+            'type' => 'natural',
+            'name' => 'Persona de prueba',
+            'document' => '123456789',
+            'verification_digit' => '12',
+            'is_customer' => '1',
+        ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonValidationErrors('verification_digit');
+        $this->assertDatabaseMissing('third_parties', ['document' => '123456789']);
     }
 
     public function test_third_party_can_be_updated_with_address_details(): void
@@ -95,6 +147,7 @@ class ThirdPartyControllerTest extends TestCase
             'type' => 'juridica',
             'name' => 'Comercial Nuevo SAS',
             'document' => '900123456',
+            'verification_digit' => '7',
             'email' => 'contacto@example.com',
             'phone' => '3001234567',
             'address' => 'Carrera 10 # 20-30',
@@ -110,6 +163,7 @@ class ThirdPartyControllerTest extends TestCase
             'type' => 'juridica',
             'name' => 'Comercial Nuevo SAS',
             'document' => '900123456',
+            'verification_digit' => '8',
             'email' => 'contacto@example.com',
             'address' => 'Carrera 10 # 20-30',
             'city' => 'Medellín',
@@ -118,6 +172,87 @@ class ThirdPartyControllerTest extends TestCase
             'is_supplier' => true,
             'active' => true,
         ]);
+    }
+
+    public function test_third_party_details_show_the_creator_and_allow_editing(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $creator = User::factory()->create(['name' => 'Creadora de prueba', 'email' => 'creadora@example.com']);
+        $thirdParty = ThirdParty::create([
+            'company_id' => $company->id,
+            'created_by' => $creator->id,
+            'type' => 'juridica',
+            'name' => 'Comercial Nuevo SAS',
+            'document' => '900123456',
+            'verification_digit' => '8',
+            'email' => 'contacto@example.com',
+            'phone' => '3001234567',
+            'address' => 'Carrera 10 # 20-30',
+            'city' => 'Medellín',
+            'neighborhood' => 'Laureles',
+            'is_supplier' => true,
+            'active' => true,
+        ]);
+
+        $this->get(route('third-parties.show', $thirdParty))
+            ->assertOk()
+            ->assertSee('Comercial Nuevo SAS')
+            ->assertSee('900123456-8')
+            ->assertSee('Creadora de prueba')
+            ->assertSee('creadora@example.com')
+            ->assertSee(route('third-parties.index', ['edit' => $thirdParty->id]));
+    }
+
+    public function test_third_party_search_returns_only_matches_from_the_active_company(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $user = auth()->user();
+        $otherCompany = Company::factory()->create();
+        $user->companies()->attach($otherCompany->id, ['role' => 'admin']);
+        $localThirdParty = ThirdParty::create([
+            'company_id' => $company->id,
+            'type' => 'juridica',
+            'name' => 'Acme Local',
+            'document' => '800197268',
+            'verification_digit' => '4',
+            'is_supplier' => true,
+        ]);
+        ThirdParty::create([
+            'company_id' => $otherCompany->id,
+            'type' => 'juridica',
+            'name' => 'Acme Ajena',
+            'document' => '800197269',
+            'is_supplier' => true,
+        ]);
+
+        $nameSearch = $this->getJson(route('third-parties.search', ['q' => 'Acme']));
+        $nameSearch
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.name', 'Acme Local')
+            ->assertJsonPath('data.0.verification_digit', '4')
+            ->assertJsonPath('data.0.url', route('third-parties.show', $localThirdParty))
+            ->assertJsonMissing(['name' => 'Acme Ajena']);
+
+        $this->getJson(route('third-parties.search', ['q' => '800197268']))
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.name', 'Acme Local');
+    }
+
+    public function test_third_party_details_are_not_available_from_another_company(): void
+    {
+        $this->authenticateWithCompany();
+        $otherCompany = Company::factory()->create();
+        $thirdParty = ThirdParty::create([
+            'company_id' => $otherCompany->id,
+            'type' => 'natural',
+            'name' => 'Tercero privado',
+            'is_customer' => true,
+        ]);
+
+        $this->get(route('third-parties.show', $thirdParty))
+            ->assertNotFound();
     }
 
     public function test_third_party_from_another_company_cannot_be_updated(): void
@@ -156,6 +291,7 @@ class ThirdPartyControllerTest extends TestCase
         $response->assertOk()
             ->assertJsonPath('data.name', 'Comercial Nuevo SAS')
             ->assertJsonPath('data.document', '900123456')
+            ->assertJsonPath('data.verification_digit', '8')
             ->assertJsonPath('data.type', 'juridica')
             ->assertJsonPath('data.address', 'Carrera 10 # 20-30')
             ->assertJsonPath('data.city', 'BOGOTA D.C.')
@@ -169,7 +305,8 @@ class ThirdPartyControllerTest extends TestCase
             '5. Numero de Identificacion Tributaria (NIT)',
             '123456789',
             '6. DV',
-            '0',
+            '8',
+            '7. Primer apellido',
             '31. Primer apellido',
             'Perez',
             '32. Segundo apellido',
@@ -194,6 +331,7 @@ class ThirdPartyControllerTest extends TestCase
         $response->assertOk()
             ->assertJsonPath('data.name', 'Perez Gomez Ana Maria')
             ->assertJsonPath('data.document', '123456789')
+            ->assertJsonPath('data.verification_digit', '8')
             ->assertJsonPath('data.type', 'natural');
     }
 
@@ -240,8 +378,20 @@ class ThirdPartyControllerTest extends TestCase
         $response = $this->post(route('third-parties.import'), ['file' => $file]);
 
         $response->assertRedirect();
-        $this->assertDatabaseHas('third_parties', ['document' => '123456789', 'name' => 'Juan Perez', 'is_customer' => true, 'is_supplier' => false]);
-        $this->assertDatabaseHas('third_parties', ['document' => '900111222', 'name' => 'Proveedor Actualizado', 'is_supplier' => true]);
+        $this->assertDatabaseHas('third_parties', [
+            'document' => '123456789',
+            'name' => 'Juan Perez',
+            'is_customer' => true,
+            'is_supplier' => false,
+            'created_by' => auth()->id(),
+        ]);
+        $this->assertDatabaseHas('third_parties', [
+            'document' => '900111222',
+            'name' => 'Proveedor Actualizado',
+            'is_supplier' => true,
+            'created_by' => null,
+        ]);
+        $this->assertDatabaseHas('third_parties', ['document' => '900111222', 'verification_digit' => '1']);
         $this->assertSame(2, ThirdParty::count());
     }
 
@@ -273,7 +423,8 @@ class ThirdPartyControllerTest extends TestCase
             '5. Numero de Identificacion Tributaria (NIT)',
             '900123456',
             '6. DV',
-            '7',
+            '8',
+            '7. Primer apellido',
             '35. Razon social',
             'Comercial Nuevo SAS',
             '36. Nombre comercial',

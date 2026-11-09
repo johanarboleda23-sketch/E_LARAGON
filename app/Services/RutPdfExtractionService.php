@@ -10,7 +10,7 @@ use Smalot\PdfParser\Parser;
 class RutPdfExtractionService
 {
     /**
-     * @return array{name: ?string, document: ?string, type: ?string, address: ?string, city: ?string, email: ?string}
+     * @return array{name: ?string, document: ?string, verification_digit: ?string, type: ?string, address: ?string, city: ?string, email: ?string}
      */
     public function extract(UploadedFile $rutPdf): array
     {
@@ -33,6 +33,7 @@ class RutPdfExtractionService
             $this->fieldValue($text, '34\.\s*Otros\s+nombres', '35\.\s*Raz[oó]n\s+social'),
         ]));
         $document = $this->fieldValue($text, '5\.\s*N[uú]mero\s+de\s+Identificaci[oó]n\s+Tributaria\s*\(NIT\)', '6\.\s*DV');
+        $verificationDigit = $this->fieldValue($text, '6\.\s*DV', '7\.\s*Primer\s+apellido');
         $city = $this->fieldValue($text, '40\.\s*Ciudad\s*/\s*Municipio', '41\.\s*Direcci[oó]n\s+principal');
 
         if ($city !== null) {
@@ -42,6 +43,7 @@ class RutPdfExtractionService
         return [
             'name' => $companyName ?? ($personalName !== '' ? $personalName : null),
             'document' => $document !== null ? preg_replace('/\D/u', '', $document) : null,
+            'verification_digit' => $verificationDigit !== null ? preg_replace('/\D/u', '', $verificationDigit) : null,
             'type' => $companyName !== null ? 'juridica' : ($personalName !== '' ? 'natural' : null),
             'address' => $this->fieldValue($text, '41\.\s*Direcci[oó]n\s+principal', '42\.\s*Correo\s+electr[oó]nico'),
             'city' => $city !== '' ? $city : null,

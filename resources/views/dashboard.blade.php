@@ -14,7 +14,7 @@
                 <label class="relative block w-full sm:w-64">
                     <span class="sr-only">Buscar en SU+ GESTION EMPRESARIAL</span>
                     <span class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-[#71807a]">⌕</span>
-                    <input id="module-search" type="search" placeholder="Buscar módulo o acción..." class="w-full rounded-xl border-[#d7dfd8] bg-[#f3f5f1] py-2.5 pl-9 pr-4 text-sm text-[#192522] placeholder:text-[#8b9992] focus:border-[#227c70] focus:ring-[#227c70]">
+                    <input id="module-search" type="search" data-third-party-search-url="{{ auth()->check() ? route('third-parties.search') : '' }}" placeholder="Buscar módulo, acción o tercero..." class="w-full rounded-xl border-[#d7dfd8] bg-[#f3f5f1] py-2.5 pl-9 pr-4 text-sm text-[#192522] placeholder:text-[#8b9992] focus:border-[#227c70] focus:ring-[#227c70]">
                 </label>
 
                 <!-- 2. Buscador Comercial Directo (Consecutivos) -->
@@ -106,6 +106,11 @@
                 @endforeach
             </div>
             <p id="modules-empty" class="mt-6 hidden text-sm text-[#71807a]">Ningún módulo coincide con tu búsqueda.</p>
+            <section id="third-party-search-results" class="mt-6 hidden rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm" aria-live="polite">
+                <h3 class="font-bold text-[#192522]">Terceros coincidentes</h3>
+                <div id="third-party-search-list" class="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3"></div>
+                <p id="third-party-search-message" class="mt-3 text-sm text-[#71807a]"></p>
+            </section>
         </div>
     </div>
 
@@ -201,9 +206,81 @@
         const inputModulo = document.getElementById('module-search');
         const tarjetas = Array.from(document.querySelectorAll('#modules-grid [data-module-name]'));
         const vacio = document.getElementById('modules-empty');
+        const thirdPartyResults = document.getElementById('third-party-search-results');
+        const thirdPartyList = document.getElementById('third-party-search-list');
+        const thirdPartyMessage = document.getElementById('third-party-search-message');
+        let thirdPartySearchTimeout;
+        let thirdPartySearchController;
+
+        const searchThirdParties = async (term) => {
+            window.clearTimeout(thirdPartySearchTimeout);
+            thirdPartySearchController?.abort();
+            thirdPartyList.replaceChildren();
+            thirdPartyMessage.textContent = '';
+            thirdPartyResults.classList.toggle('hidden', term.length < 2);
+
+            if (term.length < 2) {
+                return;
+            }
+
+            if (!inputModulo.dataset.thirdPartySearchUrl) {
+                thirdPartyMessage.textContent = 'Inicia sesión para buscar terceros.';
+                return;
+            }
+
+            thirdPartyMessage.textContent = 'Buscando terceros…';
+            thirdPartySearchTimeout = window.setTimeout(async () => {
+                thirdPartySearchController = new AbortController();
+                const url = new URL(inputModulo.dataset.thirdPartySearchUrl, window.location.origin);
+                url.searchParams.set('q', term);
+
+                try {
+                    const response = await fetch(url, {
+                        headers: { Accept: 'application/json' },
+                        signal: thirdPartySearchController.signal,
+                    });
+                    if (!response.ok) {
+                        throw new Error('No fue posible buscar terceros.');
+                    }
+
+                    const result = await response.json();
+                    thirdPartyList.replaceChildren();
+
+                    result.data.forEach((thirdParty) => {
+                        const link = document.createElement('a');
+                        link.href = thirdParty.url;
+                        link.className = 'rounded-xl border border-[#d7dfd8] p-3 transition hover:border-[#227c70] hover:bg-[#f3f5f1]';
+
+                        const name = document.createElement('span');
+                        name.className = 'block font-semibold text-[#192522]';
+                        name.textContent = thirdParty.name;
+                        link.append(name);
+
+                        if (thirdParty.document) {
+                            const documentLabel = document.createElement('span');
+                            documentLabel.className = 'mt-1 block text-xs text-[#71807a]';
+                            documentLabel.textContent = `Documento: ${thirdParty.document}${thirdParty.verification_digit !== null ? `-${thirdParty.verification_digit}` : ''}`;
+                            link.append(documentLabel);
+                        }
+
+                        thirdPartyList.append(link);
+                    });
+
+                    thirdPartyMessage.textContent = result.data.length
+                        ? `${result.data.length} resultado(s). Selecciona un tercero para ver su ficha.`
+                        : 'No se encontraron terceros con ese nombre o documento.';
+                } catch (error) {
+                    if (error.name !== 'AbortError') {
+                        console.error('Error en búsqueda de terceros:', error);
+                        thirdPartyMessage.textContent = 'Ocurrió un problema al buscar terceros. Intenta de nuevo.';
+                    }
+                }
+            }, 250);
+        };
 
         inputModulo?.addEventListener('input', () => {
-            const termino = window.normalizeSearchText(inputModulo.value.trim());
+            const valor = inputModulo.value.trim();
+            const termino = window.normalizeSearchText(valor);
             let visibles = 0;
 
             tarjetas.forEach((tarjeta) => {
@@ -213,6 +290,7 @@
             });
 
             vacio.classList.toggle('hidden', visibles !== 0);
+            searchThirdParties(valor);
         });
     });
     </script>

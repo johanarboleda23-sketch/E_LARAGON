@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Editar factura {{ $sale->invoice_number }}</title>
+    @vite('resources/js/app.js')
     <style>
         body{background:#f3f5f1;font-family:Arial,sans-serif;padding:18px;color:#364640;font-size:12px}
         .sale-shell{max-width:1280px;margin:auto;background:#fff;padding:22px;border:1px solid #d7dfd8;border-radius:18px;box-shadow:0 14px 30px rgba(25,37,34,.07)}

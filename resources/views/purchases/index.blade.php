@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Módulo de Gestión de Compras Avanzado</title>
+    @vite('resources/js/app.js')
     <!-- ESTILOS COMPACTOS LOCALES BLINDADOS PARA MONITORES HP -->
     <style>
         body { background: #f3f5f1; font-family: sans-serif; padding: 18px; font-size: 12px; color: #364640; }

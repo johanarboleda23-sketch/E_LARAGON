@@ -2,17 +2,26 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ChartOfAccount;
+use App\Models\PaymentMethod;
 use App\Models\Purchase;
 use App\Models\Sale;
 use App\Models\SupportDocument;
+use App\Services\AccountingEntryService;
 use App\Services\AccountingPeriodService;
+use App\Services\BankReconciliationService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 class PaymentController extends Controller
 {
-    public function __construct(private readonly AccountingPeriodService $periodService) {}
+    public function __construct(
+        private readonly AccountingPeriodService $periodService,
+        private readonly AccountingEntryService $accountingEntryService,
+        private readonly BankReconciliationService $bankReconciliationService,
+    ) {}
 
     /**
      * Registra un abono/pago sobre una venta, compra o documento soporte. El tipo de documento
@@ -38,16 +47,39 @@ class PaymentController extends Controller
         $data = $request->validate([
             'amount' => ['required', 'numeric', 'min:0.01'],
             'payment_date' => ['required', 'date'],
-            'method' => ['nullable', 'string', 'max:100'],
+            'payment_method_id' => ['required', 'integer', Rule::exists('payment_methods', 'id')->where('company_id', (int) session('company_id'))],
+            'counter_account_id' => ['required', 'integer', Rule::exists('chart_of_accounts', 'id')->where('company_id', (int) session('company_id'))],
+            'reference' => ['nullable', 'string', 'max:100'],
             'notes' => ['nullable', 'string', 'max:255'],
         ]);
+        $paymentMethod = PaymentMethod::query()->with('account')->findOrFail($data['payment_method_id']);
+        $account = $paymentMethod->account;
+        if (! $account || ! $account->active || ! $account->allows_posting) {
+            return back()->withErrors([
+                'payment_method_id' => 'La forma de pago debe tener asociada una cuenta PUC auxiliar activa.',
+            ])->withInput();
+        }
+        if (! $paymentMethod->is_cash && blank($data['reference'] ?? null)) {
+            return back()->withErrors([
+                'reference' => 'Ingresa la referencia del banco o del comprobante del corresponsal para poder conciliar este pago.',
+            ])->withInput();
+        }
         $module = $document instanceof Sale ? 'income' : 'expenses';
         $this->periodService->assertWritable($module, $data['payment_date']);
 
-        return DB::transaction(function () use ($data, $document, $totalAttribute, $redirectTo): RedirectResponse {
+        return DB::transaction(function () use ($data, $document, $totalAttribute, $redirectTo, $paymentMethod): RedirectResponse {
             $lockedDocument = $document->newQuery()
                 ->lockForUpdate()
                 ->findOrFail($document->getKey());
+            if ($lockedDocument instanceof Purchase && $lockedDocument->accountingVoucher()
+                ->whereHas('lines', fn ($query) => $query
+                    ->where('credit', '>', 0)
+                    ->whereHas('account', fn ($account) => $account->where('code', 'like', '11%')))
+                ->exists()) {
+                return back()->withErrors([
+                    'amount' => 'Esta compra ya tiene una salida de caja o banco contabilizada. Revisa el comprobante antes de registrar otro pago.',
+                ])->withInput();
+            }
             $total = (float) $lockedDocument->getAttribute($totalAttribute);
             $balance = $lockedDocument->balanceDue($total);
             $amount = round((float) $data['amount'], 2);
@@ -57,15 +89,66 @@ class PaymentController extends Controller
                 ])->withInput();
             }
 
-            $lockedDocument->payments()->create([
+            $counterAccount = ChartOfAccount::query()
+                ->whereKey($data['counter_account_id'])
+                ->where('active', true)
+                ->where('allows_posting', true)
+                ->first();
+            if (! $counterAccount) {
+                return back()->withErrors([
+                    'counter_account_id' => 'Selecciona una cuenta PUC auxiliar activa.',
+                ])->withInput();
+            }
+
+            if ((int) $counterAccount->id === (int) $paymentMethod->chart_of_account_id) {
+                return back()->withErrors([
+                    'counter_account_id' => 'La cuenta de contrapartida debe ser distinta de la cuenta donde se recibió o realizó el pago.',
+                ])->withInput();
+            }
+
+            $payment = $lockedDocument->payments()->create([
                 'amount' => $amount,
                 'payment_date' => $data['payment_date'],
-                'method' => $data['method'] ?? null,
+                'method' => $paymentMethod->name,
+                'payment_method_id' => $paymentMethod->id,
+                'reference' => trim($data['reference'] ?? '') ?: null,
                 'notes' => $data['notes'] ?? null,
                 'created_by' => auth()->id(),
             ]);
 
-            return redirect($redirectTo)->with('success', 'Abono registrado correctamente.');
+            $party = match (true) {
+                $lockedDocument instanceof Sale => $lockedDocument->customer_name,
+                $lockedDocument instanceof Purchase => $lockedDocument->provider,
+                default => $lockedDocument->supplier?->name ?? 'Proveedor',
+            };
+            $isIncome = $lockedDocument instanceof Sale;
+            $bankLine = [
+                'chart_of_account_id' => $paymentMethod->chart_of_account_id,
+                'detail' => ($isIncome ? 'Ingreso por pago de ' : 'Pago a ').$party,
+                'debit' => $isIncome ? $amount : 0,
+                'credit' => $isIncome ? 0 : $amount,
+            ];
+            $counterLine = [
+                'chart_of_account_id' => $counterAccount->id,
+                'detail' => ($isIncome ? 'Abono de cliente ' : 'Abono a proveedor ').$party,
+                'debit' => $isIncome ? 0 : $amount,
+                'credit' => $isIncome ? $amount : 0,
+            ];
+            $voucher = $this->accountingEntryService->post([
+                'voucher_type' => $isIncome ? 'recibo_caja' : 'egreso',
+                'consecutive' => ($isIncome ? 'RC-PAG-' : 'EG-PAG-').$payment->id,
+                'voucher_date' => $data['payment_date'],
+                'third_party' => $party,
+                'description' => 'Pago de '.($lockedDocument instanceof Sale ? 'factura '.$lockedDocument->invoice_number : ($lockedDocument instanceof Purchase ? 'compra '.$lockedDocument->invoice_number : 'documento soporte '.$lockedDocument->consecutive)),
+            ], collect([$bankLine, $counterLine]));
+            $payment->update(['accounting_voucher_id' => $voucher->id]);
+            $matched = ! $paymentMethod->is_cash && $this->bankReconciliationService->matchPayment($payment->fresh());
+            $message = 'Pago registrado con comprobante '.$voucher->consecutive.'.';
+            $message .= $matched
+                ? ' El movimiento bancario con referencia exacta quedó conciliado automáticamente.'
+                : ' El comprobante quedó pendiente de conciliación bancaria.';
+
+            return redirect($redirectTo)->with('success', $message);
         });
     }
 }

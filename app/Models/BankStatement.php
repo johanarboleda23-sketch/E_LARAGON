@@ -35,4 +35,9 @@ class BankStatement extends Model
     {
         return $this->belongsTo(PaymentMethod::class);
     }
+
+    public function accountingVoucher(): BelongsTo
+    {
+        return $this->belongsTo(AccountingVoucher::class);
+    }
 }

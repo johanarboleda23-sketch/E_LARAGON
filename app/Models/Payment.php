@@ -24,4 +24,14 @@ class Payment extends Model
     {
         return $this->belongsTo(User::class, 'created_by');
     }
+
+    public function accountingVoucher(): BelongsTo
+    {
+        return $this->belongsTo(AccountingVoucher::class);
+    }
+
+    public function paymentMethod(): BelongsTo
+    {
+        return $this->belongsTo(PaymentMethod::class);
+    }
 }

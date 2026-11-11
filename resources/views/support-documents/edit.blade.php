@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Editar documento {{ $document->consecutive }}</title>
+    @vite('resources/js/app.js')
     <style>
         body{font-family:Arial,sans-serif;color:#1f2937;margin:32px auto;max-width:640px;padding:0 24px;font-size:14px}
         h1{font-size:20px;color:#831843;margin:0 0 20px}

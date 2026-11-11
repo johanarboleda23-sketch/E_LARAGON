@@ -1,6 +1,7 @@
 
 
 import Alpine from 'alpinejs';
+import './select-search';
 
 window.Alpine = Alpine;
 

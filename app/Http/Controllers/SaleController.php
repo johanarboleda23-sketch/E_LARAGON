@@ -2,9 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ChartOfAccount;
+use App\Models\Company;
 use App\Models\InventoryMovement;
 use App\Models\Item;
 use App\Models\NumberingResolution;
+use App\Models\PaymentMethod;
 use App\Models\Sale;
 use App\Models\SaleDetail;
 use App\Models\ThirdParty;
@@ -41,6 +44,8 @@ class SaleController extends Controller
         $customers = ThirdParty::where('is_customer', true)->where('active', true)->orderBy('name')->get();
         $withholdings = config('colombia_withholdings');
         $nextConsecutive = NumberingResolution::peekNext('sale');
+        $company = Company::findOrFail($request->session()->get('company_id'));
+        $nextInternalConsecutive = $this->nextInternalConsecutive($company);
         $productOptions = $items->map(function (Item $item) {
             return [
                 'id' => $item->id,
@@ -58,7 +63,7 @@ class SaleController extends Controller
             ];
         })->values();
 
-        return view('sales.index', compact('items', 'sales', 'paymentMethods', 'productOptions', 'withholdings', 'customers', 'nextConsecutive', 'selectedSale'));
+        return view('sales.index', compact('items', 'sales', 'paymentMethods', 'productOptions', 'withholdings', 'customers', 'nextConsecutive', 'nextInternalConsecutive', 'selectedSale'));
     }
 
     public function store(Request $request)
@@ -66,9 +71,9 @@ class SaleController extends Controller
         $hasActiveResolution = NumberingResolution::query()->where('document_type', 'sale')->where('active', true)->exists();
 
         $data = $request->validate([
-            'invoice_number' => $hasActiveResolution
+            'invoice_number' => $hasActiveResolution || $request->boolean('skip_dian')
                 ? ['nullable', 'string', 'max:255']
-                : ['required', 'string', 'max:255', 'unique:sales,invoice_number'],
+                : ['required', 'string', 'max:255', Rule::unique('sales', 'invoice_number')->where('company_id', session('company_id'))],
             'customer_name' => 'required|string|max:255',
             'customer_document' => 'nullable|string|max:100',
             'customer_email' => 'nullable|email|max:255',
@@ -107,7 +112,13 @@ class SaleController extends Controller
         try {
             $sale = DB::transaction(function () use ($data, $request) {
                 try {
-                    $invoiceNumber = NumberingResolution::allocateNext('sale') ?? $data['invoice_number'];
+                    if ($request->boolean('skip_dian')) {
+                        $company = Company::query()->lockForUpdate()->findOrFail($request->session()->get('company_id'));
+                        $invoiceNumber = $this->nextInternalConsecutive($company);
+                        $company->update(['next_internal_sale_number' => (int) $invoiceNumber + 1]);
+                    } else {
+                        $invoiceNumber = NumberingResolution::allocateNext('sale') ?? $data['invoice_number'];
+                    }
                 } catch (\RuntimeException $e) {
                     throw ValidationException::withMessages([
                         'invoice_number' => $e->getMessage(),
@@ -158,6 +169,17 @@ class SaleController extends Controller
         return redirect()->route('sales.index')
             ->with('success', $message)
             ->with('preview_sale_id', $sale->id);
+    }
+
+    private function nextInternalConsecutive(Company $company): string
+    {
+        $number = (int) $company->next_internal_sale_number;
+
+        do {
+            $consecutive = str_pad((string) $number++, 4, '0', STR_PAD_LEFT);
+        } while (Sale::query()->where('company_id', $company->id)->where('invoice_number', $consecutive)->exists());
+
+        return $consecutive;
     }
 
     /**
@@ -295,7 +317,7 @@ class SaleController extends Controller
     public function update(Request $request, Sale $sale)
     {
         $data = $request->validate([
-            'invoice_number' => ['required', 'string', 'max:255', Rule::unique('sales', 'invoice_number')->ignore($sale->id)],
+            'invoice_number' => ['required', 'string', 'max:255', Rule::unique('sales', 'invoice_number')->where('company_id', session('company_id'))->ignore($sale->id)],
             'customer_name' => 'required|string|max:255',
             'customer_document' => 'nullable|string|max:100',
             'customer_email' => 'nullable|email|max:255',
@@ -366,17 +388,23 @@ class SaleController extends Controller
     {
         $documents = Sale::query()
             ->where('customer_name', $sale->customer_name)
-            ->with(['payments', 'creditNotes'])
+            ->with(['payments.accountingVoucher', 'payments.paymentMethod', 'creditNotes'])
             ->orderBy('sale_date')
             ->orderBy('id')
             ->get();
 
         $balance = $documents->sum(fn (Sale $document) => $document->balanceDue((float) $document->total));
+        $paymentMethods = PaymentMethod::query()->with('account')->whereNotNull('chart_of_account_id')->orderBy('name')->get();
+        $counterAccounts = ChartOfAccount::query()->where('active', true)->where('allows_posting', true)->orderBy('code')->get();
+        $defaultCounterAccountId = $counterAccounts->firstWhere('code', '1305')?->id;
 
         return view('sales.statement', [
             'customer' => $sale->customer_name,
             'documents' => $documents,
             'balance' => $balance,
+            'paymentMethods' => $paymentMethods,
+            'counterAccounts' => $counterAccounts,
+            'defaultCounterAccountId' => $defaultCounterAccountId,
         ]);
     }
 

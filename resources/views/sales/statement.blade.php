@@ -18,9 +18,9 @@
         .badge-paid{background:#ecfdf5;color:#047857}
         .badge-partial{background:#fff8df;color:#8b6811}
         .badge-pending{background:#fef2f2;color:#b91c1c}
-        .pay-form{display:flex;gap:4px;align-items:center}
-        .pay-form input{width:85px;padding:5px;border:1px solid #d1d5db;border-radius:4px;font-size:11px}
-        .pay-form button{border:0;background:#227c70;color:white;padding:5px 9px;border-radius:4px;font-size:11px;cursor:pointer}
+        .pay-form{display:grid;min-width:230px;gap:5px}
+        .pay-form input,.pay-form select{box-sizing:border-box;width:100%;padding:5px;border:1px solid #d1d5db;border-radius:4px;font-size:11px}
+        .pay-form button{border:0;background:#227c70;color:white;padding:7px 9px;border-radius:4px;font-size:11px;cursor:pointer}
     </style>
 </head>
 <body>
@@ -35,7 +35,7 @@
     </header>
 
     <table>
-        <thead><tr><th>Factura</th><th>Fecha</th><th class="numeric">Total</th><th class="numeric">Abonado</th><th class="numeric">Saldo</th><th>Estado</th><th>Registrar abono</th></tr></thead>
+        <thead><tr><th>Factura</th><th>Fecha</th><th class="numeric">Total</th><th class="numeric">Abonado</th><th class="numeric">Saldo</th><th>Estado</th><th>Pagos y comprobantes</th><th>Registrar pago</th></tr></thead>
         <tbody>
             @forelse($documents as $document)
                 @php
@@ -55,18 +55,40 @@
                         @endif
                     </td>
                     <td>
+                        @foreach($document->payments as $payment)
+                            <div>${{ number_format((float) $payment->amount, 2) }} · {{ $payment->payment_date->format('d/m/Y') }} · {{ $payment->paymentMethod?->name ?? $payment->method ?? 'Pago' }}
+                                @if($payment->reference) <span>({{ $payment->reference }})</span> @endif
+                                @if($payment->accountingVoucher)<br><a href="{{ route('accounting.vouchers.accounting', $payment->accountingVoucher) }}" target="_blank">{{ $payment->accountingVoucher->consecutive }}</a>@endif
+                            </div>
+                        @endforeach
+                    </td>
+                    <td>
                         @if($docBalance > 0)
                             <form class="pay-form" method="POST" action="{{ route('sales.payments.store', $document) }}">
                                 @csrf
-                                <input type="number" step="0.01" min="0.01" max="{{ $docBalance }}" name="amount" placeholder="0.00" required>
+                                <input type="number" step="0.01" min="0.01" max="{{ $docBalance }}" name="amount" value="{{ number_format($docBalance, 2, '.', '') }}" placeholder="Valor del abono" required>
                                 <input type="hidden" name="payment_date" value="{{ now()->toDateString() }}">
-                                <button type="submit">Abonar</button>
+                                <select name="payment_method_id" required>
+                                    <option value="">Cuenta de caja o banco</option>
+                                    @foreach($paymentMethods as $method)
+                                        <option value="{{ $method->id }}">{{ $method->name }} · {{ $method->account?->code }}</option>
+                                    @endforeach
+                                </select>
+                                <select name="counter_account_id" required>
+                                    <option value="">Cuenta de cartera</option>
+                                    @foreach($counterAccounts as $account)
+                                        <option value="{{ $account->id }}" @selected($account->id === $defaultCounterAccountId)>{{ $account->code }} - {{ $account->name }}</option>
+                                    @endforeach
+                                </select>
+                                <input type="text" name="reference" maxlength="100" placeholder="Referencia del banco o corresponsal">
+                                <input type="text" name="notes" maxlength="255" placeholder="Observaciones (opcional)">
+                                <button type="submit">Registrar pago y recibo de caja</button>
                             </form>
                         @endif
                     </td>
                 </tr>
             @empty
-                <tr><td colspan="7">No hay facturas registradas para este cliente.</td></tr>
+                <tr><td colspan="8">No hay facturas registradas para este cliente.</td></tr>
             @endforelse
         </tbody>
     </table>

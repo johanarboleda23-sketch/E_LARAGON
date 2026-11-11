@@ -2,13 +2,17 @@
 
 namespace Tests\Feature;
 
+use App\Models\AccountingPeriod;
 use App\Models\AccountingVoucher;
 use App\Models\AccountingVoucherLine;
 use App\Models\BankStatement;
 use App\Models\ChartOfAccount;
 use App\Models\Company;
+use App\Models\Payment;
 use App\Models\PaymentMethod;
+use App\Models\Sale;
 use App\Models\User;
+use App\Services\BankReconciliationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Tests\TestCase;
@@ -35,14 +39,35 @@ class BankReconciliationTest extends TestCase
         $this->assertSame('debit', $statement->transaction_type);
         $this->assertSame('pending', $statement->status);
         $this->assertSame($bankAccount->id, $statement->payment_method_id);
+        $expenseAccount = ChartOfAccount::create([
+            'company_id' => $company->id,
+            'code' => 'EXP-MANUAL',
+            'name' => 'Gasto manual',
+            'class' => 5,
+            'nature' => 'debit',
+            'allows_posting' => true,
+            'active' => true,
+        ]);
 
         $this->post(route('bank-reconciliation.reconcile', $statement), [
             'matched_type' => 'manual',
             'notes' => 'Revisado contra extracto bancario.',
+            'counterparts' => [[
+                'chart_of_account_id' => $expenseAccount->id,
+                'amount' => 250000,
+                'detail' => 'Pago proveedor',
+            ]],
         ])->assertRedirect();
 
         $this->assertSame('reconciled', $statement->fresh()->status);
         $this->assertNotNull($statement->fresh()->reconciled_at);
+        $this->assertNotNull($statement->fresh()->accounting_voucher_id);
+        $this->assertDatabaseHas('accounting_vouchers', [
+            'id' => $statement->fresh()->accounting_voucher_id,
+            'voucher_type' => 'egreso',
+            'total_debit' => 250000,
+            'total_credit' => 250000,
+        ]);
     }
 
     public function test_it_imports_the_three_column_excel_export_shape_as_credit_or_debit(): void
@@ -170,6 +195,56 @@ class BankReconciliationTest extends TestCase
         $this->get(route('bank-reconciliation.balances'))
             ->assertSee('Cuenta corriente prueba')
             ->assertDontSee('Método sin cuenta bancaria');
+    }
+
+    public function test_automatic_match_leaves_statements_pending_when_the_accounting_period_is_closed(): void
+    {
+        $company = Company::factory()->create();
+        $bankAccount = $this->createBankAccount($company);
+        $user = User::factory()->create();
+        $user->companies()->attach($company->id, ['role' => 'admin']);
+        $this->actingAs($user)->withSession(['company_id' => $company->id]);
+        $date = now()->toDateString();
+        AccountingPeriod::create([
+            'company_id' => $company->id,
+            'period_type' => 'month',
+            'period_key' => now()->format('Y-m'),
+            'period_start' => now()->startOfMonth()->toDateString(),
+            'period_end' => now()->endOfMonth()->toDateString(),
+            'status' => 'closed',
+            'locked_modules' => ['bank'],
+        ]);
+        $sale = Sale::create([
+            'company_id' => $company->id,
+            'invoice_number' => 'FV-CLOSED-PERIOD',
+            'customer_name' => 'Cliente de prueba',
+            'sale_date' => $date,
+            'total' => 250,
+        ]);
+        Payment::create([
+            'company_id' => $company->id,
+            'payable_type' => Sale::class,
+            'payable_id' => $sale->id,
+            'amount' => 250,
+            'payment_date' => $date,
+            'method' => 'Transferencia',
+            'payment_method_id' => $bankAccount->id,
+            'reference' => 'CLOSED-001',
+        ]);
+        $statement = BankStatement::create([
+            'company_id' => $company->id,
+            'payment_method_id' => $bankAccount->id,
+            'transaction_date' => $date,
+            'reference' => 'CLOSED-001',
+            'transaction_type' => 'credit',
+            'amount' => 250,
+            'status' => 'pending',
+        ]);
+
+        $matched = app(BankReconciliationService::class)->matchStatement($statement);
+
+        $this->assertFalse($matched);
+        $this->assertSame('pending', $statement->fresh()->status);
     }
 
     private function createBankAccount(Company $company): PaymentMethod

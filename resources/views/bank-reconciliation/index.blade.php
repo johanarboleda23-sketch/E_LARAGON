@@ -3,8 +3,9 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>Conciliación bancaria</title>
-    @vite('resources/css/app.css')
+    @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body class="bg-slate-50 text-slate-800">
 <div class="mx-auto max-w-7xl px-6 py-8">
@@ -161,23 +162,56 @@
                                 </form>
                             @endif
                         </td>
-                        <td class="p-3">{{ $statement->status === 'reconciled' ? 'Conciliado' : 'Pendiente' }}</td>
+                        <td class="p-3">
+                            {{ $statement->status === 'reconciled' ? 'Conciliado' : 'Pendiente' }}
+                            @if($statement->accountingVoucher)
+                                <br><a class="text-xs text-sky-700 underline" target="_blank" href="{{ route('accounting.vouchers.accounting', $statement->accountingVoucher) }}">{{ $statement->accountingVoucher->consecutive }}</a>
+                            @endif
+                        </td>
                         <td class="p-3">
                             @if ($statement->status === 'pending')
                                 <div class="flex flex-wrap gap-2">
-                                    <button type="button" class="rounded-md border border-sky-200 px-3 py-1 text-xs font-semibold text-sky-700" onclick="findSuggestions({{ $statement->id }}, '{{ route('bank-reconciliation.suggestions', $statement) }}')">Buscar coincidencias</button>
-                                    <form method="POST" action="{{ route('bank-reconciliation.reconcile', $statement) }}" class="flex gap-1">
-                                        @csrf
-                                        <input type="hidden" name="matched_type" value="manual">
-                                        <button class="rounded-md bg-emerald-600 px-3 py-1 text-xs font-semibold text-white">Conciliar manual</button>
-                                    </form>
+                                    <button type="button" class="rounded-md border border-sky-200 px-3 py-1 text-xs font-semibold text-sky-700" onclick="findSuggestions({{ $statement->id }}, '{{ route('bank-reconciliation.suggestions', $statement) }}', '{{ route('bank-reconciliation.reconcile', $statement) }}')">Buscar coincidencias exactas</button>
                                 </div>
                                 <div id="suggestions-{{ $statement->id }}" class="mt-2 text-xs text-slate-600"></div>
+                                <details class="mt-2">
+                                    <summary class="cursor-pointer rounded-md bg-emerald-600 px-3 py-1 text-xs font-semibold text-white">Conciliar con asiento manual</summary>
+                                    <form method="POST" action="{{ route('bank-reconciliation.reconcile', $statement) }}" class="mt-2 grid min-w-72 gap-2 rounded-lg border border-slate-200 bg-white p-3">
+                                        @csrf
+                                        <input type="hidden" name="matched_type" value="manual">
+                                        <label class="grid gap-1 text-xs">Tercero
+                                            <select name="third_party_id" class="rounded border-slate-300 text-xs">
+                                                <option value="">Sin tercero</option>
+                                                @foreach($thirdParties as $thirdParty)
+                                                    <option value="{{ $thirdParty->id }}">{{ $thirdParty->name }} · {{ $thirdParty->document }}</option>
+                                                @endforeach
+                                            </select>
+                                        </label>
+                                        @foreach(range(0, 2) as $lineIndex)
+                                            <div class="grid grid-cols-2 gap-2">
+                                                <select name="counterparts[{{ $lineIndex }}][chart_of_account_id]" class="rounded border-slate-300 text-xs" @required($lineIndex === 0)>
+                                                    <option value="">Cuenta PUC{{ $lineIndex > 0 ? ' (opcional)' : '' }}</option>
+                                                    @foreach($postingAccounts as $account)
+                                                        <option value="{{ $account->id }}">{{ $account->code }} - {{ $account->name }}</option>
+                                                    @endforeach
+                                                </select>
+                                                <input type="number" step="0.01" min="0.01" name="counterparts[{{ $lineIndex }}][amount]" class="rounded border-slate-300 text-xs" placeholder="Importe{{ $lineIndex > 0 ? ' (opcional)' : '' }}" value="{{ $lineIndex === 0 ? number_format((float) $statement->amount, 2, '.', '') : '' }}" @required($lineIndex === 0)>
+                                                <input type="text" maxlength="255" name="counterparts[{{ $lineIndex }}][detail]" class="col-span-2 rounded border-slate-300 text-xs" placeholder="Detalle contable{{ $lineIndex > 0 ? ' (opcional)' : '' }}">
+                                            </div>
+                                        @endforeach
+                                        <input type="text" maxlength="1000" name="notes" class="rounded border-slate-300 text-xs" placeholder="Notas para auditoría (opcional)">
+                                        <button class="rounded-md bg-emerald-700 px-3 py-2 text-xs font-semibold text-white">Crear comprobante y conciliar ${{ number_format($statement->amount, 2) }}</button>
+                                    </form>
+                                </details>
                             @else
-                                <form method="POST" action="{{ route('bank-reconciliation.unmatch', $statement) }}">
-                                    @csrf
-                                    <button class="rounded-md border border-amber-200 px-3 py-1 text-xs font-semibold text-amber-700">Desconciliar</button>
-                                </form>
+                                @if($statement->matched_type === 'manual' && $statement->accounting_voucher_id)
+                                    <span class="text-xs text-slate-500">Comprobante publicado; usa un ajuste para corregirlo.</span>
+                                @else
+                                    <form method="POST" action="{{ route('bank-reconciliation.unmatch', $statement) }}">
+                                        @csrf
+                                        <button class="rounded-md border border-amber-200 px-3 py-1 text-xs font-semibold text-amber-700">Desconciliar</button>
+                                    </form>
+                                @endif
                             @endif
                         </td>
                     </tr>
@@ -192,14 +226,53 @@
     @endif
 </div>
 <script>
-    async function findSuggestions(id, url) {
+    async function findSuggestions(id, url, reconcileUrl) {
         const target = document.getElementById(`suggestions-${id}`);
         target.textContent = 'Buscando coincidencias...';
-        const response = await fetch(url, { headers: { Accept: 'application/json' } });
-        const data = await response.json();
-        const sales = data.sales.map((sale) => `Venta ${sale.invoice_number} - ${sale.customer_name}`).join(', ');
-        const purchases = data.purchases.map((purchase) => `Compra ${purchase.invoice_number} - ${purchase.provider}`).join(', ');
-        target.textContent = sales || purchases ? `Coincidencias: ${[sales, purchases].filter(Boolean).join(' | ')}` : 'No se encontraron coincidencias por importe y fecha.';
+        try {
+            const response = await fetch(url, { headers: { Accept: 'application/json' } });
+            if (!response.ok) {
+                throw new Error('No fue posible consultar las coincidencias.');
+            }
+            const data = await response.json();
+            target.replaceChildren();
+            if (data.payments.length === 0) {
+                target.textContent = 'No hay un pago con la misma referencia, cuenta, tipo e importe.';
+                return;
+            }
+            data.payments.forEach((payment) => {
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.action = reconcileUrl;
+                form.className = 'mb-2 flex items-center gap-2';
+                const token = document.querySelector('meta[name="csrf-token"]')?.content;
+                if (!token) {
+                    throw new Error('No se encontró el token de seguridad de la sesión.');
+                }
+                const csrf = document.createElement('input');
+                csrf.type = 'hidden';
+                csrf.name = '_token';
+                csrf.value = token;
+                form.appendChild(csrf);
+                [['matched_type', 'payment'], ['matched_id', String(payment.id)]].forEach(([name, value]) => {
+                    const input = document.createElement('input');
+                    input.type = 'hidden';
+                    input.name = name;
+                    input.value = value;
+                    form.appendChild(input);
+                });
+                const description = document.createElement('span');
+                description.textContent = `Pago ${payment.reference} · ${payment.third_party || 'Sin tercero'} · $${Number(payment.amount).toLocaleString('es-CO', { minimumFractionDigits: 2 })}`;
+                const button = document.createElement('button');
+                button.type = 'submit';
+                button.className = 'rounded-md bg-emerald-600 px-3 py-1 text-xs font-semibold text-white';
+                button.textContent = 'Conciliar pago';
+                form.append(description, button);
+                target.appendChild(form);
+            });
+        } catch (error) {
+            target.textContent = error instanceof Error ? error.message : 'Error al buscar coincidencias.';
+        }
     }
 </script>
 </body>

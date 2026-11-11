@@ -48,7 +48,7 @@ class SaleControllerTest extends TestCase
         $payload = $this->salePayload($item, 100_000);
         $payload['invoice_number'] = 'FV-50';
         $payload['payment_method_id'] = $paymentMethod->id;
-        $payload['skip_dian'] = true;
+        $payload['skip_dian'] = false;
 
         $this->post(route('sales.store'), $payload)
             ->assertRedirect(route('sales.index'));
@@ -78,6 +78,76 @@ class SaleControllerTest extends TestCase
             'document_type' => 'sale',
             'next_number' => 52,
         ]);
+    }
+
+    public function test_internal_sales_use_a_company_consecutive_without_consuming_the_electronic_resolution(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $item = $this->createProduct();
+        $resolution = NumberingResolution::factory()->create([
+            'company_id' => $company->id,
+            'document_type' => 'sale',
+            'prefix' => 'FV',
+            'range_from' => 50,
+            'range_to' => 99,
+            'next_number' => 50,
+        ]);
+        Sale::create([
+            'invoice_number' => '0001',
+            'customer_name' => 'Factura anterior',
+            'sale_date' => now()->toDateString(),
+        ]);
+        $otherCompany = Company::factory()->create();
+        Sale::create([
+            'company_id' => $otherCompany->id,
+            'invoice_number' => '0002',
+            'customer_name' => 'Otra empresa',
+            'sale_date' => now()->toDateString(),
+        ]);
+        $payload = $this->salePayload($item, 100);
+        $payload['skip_dian'] = true;
+
+        $this->get(route('sales.index'))->assertSee('0002');
+        $this->post(route('sales.store'), $payload)->assertSessionHasNoErrors();
+        $this->post(route('sales.store'), $payload)->assertSessionHasNoErrors();
+
+        $this->assertDatabaseHas('sales', ['company_id' => $company->id, 'invoice_number' => '0002', 'skip_dian' => true]);
+        $this->assertDatabaseHas('sales', ['company_id' => $company->id, 'invoice_number' => '0003', 'skip_dian' => true]);
+        $this->assertSame(50, $resolution->fresh()->next_number);
+    }
+
+    public function test_internal_sales_start_at_one_and_number_each_company_independently(): void
+    {
+        $firstCompany = $this->authenticateWithCompany();
+        $firstItem = $this->createProduct();
+        $firstPayload = $this->salePayload($firstItem, 100);
+        $firstPayload['skip_dian'] = true;
+        $this->post(route('sales.store'), $firstPayload)->assertSessionHasNoErrors();
+        $this->post(route('sales.store'), $firstPayload)->assertSessionHasNoErrors();
+
+        $secondCompany = $this->authenticateWithCompany();
+        $secondItem = $this->createProduct();
+        $secondPayload = $this->salePayload($secondItem, 100);
+        $secondPayload['skip_dian'] = true;
+        $this->post(route('sales.store'), $secondPayload)->assertSessionHasNoErrors();
+
+        $this->assertDatabaseHas('sales', ['company_id' => $firstCompany->id, 'invoice_number' => '0001']);
+        $this->assertDatabaseHas('sales', ['company_id' => $firstCompany->id, 'invoice_number' => '0002']);
+        $this->assertDatabaseHas('sales', ['company_id' => $secondCompany->id, 'invoice_number' => '0001']);
+    }
+
+    public function test_internal_sale_consecutive_is_rolled_back_when_the_sale_fails(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $item = $this->createProduct();
+        $payload = $this->salePayload($item, 100);
+        $payload['skip_dian'] = true;
+        $payload['items'][0]['quantity'] = 999;
+
+        $this->post(route('sales.store'), $payload)->assertUnprocessable();
+
+        $this->assertDatabaseMissing('sales', ['company_id' => $company->id, 'invoice_number' => '0001']);
+        $this->assertSame(1, (int) $company->fresh()->next_internal_sale_number);
     }
 
     public function test_sale_is_accounted_automatically_with_balanced_debits_and_credits(): void
@@ -270,7 +340,7 @@ class SaleControllerTest extends TestCase
 
         $response = $this->post(route('sales.store'), $payload)->assertRedirect(route('sales.index'));
 
-        $sale = Sale::query()->where('invoice_number', 'VTA-TEST-001')->firstOrFail();
+        $sale = Sale::query()->where('invoice_number', '0001')->firstOrFail();
         $this->assertTrue((bool) $sale->skip_dian);
         $this->assertNull($sale->factus_status);
         $response->assertSessionHas('success', fn (string $message) => str_contains($message, 'Marcada como factura interna'));

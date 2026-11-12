@@ -184,8 +184,11 @@ Route::middleware(['auth', 'company'])->group(function () {
     Route::middleware('module:bank-reconciliation')->group(function () {
         Route::get('/conciliacion-bancaria', [BankReconciliationController::class, 'index'])->name('bank-reconciliation.index');
         Route::get('/conciliacion-bancaria/saldos-diarios', [BankReconciliationController::class, 'balances'])->name('bank-reconciliation.balances');
+        Route::get('/conciliacion-bancaria/diarios', [BankReconciliationController::class, 'journals'])->name('bank-reconciliation.journals');
+        Route::post('/conciliacion-bancaria/diarios', [BankReconciliationController::class, 'storeJournal'])->name('bank-reconciliation.journals.store');
         Route::post('/conciliacion-bancaria/saldos-iniciales', [BankReconciliationController::class, 'storeOpeningBalance'])->name('bank-reconciliation.opening-balances.store');
         Route::post('/conciliacion-bancaria/importar', [BankReconciliationController::class, 'import'])->name('bank-reconciliation.import');
+        Route::get('/conciliacion-bancaria/{statement}/terceros/{thirdParty}/facturas', [BankReconciliationController::class, 'invoices'])->name('bank-reconciliation.invoices');
         Route::post('/conciliacion-bancaria/{statement}/cuenta', [BankReconciliationController::class, 'assignAccount'])->name('bank-reconciliation.assign-account');
         Route::get('/conciliacion-bancaria/{statement}/sugerencias', [BankReconciliationController::class, 'suggestions'])->name('bank-reconciliation.suggestions');
         Route::post('/conciliacion-bancaria/{statement}/conciliar', [BankReconciliationController::class, 'reconcile'])->name('bank-reconciliation.reconcile');

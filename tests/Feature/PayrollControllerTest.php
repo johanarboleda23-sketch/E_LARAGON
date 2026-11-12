@@ -49,10 +49,20 @@ class PayrollControllerTest extends TestCase
             ],
         ])->assertSessionHasNoErrors();
 
+        $run = PayrollRun::query()->firstOrFail();
         $this->get(route('payroll.index'))
             ->assertOk()
             ->assertSee('2026-10')
-            ->assertSeeText('Nómina · 2026-10');
+            ->assertSeeText('Nómina · 2026-10')
+            ->assertSee('Registrar pago de nómina')
+            ->assertSee('Registrar pago de seguridad social')
+            ->assertSee(route('accounting.vouchers.index.typed', ['voucherType' => 'egreso']), false)
+            ->assertSee(route('accounting.vouchers.index.typed', ['voucherType' => 'seguridad_social']), false);
+
+        $this->get(route('payroll.show', $run))
+            ->assertOk()
+            ->assertSee('Registrar pago de nómina')
+            ->assertSee('Registrar pago de seguridad social');
     }
 
     public function test_calculate_derives_arl_and_parafiscals_from_the_employee_contract(): void

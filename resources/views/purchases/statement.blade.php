@@ -43,7 +43,7 @@
                     $paid = $document->paidAmount();
                     $docBalance = $document->balanceDue((float) $document->total_pagar);
                 @endphp
-                <tr class="{{ $document->trashed() ? 'trashed' : '' }}">
+                <tr id="payment-{{ $document->id }}" class="{{ $document->trashed() ? 'trashed' : '' }}">
                     <td><a href="{{ route('purchases.show', $document) }}" target="_blank">{{ $document->invoice_number }}</a></td>
                     <td>{{ $document->purchase_date->format('d/m/Y') }}</td>
                     <td class="numeric">${{ number_format($document->total_pagar, 2) }}</td>

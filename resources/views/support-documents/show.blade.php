@@ -13,6 +13,9 @@
     <div class="actions">
         <a href="{{ route('support-documents.edit', $document) }}">✏ Editar</a>
         <button onclick="window.print()">Imprimir / Guardar como PDF</button>
+        @if($document->balanceDue((float) $document->total) > 0)
+            <a href="{{ route('support-documents.statement', $document) }}#payment-{{ $document->id }}">Registrar pago · Egreso</a>
+        @endif
         <a href="{{ route('support-documents.statement', $document) }}" target="_blank">Ver estado de cartera</a>
         @if($document->accounting_voucher_id)
             <a target="_blank" href="{{ route('accounting.vouchers.accounting', $document->accounting_voucher_id) }}">Ver contabilización</a>

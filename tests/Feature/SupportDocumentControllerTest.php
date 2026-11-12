@@ -148,6 +148,11 @@ class SupportDocumentControllerTest extends TestCase
             ->assertOk()
             ->assertSee($supplier->name)
             ->assertSee($document->consecutive);
+
+        $this->get(route('support-documents.show', $document))
+            ->assertOk()
+            ->assertSee(route('support-documents.statement', $document).'#payment-'.$document->id, false)
+            ->assertSee('Registrar pago · Egreso');
     }
 
     public function test_email_sends_the_support_document(): void

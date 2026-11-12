@@ -42,7 +42,7 @@
                     $paid = $document->paidAmount();
                     $docBalance = $document->balanceDue((float) $document->total);
                 @endphp
-                <tr>
+                <tr id="payment-{{ $document->id }}">
                     <td><a href="{{ route('support-documents.show', $document) }}" target="_blank">{{ $document->consecutive }}</a></td>
                     <td>{{ $document->document_date->format('d/m/Y') }}</td>
                     <td class="numeric">${{ number_format($document->total, 2) }}</td>

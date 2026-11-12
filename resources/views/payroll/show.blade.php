@@ -12,11 +12,15 @@
                     <h1 class="text-lg font-bold text-gray-800">{{ $run->period }} · {{ ucfirst($run->status) }}</h1>
                     <p class="mt-1 text-xs text-gray-500">Fecha de pago: {{ $run->payment_date->format('d/m/Y') }}</p>
                 </div>
-                    @if($run->accounting_voucher_id)
-                        <a href="{{ route('accounting.vouchers.accounting', $run->accounting_voucher_id) }}" target="_blank" class="rounded border px-3 py-2 text-xs font-bold text-[#227c70]">Ver contabilización</a>
-                    @else
-                        <form action="{{ route('payroll.account', $run) }}" method="POST" onsubmit="return confirm('¿Contabilizar esta nómina ahora?')">@csrf<button type="submit" class="rounded border px-3 py-2 text-xs font-bold text-[#b65338]">Contabilizar ahora</button></form>
-                    @endif
+                    <div class="flex flex-wrap gap-2">
+                        @if($run->accounting_voucher_id)
+                            <a href="{{ route('accounting.vouchers.accounting', $run->accounting_voucher_id) }}" target="_blank" class="rounded border px-3 py-2 text-xs font-bold text-[#227c70]">Ver contabilización</a>
+                        @else
+                            <form action="{{ route('payroll.account', $run) }}" method="POST" onsubmit="return confirm('¿Contabilizar esta nómina ahora?')">@csrf<button type="submit" class="rounded border px-3 py-2 text-xs font-bold text-[#b65338]">Contabilizar ahora</button></form>
+                        @endif
+                        <a href="{{ route('accounting.vouchers.index.typed', ['voucherType' => 'egreso']) }}" class="rounded bg-[#227c70] px-3 py-2 text-xs font-bold text-white">Registrar pago de nómina</a>
+                        <a href="{{ route('accounting.vouchers.index.typed', ['voucherType' => 'seguridad_social']) }}" class="rounded border px-3 py-2 text-xs font-bold text-[#227c70]">Registrar pago de seguridad social</a>
+                    </div>
             </div>
             <div class="mt-4 grid gap-3 sm:grid-cols-3">
                 <div class="rounded-lg bg-gray-50 p-3"><p class="text-xs text-gray-500">Bruto</p><p class="font-bold text-gray-800">${{ number_format($run->total_gross, 2) }}</p></div>

@@ -7,9 +7,9 @@ use App\Models\PaymentMethod;
 use App\Models\Purchase;
 use App\Models\Sale;
 use App\Models\SupportDocument;
-use App\Services\AccountingEntryService;
 use App\Services\AccountingPeriodService;
 use App\Services\BankReconciliationService;
+use App\Services\PaymentPostingService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -19,8 +19,8 @@ class PaymentController extends Controller
 {
     public function __construct(
         private readonly AccountingPeriodService $periodService,
-        private readonly AccountingEntryService $accountingEntryService,
         private readonly BankReconciliationService $bankReconciliationService,
+        private readonly PaymentPostingService $paymentPostingService,
     ) {}
 
     /**
@@ -29,20 +29,20 @@ class PaymentController extends Controller
      */
     public function storeForSale(Request $request, Sale $sale): RedirectResponse
     {
-        return $this->store($request, $sale, 'total', route('sales.statement', $sale));
+        return $this->store($request, $sale, 'total');
     }
 
     public function storeForPurchase(Request $request, Purchase $purchase): RedirectResponse
     {
-        return $this->store($request, $purchase, 'total_pagar', route('purchases.statement', $purchase));
+        return $this->store($request, $purchase, 'total_pagar');
     }
 
     public function storeForSupportDocument(Request $request, SupportDocument $document): RedirectResponse
     {
-        return $this->store($request, $document, 'total', route('support-documents.statement', $document));
+        return $this->store($request, $document, 'total');
     }
 
-    private function store(Request $request, Sale|Purchase|SupportDocument $document, string $totalAttribute, string $redirectTo): RedirectResponse
+    private function store(Request $request, Sale|Purchase|SupportDocument $document, string $totalAttribute): RedirectResponse
     {
         $data = $request->validate([
             'amount' => ['required', 'numeric', 'min:0.01'],
@@ -67,7 +67,7 @@ class PaymentController extends Controller
         $module = $document instanceof Sale ? 'income' : 'expenses';
         $this->periodService->assertWritable($module, $data['payment_date']);
 
-        return DB::transaction(function () use ($data, $document, $totalAttribute, $redirectTo, $paymentMethod): RedirectResponse {
+        return DB::transaction(function () use ($data, $document, $totalAttribute, $paymentMethod): RedirectResponse {
             $lockedDocument = $document->newQuery()
                 ->lockForUpdate()
                 ->findOrFail($document->getKey());
@@ -106,49 +106,23 @@ class PaymentController extends Controller
                 ])->withInput();
             }
 
-            $payment = $lockedDocument->payments()->create([
-                'amount' => $amount,
-                'payment_date' => $data['payment_date'],
-                'method' => $paymentMethod->name,
-                'payment_method_id' => $paymentMethod->id,
-                'reference' => trim($data['reference'] ?? '') ?: null,
-                'notes' => $data['notes'] ?? null,
-                'created_by' => auth()->id(),
-            ]);
-
-            $party = match (true) {
-                $lockedDocument instanceof Sale => $lockedDocument->customer_name,
-                $lockedDocument instanceof Purchase => $lockedDocument->provider,
-                default => $lockedDocument->supplier?->name ?? 'Proveedor',
-            };
-            $isIncome = $lockedDocument instanceof Sale;
-            $bankLine = [
-                'chart_of_account_id' => $paymentMethod->chart_of_account_id,
-                'detail' => ($isIncome ? 'Ingreso por pago de ' : 'Pago a ').$party,
-                'debit' => $isIncome ? $amount : 0,
-                'credit' => $isIncome ? 0 : $amount,
-            ];
-            $counterLine = [
-                'chart_of_account_id' => $counterAccount->id,
-                'detail' => ($isIncome ? 'Abono de cliente ' : 'Abono a proveedor ').$party,
-                'debit' => $isIncome ? 0 : $amount,
-                'credit' => $isIncome ? $amount : 0,
-            ];
-            $voucher = $this->accountingEntryService->post([
-                'voucher_type' => $isIncome ? 'recibo_caja' : 'egreso',
-                'consecutive' => ($isIncome ? 'RC-PAG-' : 'EG-PAG-').$payment->id,
-                'voucher_date' => $data['payment_date'],
-                'third_party' => $party,
-                'description' => 'Pago de '.($lockedDocument instanceof Sale ? 'factura '.$lockedDocument->invoice_number : ($lockedDocument instanceof Purchase ? 'compra '.$lockedDocument->invoice_number : 'documento soporte '.$lockedDocument->consecutive)),
-            ], collect([$bankLine, $counterLine]));
-            $payment->update(['accounting_voucher_id' => $voucher->id]);
+            $payment = $this->paymentPostingService->post(
+                $lockedDocument,
+                $paymentMethod,
+                $counterAccount,
+                $amount,
+                $data['payment_date'],
+                trim($data['reference'] ?? '') ?: null,
+                $data['notes'] ?? null,
+            );
+            $voucher = $payment->accountingVoucher;
             $matched = ! $paymentMethod->is_cash && $this->bankReconciliationService->matchPayment($payment->fresh());
             $message = 'Pago registrado con comprobante '.$voucher->consecutive.'.';
             $message .= $matched
                 ? ' El movimiento bancario con referencia exacta quedó conciliado automáticamente.'
                 : ' El comprobante quedó pendiente de conciliación bancaria.';
 
-            return redirect($redirectTo)->with('success', $message);
+            return redirect()->route('accounting.vouchers.accounting', $voucher)->with('success', $message);
         });
     }
 }

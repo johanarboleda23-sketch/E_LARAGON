@@ -97,6 +97,7 @@
                     <div class="mt-6 grid gap-3 text-xs"><div class="flex justify-between border-b border-white/10 pb-3"><span class="text-[#b9c9c1]">Afiliaciones</span><span class="font-bold text-[#86c8bb]">Desde el contrato</span></div><div class="flex justify-between border-b border-white/10 pb-3"><span class="text-[#b9c9c1]">Archivo plano</span><span class="font-bold text-[#f5c96a]">Descarga manual</span></div><div class="flex justify-between"><span class="text-[#b9c9c1]">Validación</span><span class="font-bold text-[#86c8bb]">Preparada</span></div></div>
                     @if($runs->isNotEmpty())
                         <a href="{{ route('payroll.social-security.file', $runs->first()) }}" class="mt-7 block rounded-lg bg-[#f5c96a] px-4 py-2.5 text-center text-sm font-bold text-[#263b36]">Descargar preparación SS</a>
+                        <a href="{{ route('accounting.vouchers.index.typed', ['voucherType' => 'seguridad_social']) }}" class="mt-3 block rounded-lg border border-white/20 px-4 py-2.5 text-center text-sm font-bold text-white">Registrar pago de seguridad social</a>
                     @else
                         <p class="mt-7 rounded-lg border border-white/20 px-4 py-2.5 text-center text-xs text-[#b9c9c1]">Calcula una nómina para preparar la planilla.</p>
                     @endif
@@ -144,6 +145,8 @@
                             <p class="mt-3 text-sm font-bold text-[#192522]">Neto: ${{ number_format($run->total_net, 2) }}</p>
                             <a href="{{ route('payroll.index', ['preview' => $run->id]) }}" class="mt-2 inline-block text-xs font-bold text-[#227c70]">Vista previa</a>
                             <a href="{{ route('payroll.show', $run) }}" class="mt-2 ml-3 inline-block text-xs font-bold text-[#227c70]">Ver nómina</a>
+                            <a href="{{ route('accounting.vouchers.index.typed', ['voucherType' => 'egreso']) }}" class="mt-2 ml-3 inline-block text-xs font-bold text-[#227c70]">Registrar pago de nómina</a>
+                            <a href="{{ route('accounting.vouchers.index.typed', ['voucherType' => 'seguridad_social']) }}" class="mt-2 ml-3 inline-block text-xs font-bold text-[#227c70]">Registrar pago de seguridad social</a>
                             @if($run->accounting_voucher_id)
                                 <a href="{{ route('accounting.vouchers.accounting', $run->accounting_voucher_id) }}" target="_blank" class="mt-2 ml-3 inline-block text-xs font-bold text-[#227c70]">Ver contabilización</a>
                             @else

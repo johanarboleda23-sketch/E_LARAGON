@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\AccountingVoucherLine;
+use App\Models\BankJournal;
 use App\Models\BankOpeningBalance;
 use App\Models\BankStatement;
 use App\Models\ChartOfAccount;
@@ -15,6 +16,7 @@ use App\Models\ThirdParty;
 use App\Services\AccountingEntryService;
 use App\Services\AccountingPeriodService;
 use App\Services\BankReconciliationService;
+use App\Services\PaymentPostingService;
 use App\Support\SpreadsheetReader;
 use Carbon\Carbon;
 use Illuminate\Contracts\View\View;
@@ -31,6 +33,7 @@ class BankReconciliationController extends Controller
         private readonly AccountingPeriodService $periodService,
         private readonly AccountingEntryService $accountingEntryService,
         private readonly BankReconciliationService $reconciliationService,
+        private readonly PaymentPostingService $paymentPostingService,
     ) {}
 
     public function index(Request $request): View
@@ -40,7 +43,7 @@ class BankReconciliationController extends Controller
         $statements = BankStatement::query()
             ->when(in_array($status, ['pending', 'reconciled'], true), fn ($query) => $query->where('status', $status))
             ->when($paymentMethodId, fn ($query) => $query->where('payment_method_id', $paymentMethodId))
-            ->with(['paymentMethod.account', 'accountingVoucher'])
+            ->with(['paymentMethod.account', 'paymentMethod.bankJournal', 'accountingVoucher'])
             ->latest('transaction_date')
             ->latest('id')
             ->paginate(25)
@@ -52,6 +55,11 @@ class BankReconciliationController extends Controller
             'count' => BankStatement::query()->when($paymentMethodId, fn ($query) => $query->where('payment_method_id', $paymentMethodId))->count(),
         ];
         $bankAccounts = $this->bankAccounts();
+        $bankJournals = BankJournal::query()
+            ->with(['paymentMethod.account'])
+            ->where('active', true)
+            ->orderBy('name')
+            ->get();
         $postingAccounts = ChartOfAccount::query()->where('active', true)->where('allows_posting', true)->orderBy('code')->get();
         $thirdParties = ThirdParty::query()->where('active', true)->orderBy('name')->get();
         $unassignedCount = BankStatement::query()->whereNull('payment_method_id')->count();
@@ -62,11 +70,54 @@ class BankReconciliationController extends Controller
             'status' => $status,
             'summary' => $summary,
             'bankAccounts' => $bankAccounts,
+            'bankJournals' => $bankJournals,
             'postingAccounts' => $postingAccounts,
             'thirdParties' => $thirdParties,
             'paymentMethodId' => $paymentMethodId,
             'unassignedCount' => $unassignedCount,
         ]);
+    }
+
+    public function journals(): View
+    {
+        return view('bank-reconciliation.index', [
+            'section' => 'journals',
+            'bankAccounts' => $this->bankAccounts(),
+            'bankJournals' => BankJournal::query()
+                ->with(['paymentMethod.account'])
+                ->orderBy('name')
+                ->get(),
+        ]);
+    }
+
+    public function storeJournal(Request $request): RedirectResponse
+    {
+        $companyId = (int) session('company_id');
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:100', Rule::unique('bank_journals', 'name')->where('company_id', $companyId)],
+            'payment_method_id' => [
+                'required',
+                'integer',
+                Rule::exists('payment_methods', 'id')->where('company_id', $companyId),
+                Rule::unique('bank_journals', 'payment_method_id')->where('company_id', $companyId),
+            ],
+        ]);
+        $paymentMethod = $this->bankAccountOrFail((int) $data['payment_method_id']);
+        $bankAccount = $paymentMethod->account;
+        if (! $bankAccount || ! $bankAccount->active || ! $bankAccount->allows_posting || ! str_starts_with($bankAccount->code, '11')) {
+            return back()->withErrors([
+                'payment_method_id' => 'El diario debe estar asociado a una cuenta PUC auxiliar activa del grupo 11.',
+            ])->withInput();
+        }
+
+        BankJournal::create([
+            'company_id' => $companyId,
+            'name' => trim($data['name']),
+            'payment_method_id' => $paymentMethod->id,
+            'active' => true,
+        ]);
+
+        return redirect()->route('bank-reconciliation.journals')->with('success', 'Diario bancario creado.');
     }
 
     public function balances(Request $request): View
@@ -182,22 +233,57 @@ class BankReconciliationController extends Controller
     public function assignAccount(Request $request, BankStatement $statement): RedirectResponse
     {
         $data = $request->validate([
-            'payment_method_id' => ['required', 'integer', Rule::exists('payment_methods', 'id')->where('company_id', (int) session('company_id'))],
+            'journal_id' => [
+                'required_without:payment_method_id',
+                'nullable',
+                'integer',
+                Rule::exists('bank_journals', 'id')->where('company_id', (int) session('company_id'))->where('active', true),
+            ],
+            'payment_method_id' => [
+                'required_without:journal_id',
+                'nullable',
+                'integer',
+                Rule::exists('payment_methods', 'id')->where('company_id', (int) session('company_id')),
+            ],
         ]);
         $this->periodService->assertWritable('bank', $statement->transaction_date->toDateString());
-        $this->bankAccountOrFail((int) $data['payment_method_id']);
-        $statement->update(['payment_method_id' => $data['payment_method_id']]);
+        if (isset($data['journal_id'])) {
+            $journal = BankJournal::query()->with('paymentMethod.account')->findOrFail($data['journal_id']);
+            $this->assertJournalBankAccount($journal->paymentMethod);
+            $paymentMethodId = $journal->payment_method_id;
+        } else {
+            $paymentMethodId = $data['payment_method_id'];
+            $this->bankAccountOrFail((int) $paymentMethodId);
+        }
+        $statement->update(['payment_method_id' => $paymentMethodId]);
 
-        return back()->with('success', 'Movimiento asociado a la cuenta bancaria.');
+        return back()->with('success', 'Movimiento asociado al diario bancario.');
     }
 
     public function import(Request $request): RedirectResponse
     {
         $data = $request->validate([
             'file' => ['required', 'file', 'mimes:xlsx,csv,txt', 'max:5120'],
-            'payment_method_id' => ['required', 'integer', Rule::exists('payment_methods', 'id')->where('company_id', (int) session('company_id'))],
+            'journal_id' => [
+                'required_without:payment_method_id',
+                'nullable',
+                'integer',
+                Rule::exists('bank_journals', 'id')->where('company_id', (int) session('company_id'))->where('active', true),
+            ],
+            'payment_method_id' => [
+                'required_without:journal_id',
+                'nullable',
+                'integer',
+                Rule::exists('payment_methods', 'id')->where('company_id', (int) session('company_id')),
+            ],
         ]);
-        $paymentMethod = $this->bankAccountOrFail((int) $data['payment_method_id']);
+        $paymentMethod = isset($data['journal_id'])
+            ? BankJournal::query()->with('paymentMethod.account')->findOrFail($data['journal_id'])->paymentMethod
+            : $this->bankAccountOrFail((int) $data['payment_method_id']);
+        abort_unless($paymentMethod, 422, 'El diario seleccionado no tiene una cuenta bancaria activa.');
+        if (isset($data['journal_id'])) {
+            $this->assertJournalBankAccount($paymentMethod);
+        }
 
         $movements = [];
 
@@ -299,12 +385,21 @@ class BankReconciliationController extends Controller
         $data = $request->validate([
             'matched_type' => ['required', 'string', 'in:payment,manual'],
             'matched_id' => ['nullable', 'integer'],
-            'third_party_id' => ['nullable', 'integer', Rule::exists('third_parties', 'id')->where('company_id', (int) session('company_id'))],
-            'counterparts' => ['required_if:matched_type,manual', 'array', 'min:1'],
-            'counterparts.*.chart_of_account_id' => ['nullable', 'integer', Rule::exists('chart_of_accounts', 'id')->where('company_id', (int) session('company_id'))],
-            'counterparts.*.amount' => ['nullable', 'numeric', 'gt:0'],
-            'counterparts.*.detail' => ['nullable', 'string', 'max:255'],
-            'notes' => ['nullable', 'string', 'max:1000'],
+            'manual_reconcile_statement_id' => ['nullable', 'integer'],
+            'third_party_id' => [
+                'required_with:invoice',
+                'nullable',
+                'integer',
+                Rule::exists('third_parties', 'id')->where('company_id', (int) session('company_id')),
+            ],
+            'invoice' => ['nullable', 'string', 'max:40', 'regex:/^(sale|purchase|support_document):[1-9][0-9]*$/'],
+            'amount' => ['required_if:matched_type,manual', 'numeric', 'gt:0'],
+            'counter_account_id' => [
+                'required_if:matched_type,manual',
+                'integer',
+                Rule::exists('chart_of_accounts', 'id')->where('company_id', (int) session('company_id')),
+            ],
+            'notes' => ['nullable', 'string', 'max:255'],
         ]);
 
         if ($data['matched_type'] === 'payment') {
@@ -319,55 +414,107 @@ class BankReconciliationController extends Controller
             return back()->with('success', 'Pago conciliado con el movimiento bancario.');
         }
 
-        $counterparts = collect($data['counterparts'] ?? [])
-            ->filter(fn (array $line): bool => filled($line['chart_of_account_id'] ?? null) || filled($line['amount'] ?? null))
-            ->values();
-        if ($counterparts->isEmpty() || $counterparts->contains(fn (array $line): bool => blank($line['chart_of_account_id'] ?? null) || blank($line['amount'] ?? null))) {
-            return back()->withErrors([
-                'counterparts' => 'Completa la cuenta y el importe de cada contrapartida.',
-            ])->withInput();
-        }
-
-        return DB::transaction(function () use ($data, $statement, $counterparts): RedirectResponse {
+        return DB::transaction(function () use ($data, $statement): RedirectResponse {
             $lockedStatement = BankStatement::query()->lockForUpdate()->findOrFail($statement->id);
             abort_if($lockedStatement->status !== 'pending', 409, 'El movimiento ya fue conciliado.');
             $bankAccount = $lockedStatement->paymentMethod;
             $bankPucAccount = $bankAccount?->account;
-            abort_unless($bankPucAccount && $bankPucAccount->active && $bankPucAccount->allows_posting, 422, 'Asocia al movimiento una cuenta bancaria con cuenta PUC auxiliar activa.');
-            abort_unless(str_starts_with($bankPucAccount->code, '11'), 422, 'La cuenta seleccionada no corresponde a caja o bancos.');
+            if (! $bankPucAccount || ! $bankPucAccount->active || ! $bankPucAccount->allows_posting) {
+                return $this->manualReconciliationError($lockedStatement->id, 'Asocia al movimiento una cuenta bancaria con cuenta PUC auxiliar activa.');
+            }
+            if (! str_starts_with($bankPucAccount->code, '11')) {
+                return $this->manualReconciliationError($lockedStatement->id, 'La cuenta bancaria asociada debe pertenecer al grupo PUC 11.');
+            }
 
-            $amountTotal = round((float) $counterparts->sum(fn (array $line): float => (float) $line['amount']), 2);
-            abort_if($amountTotal !== round((float) $lockedStatement->amount, 2), 422, 'Las contrapartidas deben sumar exactamente el importe del movimiento bancario.');
+            $amount = round((float) $data['amount'], 2);
+            if ($amount !== round((float) $lockedStatement->amount, 2)) {
+                return $this->manualReconciliationError($lockedStatement->id, 'El valor a conciliar debe ser exactamente $'.number_format((float) $lockedStatement->amount, 2, ',', '.').'.');
+            }
 
-            $counterpartIds = $counterparts->pluck('chart_of_account_id')->map(fn ($id): int => (int) $id)->unique();
-            abort_if($counterpartIds->contains((int) $bankPucAccount->id), 422, 'La cuenta de contrapartida debe ser distinta de la cuenta bancaria.');
-            $accounts = ChartOfAccount::query()
-                ->whereIn('id', $counterpartIds)
+            $counterAccount = ChartOfAccount::query()
+                ->whereKey($data['counter_account_id'])
                 ->where('active', true)
                 ->where('allows_posting', true)
-                ->get()
-                ->keyBy('id');
-            abort_if($accounts->count() !== $counterpartIds->count(), 422, 'Selecciona cuentas PUC auxiliares activas.');
+                ->first();
+            if (! $counterAccount) {
+                return $this->manualReconciliationError($lockedStatement->id, 'Selecciona una cuenta PUC auxiliar activa.');
+            }
+            if ((int) $counterAccount->id === (int) $bankPucAccount->id) {
+                return $this->manualReconciliationError($lockedStatement->id, 'La cuenta de contrapartida debe ser distinta de la cuenta bancaria.');
+            }
 
             $thirdParty = isset($data['third_party_id'])
                 ? ThirdParty::query()->findOrFail($data['third_party_id'])
                 : null;
             $isCredit = $lockedStatement->transaction_type === 'credit';
+            if ($thirdParty && ! ($isCredit ? $thirdParty->is_customer : $thirdParty->is_supplier)) {
+                return $this->manualReconciliationError($lockedStatement->id, 'Selecciona un tercero '.($isCredit ? 'marcado como cliente' : 'marcado como proveedor').'.');
+            }
+
+            $invoice = null;
+            if (filled($data['invoice'] ?? null)) {
+                [$invoiceType, $invoiceId] = explode(':', $data['invoice'], 2);
+                $invoice = match ($invoiceType) {
+                    'sale' => Sale::query()->findOrFail((int) $invoiceId),
+                    'purchase' => Purchase::query()->findOrFail((int) $invoiceId),
+                    'support_document' => SupportDocument::query()->findOrFail((int) $invoiceId),
+                };
+                if (($isCredit && ! ($invoice instanceof Sale)) || (! $isCredit && $invoice instanceof Sale)) {
+                    return $this->manualReconciliationError($lockedStatement->id, 'La factura seleccionada no corresponde al tipo de movimiento bancario.');
+                }
+                if (! $thirdParty || ! $this->invoiceBelongsToThirdParty($invoice, $thirdParty)) {
+                    return $this->manualReconciliationError($lockedStatement->id, 'La factura seleccionada no pertenece al tercero indicado.');
+                }
+
+                if ($invoice instanceof Purchase && $invoice->accountingVoucher()
+                    ->whereHas('lines', fn ($query) => $query
+                        ->where('credit', '>', 0)
+                        ->whereHas('account', fn ($accountQuery) => $accountQuery->where('code', 'like', '11%')))
+                    ->exists()) {
+                    return $this->manualReconciliationError($lockedStatement->id, 'Esta compra ya tiene una salida de caja o banco contabilizada. Revisa el comprobante antes de registrar otro pago.');
+                }
+
+                $total = (float) ($invoice instanceof Purchase ? $invoice->total_pagar : $invoice->total);
+                $balance = $invoice->balanceDue($total);
+                if ($amount > round($balance, 2)) {
+                    return $this->manualReconciliationError($lockedStatement->id, 'El abono supera el saldo pendiente de la factura ($'.number_format($balance, 2, ',', '.').').');
+                }
+
+                $this->periodService->assertWritable($isCredit ? 'income' : 'expenses', $lockedStatement->transaction_date->toDateString());
+                $payment = $this->paymentPostingService->post(
+                    $invoice,
+                    $bankAccount,
+                    $counterAccount,
+                    $amount,
+                    $lockedStatement->transaction_date->toDateString(),
+                    $lockedStatement->reference,
+                    $data['notes'] ?? null,
+                );
+                $voucher = $payment->accountingVoucher;
+                $lockedStatement->update([
+                    'status' => 'reconciled',
+                    'matched_type' => 'payment',
+                    'matched_id' => $payment->id,
+                    'accounting_voucher_id' => $voucher->id,
+                    'notes' => $data['notes'] ?? null,
+                    'reconciled_at' => now(),
+                    'reconciled_by' => auth()->id(),
+                ]);
+
+                return back()->with('success', 'Abono registrado y movimiento conciliado con el comprobante '.$voucher->consecutive.'.');
+            }
+
             $lines = collect([[
                 'chart_of_account_id' => $bankPucAccount->id,
                 'detail' => 'Movimiento bancario '.$lockedStatement->reference,
-                'debit' => $isCredit ? (float) $lockedStatement->amount : 0,
-                'credit' => $isCredit ? 0 : (float) $lockedStatement->amount,
+                'debit' => $isCredit ? $amount : 0,
+                'credit' => $isCredit ? 0 : $amount,
+            ], [
+                'chart_of_account_id' => $counterAccount->id,
+                'detail' => $lockedStatement->description ?: 'Contrapartida conciliación',
+                'debit' => $isCredit ? 0 : $amount,
+                'credit' => $isCredit ? $amount : 0,
             ]]);
-            foreach ($counterparts as $line) {
-                $lines->push([
-                    'chart_of_account_id' => (int) $line['chart_of_account_id'],
-                    'detail' => $line['detail'] ?? $lockedStatement->description ?? 'Contrapartida conciliación',
-                    'debit' => $isCredit ? 0 : (float) $line['amount'],
-                    'credit' => $isCredit ? (float) $line['amount'] : 0,
-                ]);
-            }
-
             $voucher = $this->accountingEntryService->post([
                 'voucher_type' => $isCredit ? 'recibo_caja' : 'egreso',
                 'consecutive' => ($isCredit ? 'RC-BNK-' : 'EG-BNK-').$lockedStatement->id,
@@ -388,8 +535,131 @@ class BankReconciliationController extends Controller
 
             return back()->with('success', 'Movimiento conciliado y comprobante '.$voucher->consecutive.' creado.');
         });
+    }
 
-        return back()->with('success', 'Movimiento conciliado correctamente.');
+    private function invoiceBelongsToThirdParty(Sale|Purchase|SupportDocument $invoice, ThirdParty $thirdParty): bool
+    {
+        if ($invoice instanceof SupportDocument) {
+            return (int) $invoice->third_party_id === (int) $thirdParty->id;
+        }
+
+        $invoiceDocument = $invoice instanceof Sale ? $invoice->customer_document : $invoice->provider_nit;
+        $invoiceName = $invoice instanceof Sale ? $invoice->customer_name : $invoice->provider;
+
+        if (filled($invoiceDocument) && filled($thirdParty->document)) {
+            return $invoiceDocument === $thirdParty->document;
+        }
+
+        return $invoiceName === $thirdParty->name;
+    }
+
+    public function invoices(BankStatement $statement, ThirdParty $thirdParty): JsonResponse
+    {
+        $isCredit = $statement->transaction_type === 'credit';
+        if (! $thirdParty->active || ! ($isCredit ? $thirdParty->is_customer : $thirdParty->is_supplier)) {
+            return response()->json(['invoices' => []]);
+        }
+
+        if ($isCredit) {
+            $invoices = Sale::query()
+                ->where(function ($query) use ($thirdParty): void {
+                    if (filled($thirdParty->document)) {
+                        $query->where('customer_document', $thirdParty->document)
+                            ->orWhere(function ($fallback) use ($thirdParty): void {
+                                $fallback->where(function ($document) {
+                                    $document->whereNull('customer_document')->orWhere('customer_document', '');
+                                })->where('customer_name', $thirdParty->name);
+                            });
+                    } else {
+                        $query->where('customer_name', $thirdParty->name);
+                    }
+                })
+                ->withSum('payments as paid_amount', 'amount')
+                ->withSum('creditNotes as credited_amount', 'total')
+                ->whereRaw(
+                    'sales.total > COALESCE((SELECT SUM(payments.amount) FROM payments WHERE payments.payable_type = ? AND payments.payable_id = sales.id), 0) + COALESCE((SELECT SUM(commercial_documents.total) FROM commercial_documents WHERE commercial_documents.reference_sale_id = sales.id AND commercial_documents.document_type = ? AND commercial_documents.company_id = ?), 0)',
+                    [Sale::class, 'customer_credit_note', (int) session('company_id')],
+                )
+                ->latest('sale_date')
+                ->get()
+                ->map(function (Sale $sale): array {
+                    $balance = round((float) $sale->total - (float) $sale->paid_amount - (float) $sale->credited_amount, 2);
+
+                    return [
+                        'value' => 'sale:'.$sale->id,
+                        'date' => $sale->sale_date->toDateString(),
+                        'label' => 'Factura '.$sale->invoice_number.' · '.$sale->sale_date->format('d/m/Y').' · Pendiente $'.number_format($balance, 2, ',', '.'),
+                    ];
+                })
+                ->filter()
+                ->values();
+
+            return response()->json(['invoices' => $invoices]);
+        }
+
+        $purchases = Purchase::query()
+            ->where(function ($query) use ($thirdParty): void {
+                if (filled($thirdParty->document)) {
+                    $query->where('provider_nit', $thirdParty->document)
+                        ->orWhere(function ($fallback) use ($thirdParty): void {
+                            $fallback->where(function ($document) {
+                                $document->whereNull('provider_nit')->orWhere('provider_nit', '');
+                            })->where('provider', $thirdParty->name);
+                        });
+                } else {
+                    $query->where('provider', $thirdParty->name);
+                }
+            })
+            ->withSum('payments as paid_amount', 'amount')
+            ->whereRaw(
+                'purchases.total_pagar > COALESCE((SELECT SUM(payments.amount) FROM payments WHERE payments.payable_type = ? AND payments.payable_id = purchases.id), 0)',
+                [Purchase::class],
+            )
+            ->latest('purchase_date')
+            ->get()
+            ->map(function (Purchase $purchase): array {
+                $balance = round((float) $purchase->total_pagar - (float) $purchase->paid_amount, 2);
+
+                return [
+                    'value' => 'purchase:'.$purchase->id,
+                    'date' => $purchase->purchase_date->toDateString(),
+                    'label' => 'Compra '.$purchase->invoice_number.' · '.$purchase->purchase_date->format('d/m/Y').' · Pendiente $'.number_format($balance, 2, ',', '.'),
+                ];
+            })
+            ->filter()
+            ->values();
+        $supportDocuments = SupportDocument::query()
+            ->where('third_party_id', $thirdParty->id)
+            ->withSum('payments as paid_amount', 'amount')
+            ->whereRaw(
+                'support_documents.total > COALESCE((SELECT SUM(payments.amount) FROM payments WHERE payments.payable_type = ? AND payments.payable_id = support_documents.id), 0)',
+                [SupportDocument::class],
+            )
+            ->latest('document_date')
+            ->get()
+            ->map(function (SupportDocument $document): array {
+                $balance = round((float) $document->total - (float) $document->paid_amount, 2);
+
+                return [
+                    'value' => 'support_document:'.$document->id,
+                    'date' => $document->document_date->toDateString(),
+                    'label' => 'Documento soporte '.$document->consecutive.' · '.$document->document_date->format('d/m/Y').' · Pendiente $'.number_format($balance, 2, ',', '.'),
+                ];
+            })
+            ->filter()
+            ->values();
+
+        return response()->json([
+            'invoices' => $purchases->merge($supportDocuments)->sortByDesc('date')->values(),
+        ]);
+    }
+
+    private function manualReconciliationError(int $statementId, string $message): RedirectResponse
+    {
+        return back()
+            ->withErrors(['manual_reconcile' => $message])
+            ->withInput()
+            ->with('manual_reconcile_statement_id', $statementId);
     }
 
     public function unmatch(BankStatement $statement): RedirectResponse
@@ -483,5 +753,15 @@ class BankReconciliationController extends Controller
         abort_unless($paymentMethod, 422, 'Selecciona un medio de pago configurado como cuenta bancaria.');
 
         return $paymentMethod;
+    }
+
+    private function assertJournalBankAccount(?PaymentMethod $paymentMethod): void
+    {
+        $account = $paymentMethod?->account;
+        abort_unless(
+            $account && $account->active && $account->allows_posting && str_starts_with($account->code, '11'),
+            422,
+            'El diario debe estar asociado a una cuenta PUC auxiliar activa del grupo 11.',
+        );
     }
 }

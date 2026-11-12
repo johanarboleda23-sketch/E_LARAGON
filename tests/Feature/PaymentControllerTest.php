@@ -33,18 +33,28 @@ class PaymentControllerTest extends TestCase
             'discount_total' => 0,
             'total' => 1000,
         ]);
+        $this->get(route('sales.show', $sale))
+            ->assertOk()
+            ->assertSee(route('sales.statement', $sale).'#payment-'.$sale->id, false)
+            ->assertSee('Registrar pago · Recibo de caja');
         $paymentDetails = $this->paymentDetails($company, 'PAY1305');
 
-        $this->post(route('sales.payments.store', $sale), [
+        $response = $this->post(route('sales.payments.store', $sale), [
             'amount' => 400,
             'payment_date' => now()->toDateString(),
             ...$paymentDetails,
-        ])->assertRedirect();
+        ]);
+        $payment = $sale->payments()->firstOrFail();
+
+        $response->assertRedirect(route('accounting.vouchers.accounting', $payment->accountingVoucher));
 
         $this->assertSame(400.0, $sale->paidAmount());
         $this->assertSame(600.0, $sale->balanceDue((float) $sale->total));
 
-        $payment = $sale->payments()->firstOrFail();
+        $this->get(route('accounting.vouchers.accounting', $payment->accountingVoucher))
+            ->assertOk()
+            ->assertSee('Pago registrado con comprobante '.$payment->accountingVoucher->consecutive);
+
         $this->get(route('sales.statement', $sale))
             ->assertOk()
             ->assertSee('Abono parcial')
@@ -65,6 +75,10 @@ class PaymentControllerTest extends TestCase
             'retefuente' => 0,
             'total_pagar' => 500,
         ]);
+        $this->get(route('purchases.show', $purchase))
+            ->assertOk()
+            ->assertSee(route('purchases.statement', $purchase).'#payment-'.$purchase->id, false)
+            ->assertSee('Registrar pago · Egreso');
         $paymentDetails = $this->paymentDetails($company, 'PAY2205');
 
         $this->post(route('purchases.payments.store', $purchase), [

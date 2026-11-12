@@ -16,17 +16,21 @@
             <p class="text-sm text-slate-500">Importa el extracto, revisa coincidencias y confirma cada movimiento.</p>
         </div>
         @if ($section === 'movements')
-            <form method="POST" action="{{ route('bank-reconciliation.import') }}" enctype="multipart/form-data" class="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white p-3">
-                @csrf
-                <select name="payment_method_id" class="rounded-md border-slate-300 text-sm" required>
-                    <option value="">Selecciona el banco</option>
-                    @foreach ($bankAccounts as $account)
-                        <option value="{{ $account->id }}" @selected(old('payment_method_id', $paymentMethodId) == $account->id)>{{ $account->name }}{{ $account->account_number ? ' · '.$account->account_number : '' }}</option>
-                    @endforeach
-                </select>
-                <input type="file" name="file" accept=".xlsx,.csv,.txt" class="max-w-xs text-sm" required>
-                <button class="rounded-md bg-sky-700 px-4 py-2 text-sm font-semibold text-white">Importar Excel / CSV</button>
-            </form>
+            @if ($bankJournals->isNotEmpty())
+                <form method="POST" action="{{ route('bank-reconciliation.import') }}" enctype="multipart/form-data" class="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white p-3">
+                    @csrf
+                    <select name="journal_id" class="rounded-md border-slate-300 text-sm" required>
+                        <option value="">Selecciona el diario bancario</option>
+                        @foreach ($bankJournals as $journal)
+                            <option value="{{ $journal->id }}" @selected(old('journal_id') == $journal->id)>{{ $journal->name }} · {{ $journal->paymentMethod->name }}{{ $journal->paymentMethod->account_number ? ' · '.$journal->paymentMethod->account_number : '' }}</option>
+                        @endforeach
+                    </select>
+                    <input type="file" name="file" accept=".xlsx,.csv,.txt" class="max-w-xs text-sm" required>
+                    <button class="rounded-md bg-sky-700 px-4 py-2 text-sm font-semibold text-white">Importar Excel / CSV</button>
+                </form>
+            @else
+                <a href="{{ route('bank-reconciliation.journals') }}" class="rounded-md bg-sky-700 px-4 py-2 text-sm font-semibold text-white">Crea un diario para importar</a>
+            @endif
         @endif
     </div>
 
@@ -40,6 +44,7 @@
     <div class="mt-6 flex flex-wrap gap-2 text-sm">
         <a href="{{ route('bank-reconciliation.index') }}" class="rounded-md border px-3 py-2 {{ $section === 'movements' ? 'border-sky-700 bg-sky-700 font-bold text-white' : 'border-slate-200 bg-white text-slate-700' }}">Movimientos y conciliación</a>
         <a href="{{ route('bank-reconciliation.balances') }}" class="rounded-md border px-3 py-2 {{ $section === 'balances' ? 'border-sky-700 bg-sky-700 font-bold text-white' : 'border-slate-200 bg-white text-slate-700' }}">Saldos iniciales y saldo diario</a>
+        <a href="{{ route('bank-reconciliation.journals') }}" class="rounded-md border px-3 py-2 {{ $section === 'journals' ? 'border-sky-700 bg-sky-700 font-bold text-white' : 'border-slate-200 bg-white text-slate-700' }}">Diarios bancarios</a>
     </div>
 
     @if ($section === 'balances')
@@ -100,6 +105,48 @@
                 @endforelse
             </div>
         </section>
+    @elseif ($section === 'journals')
+        <section class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
+            <form method="POST" action="{{ route('bank-reconciliation.journals.store') }}" class="grid content-start gap-4 rounded-lg border border-slate-200 bg-white p-5">
+                @csrf
+                <div>
+                    <h2 class="text-lg font-bold text-slate-900">Crear diario bancario</h2>
+                    <p class="mt-1 text-sm text-slate-500">Cada diario representa una sola cuenta bancaria. Puedes crear un diario por cada banco o cuenta.</p>
+                </div>
+                <label class="grid gap-1 text-sm font-medium text-slate-700">Nombre del diario
+                    <input type="text" name="name" maxlength="100" value="{{ old('name') }}" placeholder="Ej.: Bancolombia principal" class="rounded-md border-slate-300" required>
+                </label>
+                <label class="grid gap-1 text-sm font-medium text-slate-700">Cuenta bancaria
+                    <select name="payment_method_id" class="rounded-md border-slate-300" required>
+                        <option value="">Selecciona una cuenta bancaria</option>
+                        @foreach ($bankAccounts as $account)
+                            <option value="{{ $account->id }}" @selected(old('payment_method_id') == $account->id)>{{ $account->name }}{{ $account->bank_name ? ' · '.$account->bank_name : '' }}{{ $account->account_number ? ' · '.$account->account_number : '' }}</option>
+                        @endforeach
+                    </select>
+                </label>
+                @if ($bankAccounts->isEmpty())
+                    <p class="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">No hay cuentas bancarias configuradas con una cuenta PUC auxiliar del grupo 11.</p>
+                @endif
+                <button @disabled($bankAccounts->isEmpty()) class="rounded-md bg-sky-700 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">Guardar diario</button>
+            </form>
+
+            <div class="rounded-lg border border-slate-200 bg-white p-5 lg:col-span-2">
+                <h2 class="text-lg font-bold text-slate-900">Diarios configurados</h2>
+                <div class="mt-4 divide-y divide-slate-100">
+                    @forelse ($bankJournals as $journal)
+                        <div class="flex flex-wrap items-center justify-between gap-3 py-3">
+                            <div>
+                                <strong class="text-sm text-slate-900">{{ $journal->name }}</strong>
+                                <p class="text-xs text-slate-500">{{ $journal->paymentMethod->name }} · {{ $journal->paymentMethod->bank_name ?: $journal->paymentMethod->account?->name }}{{ $journal->paymentMethod->account_number ? ' · '.$journal->paymentMethod->account_number : '' }}</p>
+                            </div>
+                            <span class="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">Activo</span>
+                        </div>
+                    @empty
+                        <p class="py-4 text-sm text-slate-500">Aún no has creado diarios bancarios.</p>
+                    @endforelse
+                </div>
+            </div>
+        </section>
     @else
         @if ($unassignedCount > 0)
             <div class="mt-5 rounded-md bg-amber-50 px-4 py-3 text-sm text-amber-800">{{ $unassignedCount }} movimientos históricos no tienen cuenta bancaria asignada. Asócialos antes de usarlos en los saldos.</div>
@@ -148,18 +195,24 @@
                         <td class="p-3 text-right font-semibold">${{ number_format($statement->amount, 2) }}</td>
                         <td class="p-3">
                             @if ($statement->paymentMethod)
-                                {{ $statement->paymentMethod->name }}
+                                @if ($statement->paymentMethod->bankJournal)
+                                    <strong>{{ $statement->paymentMethod->bankJournal->name }}</strong><br>
+                                @endif
+                                <span class="text-xs text-slate-600">{{ $statement->paymentMethod->name }}</span>
                             @else
                                 <form method="POST" action="{{ route('bank-reconciliation.assign-account', $statement) }}" class="flex gap-1">
                                     @csrf
-                                    <select name="payment_method_id" class="max-w-40 rounded-md border-slate-300 text-xs" required>
-                                        <option value="">Selecciona banco</option>
-                                        @foreach ($bankAccounts as $account)
-                                            <option value="{{ $account->id }}">{{ $account->name }}</option>
+                                    <select name="journal_id" class="max-w-40 rounded-md border-slate-300 text-xs" required>
+                                        <option value="">Selecciona diario</option>
+                                        @foreach ($bankJournals as $journal)
+                                            <option value="{{ $journal->id }}">{{ $journal->name }} · {{ $journal->paymentMethod->name }}</option>
                                         @endforeach
                                     </select>
                                     <button class="rounded-md bg-sky-700 px-2 py-1 text-xs font-semibold text-white">Asignar</button>
                                 </form>
+                                @if ($bankJournals->isEmpty())
+                                    <a class="text-xs text-sky-700 underline" href="{{ route('bank-reconciliation.journals') }}">Crea un diario primero</a>
+                                @endif
                             @endif
                         </td>
                         <td class="p-3">
@@ -170,39 +223,81 @@
                         </td>
                         <td class="p-3">
                             @if ($statement->status === 'pending')
-                                <div class="flex flex-wrap gap-2">
-                                    <button type="button" class="rounded-md border border-sky-200 px-3 py-1 text-xs font-semibold text-sky-700" onclick="findSuggestions({{ $statement->id }}, '{{ route('bank-reconciliation.suggestions', $statement) }}', '{{ route('bank-reconciliation.reconcile', $statement) }}')">Buscar coincidencias exactas</button>
-                                </div>
-                                <div id="suggestions-{{ $statement->id }}" class="mt-2 text-xs text-slate-600"></div>
-                                <details class="mt-2">
-                                    <summary class="cursor-pointer rounded-md bg-emerald-600 px-3 py-1 text-xs font-semibold text-white">Conciliar con asiento manual</summary>
-                                    <form method="POST" action="{{ route('bank-reconciliation.reconcile', $statement) }}" class="mt-2 grid min-w-72 gap-2 rounded-lg border border-slate-200 bg-white p-3">
+                                @if ($statement->paymentMethod)
+                                    <div class="flex flex-wrap gap-2">
+                                        <button type="button" class="rounded-md border border-sky-200 px-3 py-1 text-xs font-semibold text-sky-700" onclick="findSuggestions({{ $statement->id }}, '{{ route('bank-reconciliation.suggestions', $statement) }}', '{{ route('bank-reconciliation.reconcile', $statement) }}')">Buscar coincidencias exactas</button>
+                                    </div>
+                                    <div id="suggestions-{{ $statement->id }}" class="mt-2 text-xs text-slate-600"></div>
+                                    @php($reopeningManualForm = (string) old('manual_reconcile_statement_id', session('manual_reconcile_statement_id')) === (string) $statement->id)
+                                    <details class="mt-2" @if($reopeningManualForm) open @endif>
+                                        <summary class="cursor-pointer rounded-md bg-emerald-600 px-3 py-1 text-xs font-semibold text-white">Conciliar movimiento</summary>
+                                    <form
+                                        id="manual-reconcile-form-{{ $statement->id }}"
+                                        method="POST"
+                                        action="{{ route('bank-reconciliation.reconcile', $statement) }}"
+                                        data-invoices-url="{{ route('bank-reconciliation.invoices', ['statement' => $statement->id, 'thirdParty' => '__PARTY__']) }}"
+                                        data-old-invoice="{{ $reopeningManualForm ? old('invoice', '') : '' }}"
+                                        class="mt-2 grid min-w-72 gap-3 rounded-lg border border-slate-200 bg-white p-3"
+                                    >
                                         @csrf
                                         <input type="hidden" name="matched_type" value="manual">
-                                        <label class="grid gap-1 text-xs">Tercero
-                                            <select name="third_party_id" class="rounded border-slate-300 text-xs">
+                                        <input type="hidden" name="manual_reconcile_statement_id" value="{{ $statement->id }}">
+                                        @if($reopeningManualForm && $errors->has('manual_reconcile'))
+                                            <p class="rounded-md bg-red-50 px-3 py-2 text-xs font-medium text-red-700" role="alert">{{ $errors->first('manual_reconcile') }}</p>
+                                        @endif
+                                        <div class="rounded-md bg-sky-50 px-3 py-2 text-xs text-sky-900">
+                                            <p class="font-semibold">{{ $statement->transaction_type === 'credit' ? 'Es un ingreso al banco' : 'Es un egreso del banco' }} de ${{ number_format((float) $statement->amount, 2) }}.</p>
+                                            <p class="mt-1">Al elegir una factura, se registra un abono por este valor. Si no eliges factura, se crea un comprobante manual. El valor debe coincidir con el movimiento bancario.</p>
+                                        </div>
+                                        <p class="text-xs text-slate-600">
+                                            Diario / cuenta bancaria:
+                                            <strong>{{ $statement->paymentMethod?->bankJournal?->name ?? 'Sin diario asignado' }}</strong>
+                                            · {{ $statement->paymentMethod?->name ?? 'Sin cuenta asignada' }}
+                                            @if($statement->paymentMethod?->account)
+                                                · PUC {{ $statement->paymentMethod->account->code }}
+                                            @endif
+                                        </p>
+                                        <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+                                            <label class="grid content-start gap-1 text-xs font-semibold text-slate-700">Tercero
+                                                <select name="third_party_id" data-third-party-select class="rounded border-slate-300 text-xs">
                                                 <option value="">Sin tercero</option>
                                                 @foreach($thirdParties as $thirdParty)
-                                                    <option value="{{ $thirdParty->id }}">{{ $thirdParty->name }} · {{ $thirdParty->document }}</option>
+                                                    @if ($statement->transaction_type === 'credit' ? $thirdParty->is_customer : $thirdParty->is_supplier)
+                                                        <option value="{{ $thirdParty->id }}" @selected($reopeningManualForm && old('third_party_id') == $thirdParty->id)>{{ $thirdParty->name }}{{ $thirdParty->document ? ' · '.$thirdParty->document : '' }}</option>
+                                                    @endif
                                                 @endforeach
-                                            </select>
-                                        </label>
-                                        @foreach(range(0, 2) as $lineIndex)
-                                            <div class="grid grid-cols-2 gap-2">
-                                                <select name="counterparts[{{ $lineIndex }}][chart_of_account_id]" class="rounded border-slate-300 text-xs" @required($lineIndex === 0)>
-                                                    <option value="">Cuenta PUC{{ $lineIndex > 0 ? ' (opcional)' : '' }}</option>
+                                                </select>
+                                            </label>
+                                            <label class="grid content-start gap-1 text-xs font-semibold text-slate-700">{{ $statement->transaction_type === 'credit' ? 'Factura que nos pagaron (opcional)' : 'Factura por pagar (opcional)' }}
+                                                <select name="invoice" data-invoice-select class="rounded border-slate-300 text-xs" disabled>
+                                                    <option value="">Selecciona un tercero primero</option>
+                                                </select>
+                                            </label>
+                                            <label class="grid content-start gap-1 text-xs font-semibold text-slate-700">Banco / diario
+                                                <input type="text" value="{{ $statement->paymentMethod?->bankJournal?->name ?? $statement->paymentMethod?->name ?? 'Sin diario asignado' }}" class="rounded border-slate-300 bg-slate-50 text-xs" readonly>
+                                            </label>
+                                            <label class="grid content-start gap-1 text-xs font-semibold text-slate-700">Valor a conciliar
+                                                <input type="number" step="0.01" min="0.01" name="amount" value="{{ $reopeningManualForm ? old('amount', number_format((float) $statement->amount, 2, '.', '')) : number_format((float) $statement->amount, 2, '.', '') }}" class="rounded border-slate-300 text-xs" required>
+                                            </label>
+                                            <label class="grid content-start gap-1 text-xs font-semibold text-slate-700">Cuenta PUC de contrapartida
+                                                <select name="counter_account_id" class="rounded border-slate-300 text-xs" required>
+                                                    <option value="">Selecciona una cuenta</option>
                                                     @foreach($postingAccounts as $account)
-                                                        <option value="{{ $account->id }}">{{ $account->code }} - {{ $account->name }}</option>
+                                                        <option value="{{ $account->id }}" @selected($reopeningManualForm && old('counter_account_id') == $account->id)>{{ $account->code }} - {{ $account->name }}</option>
                                                     @endforeach
                                                 </select>
-                                                <input type="number" step="0.01" min="0.01" name="counterparts[{{ $lineIndex }}][amount]" class="rounded border-slate-300 text-xs" placeholder="Importe{{ $lineIndex > 0 ? ' (opcional)' : '' }}" value="{{ $lineIndex === 0 ? number_format((float) $statement->amount, 2, '.', '') : '' }}" @required($lineIndex === 0)>
-                                                <input type="text" maxlength="255" name="counterparts[{{ $lineIndex }}][detail]" class="col-span-2 rounded border-slate-300 text-xs" placeholder="Detalle contable{{ $lineIndex > 0 ? ' (opcional)' : '' }}">
-                                            </div>
-                                        @endforeach
-                                        <input type="text" maxlength="1000" name="notes" class="rounded border-slate-300 text-xs" placeholder="Notas para auditoría (opcional)">
-                                        <button class="rounded-md bg-emerald-700 px-3 py-2 text-xs font-semibold text-white">Crear comprobante y conciliar ${{ number_format($statement->amount, 2) }}</button>
-                                    </form>
-                                </details>
+                                            </label>
+                                        </div>
+                                        <p data-invoice-status class="text-xs text-slate-500" aria-live="polite"></p>
+                                        <label class="grid gap-1 text-xs font-semibold text-slate-700">Notas para auditoría (opcional)
+                                            <input type="text" maxlength="1000" name="notes" class="rounded border-slate-300 text-xs" placeholder="Observaciones sobre este movimiento" value="{{ $reopeningManualForm ? old('notes', '') : '' }}">
+                                        </label>
+                                        <button class="rounded-md bg-emerald-700 px-3 py-2 text-xs font-semibold text-white">Registrar y conciliar</button>
+                                        </form>
+                                    </details>
+                                @else
+                                    <span class="text-xs text-amber-700">Asigna un diario bancario antes de conciliar este movimiento.</span>
+                                @endif
                             @else
                                 @if($statement->matched_type === 'manual' && $statement->accounting_voucher_id)
                                     <span class="text-xs text-slate-500">Comprobante publicado; usa un ajuste para corregirlo.</span>
@@ -226,6 +321,65 @@
     @endif
 </div>
 <script>
+    document.querySelectorAll('[data-third-party-select]').forEach((thirdPartySelect) => {
+        const form = thirdPartySelect.closest('form');
+        const invoiceSelect = form.querySelector('[data-invoice-select]');
+        const status = form.querySelector('[data-invoice-status]');
+        const placeholder = 'Selecciona un tercero primero';
+
+        const resetInvoices = () => {
+            invoiceSelect.replaceChildren(new Option(placeholder, ''));
+            invoiceSelect.disabled = true;
+            thirdPartySelect.required = false;
+        };
+
+        const loadInvoices = async () => {
+            if (!thirdPartySelect.value) {
+                resetInvoices();
+                status.textContent = '';
+                return;
+            }
+
+            invoiceSelect.replaceChildren(new Option('Cargando facturas...', ''));
+            invoiceSelect.disabled = true;
+            status.textContent = '';
+            try {
+                const url = form.dataset.invoicesUrl.replace('__PARTY__', encodeURIComponent(thirdPartySelect.value));
+                const response = await fetch(url, { headers: { Accept: 'application/json' } });
+                if (!response.ok) {
+                    throw new Error('No fue posible consultar las facturas de este tercero.');
+                }
+
+                const data = await response.json();
+                const options = [new Option('Sin factura (comprobante manual)', '')];
+                data.invoices.forEach((invoice) => options.push(new Option(invoice.label, invoice.value)));
+                invoiceSelect.replaceChildren(...options);
+                invoiceSelect.disabled = false;
+                const oldInvoice = form.dataset.oldInvoice;
+                if (oldInvoice && options.some((option) => option.value === oldInvoice)) {
+                    invoiceSelect.value = oldInvoice;
+                }
+                thirdPartySelect.required = Boolean(invoiceSelect.value);
+                status.textContent = data.invoices.length
+                    ? 'Selecciona una factura abierta o deja “Sin factura” para registrar un movimiento manual.'
+                    : 'Este tercero no tiene facturas pendientes; puedes continuar como comprobante manual.';
+            } catch (error) {
+                invoiceSelect.replaceChildren(new Option('No se pudieron cargar las facturas', ''));
+                status.textContent = error instanceof Error ? error.message : 'Error al consultar las facturas.';
+            }
+        };
+
+        thirdPartySelect.addEventListener('change', loadInvoices);
+        invoiceSelect.addEventListener('change', () => {
+            thirdPartySelect.required = Boolean(invoiceSelect.value);
+        });
+        if (thirdPartySelect.value) {
+            loadInvoices();
+        } else {
+            resetInvoices();
+        }
+    });
+
     async function findSuggestions(id, url, reconcileUrl) {
         const target = document.getElementById(`suggestions-${id}`);
         target.textContent = 'Buscando coincidencias...';

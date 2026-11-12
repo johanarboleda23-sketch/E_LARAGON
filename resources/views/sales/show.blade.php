@@ -14,6 +14,9 @@
         <a href="{{ route('sales.edit', $sale) }}">✏ Editar</a>
         <a href="{{ route('commercial-documents.customer-credit-notes', ['reference_invoice_id' => $sale->id]) }}">Crear nota crédito</a>
         <button onclick="window.print()">Imprimir / Guardar como PDF</button>
+        @if($sale->balanceDue((float) $sale->total) > 0)
+            <a href="{{ route('sales.statement', $sale) }}#payment-{{ $sale->id }}">Registrar pago · Recibo de caja</a>
+        @endif
         <a href="{{ route('sales.statement', $sale) }}" target="_blank">Ver estado de cartera</a>
         @if($sale->accounting_voucher_id)
             <a target="_blank" href="{{ route('accounting.vouchers.accounting', $sale->accounting_voucher_id) }}">Ver contabilización</a>

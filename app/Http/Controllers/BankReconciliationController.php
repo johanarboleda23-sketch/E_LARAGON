@@ -15,6 +15,7 @@ use App\Models\ThirdParty;
 use App\Services\AccountingEntryService;
 use App\Services\AccountingPeriodService;
 use App\Services\BankReconciliationService;
+use App\Support\SpreadsheetReader;
 use Carbon\Carbon;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Collection;
@@ -200,7 +201,7 @@ class BankReconciliationController extends Controller
 
         $movements = [];
 
-        foreach ($this->rowsFromFile($data['file']->getRealPath(), $data['file']->getClientOriginalExtension()) as $row) {
+        foreach (SpreadsheetReader::rows($data['file']->getRealPath(), $data['file']->getClientOriginalExtension()) as $row) {
             if (count(array_filter($row)) === 0) {
                 continue;
             }
@@ -210,10 +211,11 @@ class BankReconciliationController extends Controller
             }
 
             $compactFormat = count($row) <= 3;
+            $bankExportFormat = count($row) === 4;
             $date = $this->parseDate($row[0] ?? '');
-            $description = trim((string) ($compactFormat ? ($row[1] ?? '') : ($row[2] ?? '')));
-            $legacyType = strtolower(trim((string) ($compactFormat ? '' : ($row[3] ?? ''))));
-            $rawAmount = trim((string) ($compactFormat ? ($row[2] ?? '0') : ($row[4] ?? '0')));
+            $description = trim((string) ($compactFormat || $bankExportFormat ? ($row[1] ?? '') : ($row[2] ?? '')));
+            $legacyType = strtolower(trim((string) ($compactFormat || $bankExportFormat ? '' : ($row[3] ?? ''))));
+            $rawAmount = trim((string) ($compactFormat ? ($row[2] ?? '0') : ($bankExportFormat ? ($row[3] ?? '0') : ($row[4] ?? '0'))));
             $amount = $this->parseAmount($rawAmount);
 
             if (! $date) {
@@ -238,7 +240,7 @@ class BankReconciliationController extends Controller
                 'company_id' => (int) session('company_id'),
                 'payment_method_id' => $paymentMethod->id,
                 'transaction_date' => $date,
-                'reference' => $compactFormat ? null : (trim($row[1] ?? '') ?: null),
+                'reference' => $compactFormat ? null : (trim((string) ($bankExportFormat ? ($row[2] ?? '') : ($row[1] ?? ''))) ?: null),
                 'description' => $description ?: null,
                 'transaction_type' => $transactionType,
                 'amount' => abs($amount),
@@ -256,72 +258,6 @@ class BankReconciliationController extends Controller
         $created = count($movements);
 
         return back()->with('success', "Se importaron {$created} movimientos bancarios.");
-    }
-
-    /**
-     * @return array<int, array<int, string>>
-     */
-    private function rowsFromFile(string $path, string $extension): array
-    {
-        if (strtolower($extension) === 'xlsx') {
-            return $this->rowsFromXlsx($path);
-        }
-
-        $handle = fopen($path, 'r');
-        $rows = [];
-        $firstLine = fgets($handle);
-        $delimiter = str_contains((string) $firstLine, ';') ? ';' : ',';
-        if ($firstLine !== false) {
-            $rows[] = str_getcsv($firstLine, $delimiter);
-        }
-
-        while (($row = fgetcsv($handle, escape: '\\')) !== false) {
-            if (count($row) === 1 && str_contains($row[0], $delimiter)) {
-                $row = str_getcsv($row[0], $delimiter);
-            }
-            $rows[] = $row;
-        }
-
-        fclose($handle);
-
-        return $rows;
-    }
-
-    /**
-     * @return array<int, array<int, string>>
-     */
-    private function rowsFromXlsx(string $path): array
-    {
-        $archive = new \ZipArchive;
-        abort_unless($archive->open($path) === true, 422, 'No se pudo abrir el archivo Excel.');
-
-        $sharedStrings = [];
-        if (($sharedXml = $archive->getFromName('xl/sharedStrings.xml')) !== false) {
-            $shared = simplexml_load_string($sharedXml);
-            foreach ($shared->si as $string) {
-                $sharedStrings[] = implode('', array_map('strval', $string->xpath('.//*[local-name()="t"]') ?: []));
-            }
-        }
-
-        $sheetXml = $archive->getFromName('xl/worksheets/sheet1.xml');
-        $archive->close();
-        abort_unless($sheetXml !== false, 422, 'El archivo Excel no contiene una hoja válida.');
-
-        $sheet = simplexml_load_string($sheetXml);
-        $rows = [];
-        foreach ($sheet->sheetData->row as $sheetRow) {
-            $row = [];
-            foreach ($sheetRow->c as $cell) {
-                $value = (string) ($cell->v ?? '');
-                if ((string) ($cell['t'] ?? '') === 's') {
-                    $value = $sharedStrings[(int) $value] ?? '';
-                }
-                $row[] = $value;
-            }
-            $rows[] = $row;
-        }
-
-        return $rows;
     }
 
     private function isHeaderRow(array $row): bool

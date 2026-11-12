@@ -15,6 +15,9 @@ use App\Models\User;
 use App\Services\BankReconciliationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use OpenSpout\Common\Entity\Row;
+use OpenSpout\Writer\XLSX\Options;
+use OpenSpout\Writer\XLSX\Writer;
 use Tests\TestCase;
 
 class BankReconciliationTest extends TestCase
@@ -93,6 +96,49 @@ class BankReconciliationTest extends TestCase
             'description' => 'CONSIGNACION CORRESPONSAL CB',
             'transaction_type' => 'credit',
             'amount' => 425000,
+        ]);
+    }
+
+    public function test_it_imports_bancolombia_four_column_excel_files(): void
+    {
+        $company = Company::factory()->create();
+        $bankAccount = $this->createBankAccount($company);
+        $user = User::factory()->create();
+        $user->companies()->attach($company->id, ['role' => 'admin']);
+        $this->actingAs($user)->withSession(['company_id' => $company->id]);
+
+        $filePath = tempnam(sys_get_temp_dir(), 'bank-statement-test-');
+        $writer = new Writer(new Options);
+        $writer->openToFile($filePath);
+        $writer->addRow(Row::fromValues(['Fecha', 'Descripción', 'Referencia', 'Valor']));
+        $writer->addRow(Row::fromValues(['2026-11-11', 'Débito de prueba', 'REF-001', -15000]));
+        $writer->addRow(Row::fromValues(['2026-11-11', 'Crédito de prueba', 'REF-002', 23000]));
+        $writer->close();
+        $file = UploadedFile::fake()->createWithContent('movimientos-bancolombia.xlsx', file_get_contents($filePath));
+        unlink($filePath);
+
+        $this->post(route('bank-reconciliation.import'), [
+            'file' => $file,
+            'payment_method_id' => $bankAccount->id,
+        ])
+            ->assertRedirect()
+            ->assertSessionHas('success', 'Se importaron 2 movimientos bancarios.');
+
+        $this->assertDatabaseHas('bank_statements', [
+            'payment_method_id' => $bankAccount->id,
+            'transaction_date' => '2026-11-11 00:00:00',
+            'reference' => 'REF-001',
+            'description' => 'Débito de prueba',
+            'transaction_type' => 'debit',
+            'amount' => 15000,
+        ]);
+        $this->assertDatabaseHas('bank_statements', [
+            'payment_method_id' => $bankAccount->id,
+            'transaction_date' => '2026-11-11 00:00:00',
+            'reference' => 'REF-002',
+            'description' => 'Crédito de prueba',
+            'transaction_type' => 'credit',
+            'amount' => 23000,
         ]);
     }
 

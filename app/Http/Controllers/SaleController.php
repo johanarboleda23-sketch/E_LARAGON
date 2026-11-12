@@ -35,10 +35,10 @@ class SaleController extends Controller
     public function index(Request $request)
     {
         $items = Item::with('unitConversions')->where('type', 'producto')->orderBy('name')->get();
-        $sales = Sale::with(['details.item', 'creator', 'paymentMethod'])->latest()->take(20)->get();
+        $sales = Sale::with(['details.item', 'creator', 'paymentMethod', 'payments'])->latest()->take(20)->get();
         $selectedSaleId = $request->integer('preview') ?: $request->session()->get('preview_sale_id');
         $selectedSale = $selectedSaleId
-            ? Sale::with(['details.item', 'paymentMethod', 'accountingVoucher'])->findOrFail($selectedSaleId)
+            ? Sale::with(['details.item', 'paymentMethod', 'accountingVoucher', 'payments'])->findOrFail($selectedSaleId)
             : null;
         $paymentMethods = $this->paymentMethodService->available();
         $customers = ThirdParty::where('is_customer', true)->where('active', true)->orderBy('name')->get();

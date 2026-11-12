@@ -29,6 +29,11 @@ class SaleControllerTest extends TestCase
             ->assertSeeText('Forma de pago')
             ->assertSeeText('Retención en ventas (practicada por el cliente)')
             ->assertSeeText('Venta de bienes - vendedor declarante (2,5%)')
+            ->assertSeeText('19%')
+            ->assertSeeText('5%')
+            ->assertSeeText('0%')
+            ->assertSee('id="iva-total"', false)
+            ->assertSee('id="grand-total"', false)
             ->assertDontSeeText('Compras - proveedor declarante');
     }
 
@@ -64,7 +69,14 @@ class SaleControllerTest extends TestCase
             ->assertOk()
             ->assertSeeText('FV-50')
             ->assertSeeText('Transferencia de prueba')
-            ->assertSeeText('Factura de venta · FV-50');
+            ->assertSeeText('Factura de venta · FV-50')
+            ->assertSee('Registrar pago', false)
+            ->assertSee(route('sales.statement', $sale).'#payment-'.$sale->id, false);
+
+        $this->get(route('sales.index', ['preview' => $sale->id]))
+            ->assertOk()
+            ->assertSee('Registrar pago / Recibo de caja')
+            ->assertSee(route('sales.statement', $sale).'#payment-'.$sale->id, false);
 
         $this->post(route('sales.store'), $payload)
             ->assertRedirect(route('sales.index'));

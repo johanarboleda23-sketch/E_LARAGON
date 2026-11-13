@@ -74,10 +74,12 @@ class ThirdPartyController extends Controller
             'address' => 'nullable|string|max:255',
             'city' => 'nullable|string|max:150',
             'neighborhood' => 'nullable|string|max:150',
+            'fiscal_responsibilities' => ['nullable', 'string', 'max:512', 'regex:/^[A-Za-z0-9,\\s;-]*$/'],
             'is_customer' => 'nullable|boolean',
             'is_supplier' => 'nullable|boolean',
             'is_employee' => 'nullable|boolean',
         ]);
+        $data['fiscal_responsibilities'] = $this->normalizeFiscalResponsibilities($data['fiscal_responsibilities'] ?? null);
         abort_if(empty($data['is_customer']) && empty($data['is_supplier']) && empty($data['is_employee']), 422, 'Selecciona al menos un perfil.');
         $this->applyVerificationDigit($data);
         ThirdParty::create([...$data, 'created_by' => $request->user()->id, 'is_customer' => ! empty($data['is_customer']), 'is_supplier' => ! empty($data['is_supplier']), 'is_employee' => ! empty($data['is_employee']), 'active' => true]);
@@ -97,11 +99,13 @@ class ThirdPartyController extends Controller
             'address' => 'nullable|string|max:255',
             'city' => 'nullable|string|max:150',
             'neighborhood' => 'nullable|string|max:150',
+            'fiscal_responsibilities' => ['nullable', 'string', 'max:512', 'regex:/^[A-Za-z0-9,\\s;-]*$/'],
             'is_customer' => 'nullable|boolean',
             'is_supplier' => 'nullable|boolean',
             'is_employee' => 'nullable|boolean',
             'active' => 'required|boolean',
         ]);
+        $data['fiscal_responsibilities'] = $this->normalizeFiscalResponsibilities($data['fiscal_responsibilities'] ?? null);
         $data['is_customer'] = ! empty($data['is_customer']);
         $data['is_supplier'] = ! empty($data['is_supplier']);
         $data['is_employee'] = ! empty($data['is_employee']);
@@ -167,9 +171,9 @@ class ThirdPartyController extends Controller
     public function template(): Response
     {
         $rows = [
-            ['Tipo persona (natural/juridica)', 'Nombre', 'Documento / NIT', 'Correo', 'Teléfono', 'Es cliente (si/no)', 'Es proveedor (si/no)', 'Es empleado (si/no)', 'DV (si aplica)'],
-            ['natural', 'Juan Pérez', '123456789', 'juan@example.com', '3001234567', 'si', 'no', 'no', ''],
-            ['juridica', 'Proveedores ACME S.A.S.', '800197268', 'contacto@acme.com', '6012345678', 'no', 'si', 'no', '4'],
+            ['Tipo persona (natural/juridica)', 'Nombre', 'Documento / NIT', 'Correo', 'Teléfono', 'Es cliente (si/no)', 'Es proveedor (si/no)', 'Es empleado (si/no)', 'DV (si aplica)', 'Responsabilidades fiscales del RUT (códigos separados por coma)'],
+            ['natural', 'Juan Pérez', '123456789', 'juan@example.com', '3001234567', 'si', 'no', 'no', '', ''],
+            ['juridica', 'Proveedores ACME S.A.S.', '800197268', 'contacto@acme.com', '6012345678', 'no', 'si', 'no', '4', ''],
         ];
 
         $content = collect($rows)
@@ -229,6 +233,16 @@ class ThirdPartyController extends Controller
 
                 $attributes['verification_digit'] = $verificationDigit !== '' ? $verificationDigit : null;
             }
+            if (array_key_exists(9, $row)) {
+                $fiscalResponsibilities = trim((string) $row[9]);
+                if (preg_match('/^[A-Za-z0-9,\\s;-]*$/', $fiscalResponsibilities) !== 1) {
+                    $skipped++;
+
+                    continue;
+                }
+
+                $attributes['fiscal_responsibilities'] = $this->normalizeFiscalResponsibilities($fiscalResponsibilities);
+            }
 
             if (! $attributes['is_customer'] && ! $attributes['is_supplier'] && ! $attributes['is_employee']) {
                 $skipped++;
@@ -253,6 +267,16 @@ class ThirdPartyController extends Controller
     private function parseBoolean(mixed $value): bool
     {
         return in_array(strtolower(trim((string) $value)), ['si', 'sí', 'yes', '1', 'true'], true);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function normalizeFiscalResponsibilities(?string $responsibilities): array
+    {
+        $codes = preg_split('/[,;\\s]+/', strtoupper(trim($responsibilities ?? '')), -1, PREG_SPLIT_NO_EMPTY);
+
+        return array_values(array_unique($codes ?: []));
     }
 
     /**

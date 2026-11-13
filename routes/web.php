@@ -87,6 +87,7 @@ Route::middleware(['auth', 'company'])->group(function () {
         Route::post('/purchases/{purchase}/correo', [PurchaseController::class, 'email'])->name('purchases.email');
         Route::get('/purchases/cartera', [PurchaseController::class, 'payables'])->name('purchases.payables');
         Route::get('/purchases/{purchase}/estado-cartera', [PurchaseController::class, 'statement'])->name('purchases.statement');
+        Route::get('/purchases/{purchase}/pagos/create', [PaymentController::class, 'createForPurchase'])->name('purchases.payments.create');
         Route::post('/purchases/{purchase}/abonos', [PaymentController::class, 'storeForPurchase'])->name('purchases.payments.store');
         Route::resource('purchases', PurchaseController::class)->withTrashed(['show']);
     });
@@ -101,6 +102,7 @@ Route::middleware(['auth', 'company'])->group(function () {
         Route::get('/ventas/{sale}/xml', [SaleController::class, 'xml'])->name('sales.xml');
         Route::post('/ventas/{sale}/contabilizar', [SaleController::class, 'account'])->name('sales.account');
         Route::get('/ventas/{sale}/estado-cartera', [SaleController::class, 'statement'])->name('sales.statement');
+        Route::get('/ventas/{sale}/pagos/create', [PaymentController::class, 'createForSale'])->name('sales.payments.create');
         Route::post('/ventas/{sale}/abonos', [PaymentController::class, 'storeForSale'])->name('sales.payments.store');
     });
 
@@ -114,6 +116,7 @@ Route::middleware(['auth', 'company'])->group(function () {
         Route::post('/documentos-soporte/{document}/correo', [SupportDocumentController::class, 'email'])->name('support-documents.email');
         Route::post('/documentos-soporte/{document}/contabilizar', [SupportDocumentController::class, 'account'])->name('support-documents.account');
         Route::get('/documentos-soporte/{document}/estado-cartera', [SupportDocumentController::class, 'statement'])->name('support-documents.statement');
+        Route::get('/documentos-soporte/{document}/pagos/create', [PaymentController::class, 'createForSupportDocument'])->name('support-documents.payments.create');
         Route::post('/documentos-soporte/{document}/abonos', [PaymentController::class, 'storeForSupportDocument'])->name('support-documents.payments.store');
     });
 

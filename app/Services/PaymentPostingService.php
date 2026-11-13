@@ -20,12 +20,15 @@ class PaymentPostingService
         PaymentMethod $paymentMethod,
         ChartOfAccount $counterAccount,
         float $amount,
+        float $withholdingTotal,
+        array $withholdings,
         string $paymentDate,
         ?string $reference,
         ?string $notes,
     ): Payment {
         $payment = $document->payments()->create([
             'amount' => $amount,
+            'withholding_total' => $withholdingTotal,
             'payment_date' => $paymentDate,
             'method' => $paymentMethod->name,
             'payment_method_id' => $paymentMethod->id,
@@ -49,9 +52,15 @@ class PaymentPostingService
         $counterLine = [
             'chart_of_account_id' => $counterAccount->id,
             'detail' => ($isIncome ? 'Abono de cliente ' : 'Abono a proveedor ').$party,
-            'debit' => $isIncome ? 0 : $amount,
-            'credit' => $isIncome ? $amount : 0,
+            'debit' => $isIncome ? 0 : $amount + $withholdingTotal,
+            'credit' => $isIncome ? $amount + $withholdingTotal : 0,
         ];
+        $retentionLines = collect($withholdings)->map(fn (array $withholding): array => [
+            'chart_of_account_id' => $withholding['account']->id,
+            'detail' => 'Retención practicada al momento del pago · '.$party,
+            'debit' => $isIncome ? $withholding['amount'] : 0,
+            'credit' => $isIncome ? 0 : $withholding['amount'],
+        ]);
         $voucher = $this->accountingEntryService->post([
             'voucher_type' => $isIncome ? 'recibo_caja' : 'egreso',
             'consecutive' => ($isIncome ? 'RC-PAG-' : 'EG-PAG-').$payment->id,
@@ -62,7 +71,7 @@ class PaymentPostingService
                 $document instanceof Purchase => 'compra '.$document->invoice_number,
                 default => 'documento soporte '.$document->consecutive,
             },
-        ], collect([$bankLine, $counterLine]));
+        ], collect([$bankLine, ...$retentionLines->all(), $counterLine]));
 
         $payment->update(['accounting_voucher_id' => $voucher->id]);
 

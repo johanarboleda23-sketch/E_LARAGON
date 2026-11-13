@@ -53,6 +53,10 @@
                         <dd class="mt-1 text-sm text-[#192522]">{{ $thirdParty->city ?: 'No registrada' }}</dd>
                     </div>
                     <div class="sm:col-span-2">
+                        <dt class="text-xs font-semibold uppercase tracking-wide text-[#71807a]">Responsabilidades fiscales (RUT, casilla 53)</dt>
+                        <dd class="mt-1 text-sm text-[#192522]">{{ implode(', ', $thirdParty->fiscal_responsibilities ?? []) ?: 'No registradas' }}</dd>
+                    </div>
+                    <div class="sm:col-span-2">
                         <dt class="text-xs font-semibold uppercase tracking-wide text-[#71807a]">Perfiles</dt>
                         <dd class="mt-2 flex flex-wrap gap-2">
                             @if ($thirdParty->is_customer)

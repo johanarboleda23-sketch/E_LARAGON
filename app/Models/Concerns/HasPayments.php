@@ -19,8 +19,10 @@ trait HasPayments
     public function paidAmount(): float
     {
         return $this->relationLoaded('payments')
-            ? (float) $this->payments->sum('amount')
-            : (float) $this->payments()->sum('amount');
+            ? (float) $this->payments->sum(fn (Payment $payment): float => (float) $payment->amount + (float) $payment->withholding_total)
+            : (float) $this->payments()
+                ->selectRaw('COALESCE(SUM(amount + withholding_total), 0) as total')
+                ->value('total');
     }
 
     public function balanceDue(float $total): float

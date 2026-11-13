@@ -2,9 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\ChartOfAccount;
 use App\Models\NumberingResolution;
-use App\Models\PaymentMethod;
 use App\Models\SupportDocument;
 use App\Models\ThirdParty;
 use App\Services\AccountingEntryService;
@@ -98,17 +96,11 @@ class SupportDocumentController extends Controller
             ->get();
 
         $balance = $documents->sum(fn (SupportDocument $item) => $item->balanceDue((float) $item->total));
-        $paymentMethods = PaymentMethod::query()->with('account')->whereNotNull('chart_of_account_id')->orderBy('name')->get();
-        $counterAccounts = ChartOfAccount::query()->where('active', true)->where('allows_posting', true)->orderBy('code')->get();
-        $defaultCounterAccountId = $counterAccounts->firstWhere('code', '2205')?->id;
 
         return view('support-documents.statement', [
             'supplier' => $document->supplier,
             'documents' => $documents,
             'balance' => $balance,
-            'paymentMethods' => $paymentMethods,
-            'counterAccounts' => $counterAccounts,
-            'defaultCounterAccountId' => $defaultCounterAccountId,
         ]);
     }
 

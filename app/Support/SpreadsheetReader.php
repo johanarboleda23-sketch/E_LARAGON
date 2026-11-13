@@ -36,10 +36,7 @@ class SpreadsheetReader
             $rows[] = str_getcsv($firstLine, $delimiter);
         }
 
-        while (($row = fgetcsv($handle, escape: '\\')) !== false) {
-            if (count($row) === 1 && str_contains($row[0], $delimiter)) {
-                $row = str_getcsv($row[0], $delimiter);
-            }
+        while (($row = fgetcsv($handle, separator: $delimiter, escape: '\\')) !== false) {
             $rows[] = $row;
         }
 

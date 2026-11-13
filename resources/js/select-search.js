@@ -5,7 +5,7 @@ const normalize = (value) => value
 
 const controls = new WeakMap();
 let nextListId = 0;
-const MAX_VISIBLE_OPTIONS = 20;
+const MAX_VISIBLE_OPTIONS = 8;
 
 const style = document.createElement('style');
 style.textContent = `
@@ -31,8 +31,8 @@ style.textContent = `
         left: 0;
         z-index: 50;
         display: none;
-        width: max(100%, 14rem);
-        max-height: 16rem;
+        width: 100%;
+        max-height: 12rem;
         overflow-y: auto;
         border: 1px solid #cbd6cf;
         border-radius: .5rem;
@@ -267,8 +267,9 @@ function addSearch(select) {
             }
 
             event.preventDefault();
-            const direction = event.key === 'ArrowDown' ? 1 : -1;
-            const nextIndex = (selectedIndex + direction + suggestions.length) % suggestions.length;
+            const nextIndex = selectedIndex === -1
+                ? (event.key === 'ArrowDown' ? 0 : suggestions.length - 1)
+                : (selectedIndex + (event.key === 'ArrowDown' ? 1 : -1) + suggestions.length) % suggestions.length;
             suggestions.forEach((suggestion, index) => {
                 suggestion.setAttribute('aria-selected', String(index === nextIndex));
             });

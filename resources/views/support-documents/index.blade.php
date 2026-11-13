@@ -35,7 +35,12 @@
                     :accounting-url="$selectedDocument->accounting_voucher_id ? route('accounting.vouchers.accounting', $selectedDocument->accounting_voucher_id) : null"
                     :accounting-action="$selectedDocument->accounting_voucher_id ? null : route('support-documents.account', $selectedDocument)"
                     :accounting-message="$selectedDocument->accounting_voucher_id ? null : 'El documento aún no tiene contabilización.'"
-                    :actions="[['label' => 'Abrir documento', 'url' => route('support-documents.show', $selectedDocument)]]"
+                    :actions="array_merge(
+                        [['label' => 'Abrir documento', 'url' => route('support-documents.show', $selectedDocument)]],
+                        $selectedDocument->balanceDue((float) $selectedDocument->total) > 0
+                            ? [['label' => 'Registrar pago · Egreso', 'url' => route('support-documents.payments.create', $selectedDocument)]]
+                            : [],
+                    )"
                 />
             @endif
 

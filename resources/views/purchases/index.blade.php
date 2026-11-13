@@ -83,7 +83,12 @@
                 :accounting-url="$selectedPurchase->accounting_voucher_id ? route('accounting.vouchers.accounting', $selectedPurchase->accounting_voucher_id) : null"
                 :accounting-action="$selectedPurchase->accounting_voucher_id || $selectedPurchase->trashed() ? null : route('purchases.account', $selectedPurchase)"
                 :accounting-message="$selectedPurchase->accounting_voucher_id || $selectedPurchase->trashed() ? null : 'La factura aún no tiene contabilización.'"
-                :actions="[['label' => 'Abrir documento', 'url' => route('purchases.show', $selectedPurchase)]]"
+                :actions="array_merge(
+                    [['label' => 'Abrir documento', 'url' => route('purchases.show', $selectedPurchase)]],
+                    !$selectedPurchase->trashed() && $selectedPurchase->balanceDue((float) $selectedPurchase->total_pagar) > 0
+                        ? [['label' => 'Registrar pago · Egreso', 'url' => route('purchases.payments.create', $selectedPurchase)]]
+                        : [],
+                )"
             />
         @endif
         <!-- FORMULARIO GENERAL DE COMPRAS -->

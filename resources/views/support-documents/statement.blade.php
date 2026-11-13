@@ -18,9 +18,7 @@
         .badge-paid{background:#ecfdf5;color:#047857}
         .badge-partial{background:#fff8df;color:#8b6811}
         .badge-pending{background:#fef2f2;color:#b91c1c}
-        .pay-form{display:grid;min-width:230px;gap:5px}
-        .pay-form input,.pay-form select{box-sizing:border-box;width:100%;padding:5px;border:1px solid #d1d5db;border-radius:4px;font-size:11px}
-        .pay-form button{border:0;background:#db2777;color:white;padding:7px 9px;border-radius:4px;font-size:11px;cursor:pointer}
+        .pay-link{display:inline-block;background:#db2777;color:white;padding:7px 9px;border-radius:4px;font-size:11px;text-decoration:none}
     </style>
 </head>
 <body>
@@ -56,7 +54,8 @@
                     </td>
                     <td>
                         @foreach($document->payments as $payment)
-                            <div>${{ number_format((float) $payment->amount, 2) }} · {{ $payment->payment_date->format('d/m/Y') }} · {{ $payment->paymentMethod?->name ?? $payment->method ?? 'Pago' }}
+                            <div>${{ number_format((float) $payment->amount, 2) }} efectivo · {{ $payment->payment_date->format('d/m/Y') }} · {{ $payment->paymentMethod?->name ?? $payment->method ?? 'Pago' }}
+                                @if((float) $payment->withholding_total > 0) <span>+ ${{ number_format((float) $payment->withholding_total, 2) }} retenido</span> @endif
                                 @if($payment->reference) <span>({{ $payment->reference }})</span> @endif
                                 @if($payment->accountingVoucher)<br><a href="{{ route('accounting.vouchers.accounting', $payment->accountingVoucher) }}" target="_blank">{{ $payment->accountingVoucher->consecutive }}</a>@endif
                             </div>
@@ -64,26 +63,7 @@
                     </td>
                     <td>
                         @if($docBalance > 0)
-                            <form class="pay-form" method="POST" action="{{ route('support-documents.payments.store', $document) }}">
-                                @csrf
-                                <input type="number" step="0.01" min="0.01" max="{{ $docBalance }}" name="amount" value="{{ number_format($docBalance, 2, '.', '') }}" placeholder="Valor del abono" required>
-                                <input type="hidden" name="payment_date" value="{{ now()->toDateString() }}">
-                                <select name="payment_method_id" required>
-                                    <option value="">Cuenta de caja o banco</option>
-                                    @foreach($paymentMethods as $method)
-                                        <option value="{{ $method->id }}">{{ $method->name }} · {{ $method->account?->code }}</option>
-                                    @endforeach
-                                </select>
-                                <select name="counter_account_id" required>
-                                    <option value="">Cuenta de proveedores</option>
-                                    @foreach($counterAccounts as $account)
-                                        <option value="{{ $account->id }}" @selected($account->id === $defaultCounterAccountId)>{{ $account->code }} - {{ $account->name }}</option>
-                                    @endforeach
-                                </select>
-                                <input type="text" name="reference" maxlength="100" placeholder="Referencia del banco o corresponsal">
-                                <input type="text" name="notes" maxlength="255" placeholder="Observaciones (opcional)">
-                                <button type="submit">Registrar pago y egreso</button>
-                            </form>
+                            <a class="pay-link" href="{{ route('support-documents.payments.create', $document) }}">Causar egreso</a>
                         @endif
                     </td>
                 </tr>

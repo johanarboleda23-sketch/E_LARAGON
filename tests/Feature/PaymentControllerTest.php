@@ -11,6 +11,8 @@ use App\Models\Company;
 use App\Models\PaymentMethod;
 use App\Models\Purchase;
 use App\Models\Sale;
+use App\Models\SupportDocument;
+use App\Models\ThirdParty;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -58,8 +60,254 @@ class PaymentControllerTest extends TestCase
         $this->get(route('sales.statement', $sale))
             ->assertOk()
             ->assertSee('Abono parcial')
-            ->assertSee('PAY1305')
+            ->assertSee('Caja de prueba')
             ->assertSee($payment->accountingVoucher->consecutive);
+    }
+
+    public function test_payment_entry_screen_preloads_sale_purchase_and_support_documents(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $this->paymentDetails($company, 'PAY1305');
+        ChartOfAccount::create([
+            'company_id' => $company->id,
+            'code' => '220501',
+            'name' => 'Proveedores nacionales',
+            'class' => 2,
+            'nature' => 'credit',
+            'allows_posting' => true,
+            'active' => true,
+        ]);
+        $supplier = ThirdParty::create([
+            'company_id' => $company->id,
+            'name' => 'Proveedor de prueba',
+            'document' => '800123456',
+            'is_supplier' => true,
+            'active' => true,
+        ]);
+        $sale = Sale::create([
+            'company_id' => $company->id,
+            'invoice_number' => 'FV-PAY-ENTRY',
+            'customer_name' => 'Cliente de prueba',
+            'sale_date' => now()->toDateString(),
+            'total' => 125,
+        ]);
+        $purchase = Purchase::create([
+            'company_id' => $company->id,
+            'invoice_number' => 'FC-PAY-ENTRY',
+            'provider' => $supplier->name,
+            'purchase_date' => now()->toDateString(),
+            'total_pagar' => 75,
+        ]);
+        $supportDocument = SupportDocument::create([
+            'company_id' => $company->id,
+            'third_party_id' => $supplier->id,
+            'consecutive' => 'DS-PAY-ENTRY',
+            'document_date' => now()->toDateString(),
+            'concept' => 'Servicios de prueba',
+            'subtotal' => 60,
+            'total' => 60,
+        ]);
+
+        $this->get(route('sales.payments.create', $sale))
+            ->assertOk()
+            ->assertSee('FV-PAY-ENTRY')
+            ->assertSee('Cliente de prueba')
+            ->assertSee('125.00');
+        $this->get(route('purchases.payments.create', $purchase))
+            ->assertOk()
+            ->assertSee('FC-PAY-ENTRY')
+            ->assertSee('Proveedor de prueba')
+            ->assertSee('75.00');
+        $this->get(route('support-documents.payments.create', $supportDocument))
+            ->assertOk()
+            ->assertSee('DS-PAY-ENTRY')
+            ->assertSee('Proveedor de prueba')
+            ->assertSee('60.00');
+    }
+
+    public function test_additional_withholding_reduces_the_balance_and_reconciles_only_the_cash_amount(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $sale = Sale::create([
+            'company_id' => $company->id,
+            'invoice_number' => 'FV-WITHHOLDING',
+            'customer_name' => 'Cliente de prueba',
+            'sale_date' => now()->toDateString(),
+            'total' => 400,
+        ]);
+        $details = $this->paymentDetails($company, 'PAY1305', false, 'TRX-WITHHOLDING');
+        $withholdingAccount = ChartOfAccount::create([
+            'company_id' => $company->id,
+            'code' => '1355100',
+            'name' => 'Retenciones practicadas por clientes',
+            'class' => 1,
+            'nature' => 'debit',
+            'allows_posting' => true,
+            'active' => true,
+        ]);
+        $bankStatement = BankStatement::create([
+            'company_id' => $company->id,
+            'payment_method_id' => $details['payment_method_id'],
+            'transaction_date' => now()->toDateString(),
+            'reference' => 'TRX-WITHHOLDING',
+            'transaction_type' => 'credit',
+            'amount' => 300,
+            'status' => 'pending',
+        ]);
+
+        $this->post(route('sales.payments.store', $sale), [
+            'amount' => 300,
+            'payment_date' => now()->toDateString(),
+            ...$details,
+            'withholdings' => [[
+                'chart_of_account_id' => $withholdingAccount->id,
+                'amount' => 100,
+            ]],
+        ])->assertRedirect()->assertSessionHas('success', fn (string $message) => str_contains($message, 'conciliado automáticamente'));
+
+        $payment = $sale->payments()->firstOrFail();
+        $voucher = $payment->accountingVoucher;
+        $this->assertSame(300.0, (float) $payment->amount);
+        $this->assertSame(100.0, (float) $payment->withholding_total);
+        $this->assertSame(400.0, $sale->fresh()->paidAmount());
+        $this->assertSame(0.0, $sale->fresh()->balanceDue(400));
+        $this->assertDatabaseHas('accounting_vouchers', [
+            'id' => $voucher->id,
+            'total_debit' => 400,
+            'total_credit' => 400,
+        ]);
+        $this->assertDatabaseHas('accounting_voucher_lines', [
+            'accounting_voucher_id' => $voucher->id,
+            'chart_of_account_id' => $withholdingAccount->id,
+            'debit' => 100,
+            'credit' => 0,
+        ]);
+        $this->assertDatabaseHas('bank_statements', [
+            'id' => $bankStatement->id,
+            'status' => 'reconciled',
+            'matched_type' => 'payment',
+            'matched_id' => $payment->id,
+        ]);
+    }
+
+    public function test_additional_withholding_cannot_make_the_applied_amount_exceed_the_balance(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $sale = Sale::create([
+            'company_id' => $company->id,
+            'invoice_number' => 'FV-WITHHOLDING-LIMIT',
+            'customer_name' => 'Cliente de prueba',
+            'sale_date' => now()->toDateString(),
+            'total' => 400,
+        ]);
+        $details = $this->paymentDetails($company, 'PAY1305');
+        $withholdingAccount = ChartOfAccount::create([
+            'company_id' => $company->id,
+            'code' => '1355100',
+            'name' => 'Retenciones practicadas por clientes',
+            'class' => 1,
+            'nature' => 'debit',
+            'allows_posting' => true,
+            'active' => true,
+        ]);
+
+        $this->post(route('sales.payments.store', $sale), [
+            'amount' => 300,
+            'payment_date' => now()->toDateString(),
+            ...$details,
+            'withholdings' => [[
+                'chart_of_account_id' => $withholdingAccount->id,
+                'amount' => 100.01,
+            ]],
+        ])->assertSessionHasErrors('amount');
+
+        $this->assertDatabaseCount('payments', 0);
+        $this->assertSame(400.0, $sale->fresh()->balanceDue(400));
+    }
+
+    public function test_malformed_additional_withholding_rows_are_rejected(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $sale = Sale::create([
+            'company_id' => $company->id,
+            'invoice_number' => 'FV-WITHHOLDING-INVALID',
+            'customer_name' => 'Cliente de prueba',
+            'sale_date' => now()->toDateString(),
+            'total' => 400,
+        ]);
+        $paymentDetails = $this->paymentDetails($company, 'PAY1305');
+
+        $this->post(route('sales.payments.store', $sale), [
+            'amount' => 300,
+            'payment_date' => now()->toDateString(),
+            ...$paymentDetails,
+            'withholdings' => ['fila inválida'],
+        ])->assertSessionHasErrors('withholdings.0');
+
+        $this->assertDatabaseCount('payments', 0);
+    }
+
+    public function test_support_document_payment_records_manual_withholding_in_an_expense_voucher(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $supplier = ThirdParty::create([
+            'company_id' => $company->id,
+            'name' => 'Proveedor de prueba',
+            'document' => '800123456',
+            'is_supplier' => true,
+            'active' => true,
+        ]);
+        $supportDocument = SupportDocument::create([
+            'company_id' => $company->id,
+            'third_party_id' => $supplier->id,
+            'consecutive' => 'DS-PAYMENT',
+            'document_date' => now()->toDateString(),
+            'concept' => 'Servicios de prueba',
+            'subtotal' => 100,
+            'total' => 100,
+        ]);
+        $withholdingAccount = ChartOfAccount::create([
+            'company_id' => $company->id,
+            'code' => '2365100',
+            'name' => 'Retención en la fuente practicada',
+            'class' => 2,
+            'nature' => 'credit',
+            'allows_posting' => true,
+            'active' => true,
+        ]);
+        $paymentDetails = $this->paymentDetails($company, 'PAY2205');
+
+        $this->post(route('support-documents.payments.store', $supportDocument), [
+            'amount' => 80,
+            'payment_date' => now()->toDateString(),
+            ...$paymentDetails,
+            'withholdings' => [[
+                'chart_of_account_id' => $withholdingAccount->id,
+                'amount' => 20,
+            ]],
+        ])->assertRedirect();
+
+        $payment = $supportDocument->payments()->firstOrFail();
+        $voucher = $payment->accountingVoucher;
+        $this->assertDatabaseHas('payments', [
+            'id' => $payment->id,
+            'payable_type' => SupportDocument::class,
+            'payable_id' => $supportDocument->id,
+            'amount' => 80,
+            'withholding_total' => 20,
+        ]);
+        $this->assertDatabaseHas('accounting_vouchers', [
+            'id' => $voucher->id,
+            'voucher_type' => 'egreso',
+            'total_debit' => 100,
+            'total_credit' => 100,
+        ]);
+        $this->assertDatabaseHas('accounting_voucher_lines', [
+            'accounting_voucher_id' => $voucher->id,
+            'chart_of_account_id' => $withholdingAccount->id,
+            'debit' => 0,
+            'credit' => 20,
+        ]);
     }
 
     public function test_a_payment_cannot_exceed_the_pending_balance(): void
@@ -176,7 +424,7 @@ class PaymentControllerTest extends TestCase
         $payment = $purchase->payments()->firstOrFail();
         $this->get(route('purchases.statement', $purchase))
             ->assertOk()
-            ->assertSee('PAY2205')
+            ->assertSee('Caja de prueba')
             ->assertSee($payment->accountingVoucher->consecutive);
     }
 
@@ -435,15 +683,23 @@ class PaymentControllerTest extends TestCase
             'allows_posting' => true,
             'active' => true,
         ]);
-        $counterAccount = ChartOfAccount::create([
-            'company_id' => $company->id,
-            'code' => $counterCode,
-            'name' => 'Contrapartida de prueba',
-            'class' => 2,
-            'nature' => 'credit',
-            'allows_posting' => true,
-            'active' => true,
-        ]);
+        $counterAccount = ChartOfAccount::query()->firstOrCreate(
+            [
+                'company_id' => $company->id,
+                'code' => match ($counterCode) {
+                    'PAY1305' => '130501',
+                    'PAY2205' => '220501',
+                    default => $counterCode,
+                },
+            ],
+            [
+                'name' => 'Contrapartida de prueba',
+                'class' => 2,
+                'nature' => 'credit',
+                'allows_posting' => true,
+                'active' => true,
+            ],
+        );
         $method = PaymentMethod::create([
             'company_id' => $company->id,
             'name' => $isCash ? 'Caja de prueba' : 'Banco de prueba',

@@ -13,7 +13,13 @@ class ThirdParty extends Model
 
     protected $guarded = [];
 
-    protected $casts = ['is_customer' => 'boolean', 'is_supplier' => 'boolean', 'is_employee' => 'boolean', 'active' => 'boolean'];
+    protected $casts = [
+        'is_customer' => 'boolean',
+        'is_supplier' => 'boolean',
+        'is_employee' => 'boolean',
+        'active' => 'boolean',
+        'fiscal_responsibilities' => 'array',
+    ];
 
     public function contracts(): HasMany
     {

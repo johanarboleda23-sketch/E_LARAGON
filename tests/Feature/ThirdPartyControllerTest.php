@@ -18,6 +18,38 @@ class ThirdPartyControllerTest extends TestCase
         $this->get(route('third-parties.index'))->assertRedirect(route('login'));
     }
 
+    public function test_third_party_saves_fiscal_responsibility_codes_from_the_rut(): void
+    {
+        $this->authenticateWithCompany();
+
+        $this->post(route('third-parties.store'), [
+            'type' => 'natural',
+            'name' => 'Ana Pérez',
+            'document' => '123456789',
+            'is_customer' => '1',
+            'fiscal_responsibilities' => '05, 48, 05, r-99-pn',
+        ])->assertRedirect();
+
+        $thirdParty = ThirdParty::query()->where('document', '123456789')->firstOrFail();
+        $this->assertSame(['05', '48', 'R-99-PN'], $thirdParty->fiscal_responsibilities);
+    }
+
+    public function test_third_party_rejects_malformed_fiscal_responsibility_codes(): void
+    {
+        $this->authenticateWithCompany();
+
+        $this->postJson(route('third-parties.store'), [
+            'type' => 'natural',
+            'name' => 'Ana Pérez',
+            'document' => '123456789',
+            'is_customer' => '1',
+            'fiscal_responsibilities' => '05, <script>',
+        ])->assertUnprocessable()
+            ->assertJsonValidationErrors('fiscal_responsibilities');
+
+        $this->assertDatabaseMissing('third_parties', ['document' => '123456789']);
+    }
+
     public function test_guest_cannot_upload_a_rut_pdf(): void
     {
         $this->post(route('third-parties.rut.extract'))->assertRedirect(route('login'));
@@ -39,7 +71,8 @@ class ThirdPartyControllerTest extends TestCase
 
         $response->assertOk();
         $response->assertSee('Es cliente (si/no)', false)
-            ->assertSee('DV (si aplica)', false);
+            ->assertSee('DV (si aplica)', false)
+            ->assertSee('Responsabilidades fiscales del RUT', false);
     }
 
     public function test_index_displays_edit_and_rut_autocomplete_actions(): void
@@ -61,6 +94,7 @@ class ThirdPartyControllerTest extends TestCase
 
         $response->assertSee('Editar')
             ->assertSee('Autocompletar desde PDF del RUT')
+            ->assertSee('Responsabilidades fiscales (RUT, casilla 53)')
             ->assertSee('DV (si aplica)')
             ->assertSee('Ver ficha')
             ->assertSee('Calle 10 # 20-30')
@@ -142,7 +176,6 @@ class ThirdPartyControllerTest extends TestCase
             'is_customer' => true,
             'active' => true,
         ]);
-
         $response = $this->put(route('third-parties.update', $thirdParty), [
             'type' => 'juridica',
             'name' => 'Comercial Nuevo SAS',
@@ -153,6 +186,7 @@ class ThirdPartyControllerTest extends TestCase
             'address' => 'Carrera 10 # 20-30',
             'city' => 'Medellín',
             'neighborhood' => 'Laureles',
+            'fiscal_responsibilities' => '05; 48',
             'is_supplier' => '1',
             'active' => '1',
         ]);
@@ -172,6 +206,7 @@ class ThirdPartyControllerTest extends TestCase
             'is_supplier' => true,
             'active' => true,
         ]);
+        $this->assertSame(['05', '48'], $thirdParty->fresh()->fiscal_responsibilities);
     }
 
     public function test_third_party_details_show_the_creator_and_allow_editing(): void
@@ -192,12 +227,14 @@ class ThirdPartyControllerTest extends TestCase
             'neighborhood' => 'Laureles',
             'is_supplier' => true,
             'active' => true,
+            'fiscal_responsibilities' => ['05', '48'],
         ]);
 
         $this->get(route('third-parties.show', $thirdParty))
             ->assertOk()
             ->assertSee('Comercial Nuevo SAS')
             ->assertSee('900123456-8')
+            ->assertSee('05, 48')
             ->assertSee('Creadora de prueba')
             ->assertSee('creadora@example.com')
             ->assertSee(route('third-parties.index', ['edit' => $thirdParty->id]));
@@ -296,6 +333,7 @@ class ThirdPartyControllerTest extends TestCase
             ->assertJsonPath('data.address', 'Carrera 10 # 20-30')
             ->assertJsonPath('data.city', 'BOGOTA D.C.')
             ->assertJsonPath('data.email', 'contacto@example.com');
+        $response->assertJsonPath('data.fiscal_responsibilities', '05, 07');
     }
 
     public function test_rut_pdf_assembles_a_natural_person_name(): void
@@ -369,10 +407,10 @@ class ThirdPartyControllerTest extends TestCase
             'active' => true,
         ]);
 
-        $csv = "Tipo;Nombre;Documento;Correo;Telefono;Cliente;Proveedor;Empleado\r\n"
-            ."natural;Juan Perez;123456789;juan@example.com;3001234567;si;no;no\r\n"
-            ."juridica;Proveedor Actualizado;900111222;ventas@proveedor.com;6012345678;no;si;no\r\n"
-            .";;;;;;;\r\n";
+        $csv = "Tipo;Nombre;Documento;Correo;Telefono;Cliente;Proveedor;Empleado;DV;Responsabilidades\r\n"
+            ."natural;Juan Perez;123456789;juan@example.com;3001234567;si;no;no;;\"05, 48\"\r\n"
+            ."juridica;Proveedor Actualizado;900111222;ventas@proveedor.com;6012345678;no;si;no;;07\r\n"
+            .";;;;;;;;;\r\n";
         $file = UploadedFile::fake()->createWithContent('terceros.csv', $csv);
 
         $response = $this->post(route('third-parties.import'), ['file' => $file]);
@@ -392,13 +430,14 @@ class ThirdPartyControllerTest extends TestCase
             'created_by' => null,
         ]);
         $this->assertDatabaseHas('third_parties', ['document' => '900111222', 'verification_digit' => '1']);
+        $this->assertSame(['05', '48'], ThirdParty::query()->where('document', '123456789')->firstOrFail()->fiscal_responsibilities);
         $this->assertSame(2, ThirdParty::count());
     }
 
     public function test_import_rejects_files_with_more_than_500_records(): void
     {
         $this->authenticateWithCompany();
-        $rows = ['Tipo;Nombre;Documento;Correo;Telefono;Cliente;Proveedor;Empleado'];
+        $rows = ['Tipo;Nombre;Documento;Correo;Telefono;Cliente;Proveedor;Empleado;DV;Responsabilidades'];
         for ($i = 0; $i < 501; $i++) {
             $rows[] = "natural;Cliente {$i};{$i}00000000;;;si;no;no";
         }
@@ -436,6 +475,10 @@ class ThirdPartyControllerTest extends TestCase
             '42. Correo electronico',
             'contacto@example.com',
             '43. Codigo postal',
+            '53. Codigo',
+            '05 - Impto. renta y compl. regimen ordinario',
+            '07 - Retencion en la fuente a titulo de renta',
+            '54. Codigo',
         ];
         $text = 'BT /F1 9 Tf 50 780 Td ';
 

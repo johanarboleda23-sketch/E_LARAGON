@@ -10,6 +10,7 @@ use App\Models\Item;
 use App\Models\NumberingResolution;
 use App\Models\PaymentMethod;
 use App\Models\Sale;
+use App\Models\ThirdParty;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -35,6 +36,32 @@ class SaleControllerTest extends TestCase
             ->assertSee('id="iva-total"', false)
             ->assertSee('id="grand-total"', false)
             ->assertDontSeeText('Compras - proveedor declarante');
+    }
+
+    public function test_sales_customer_selector_includes_any_active_third_party(): void
+    {
+        $company = $this->authenticateWithCompany();
+        ThirdParty::create([
+            'company_id' => $company->id,
+            'type' => 'natural',
+            'name' => 'Proveedor disponible',
+            'document' => '123456789',
+            'is_supplier' => true,
+            'active' => true,
+        ]);
+        ThirdParty::create([
+            'company_id' => $company->id,
+            'type' => 'natural',
+            'name' => 'Cliente inactivo',
+            'document' => '987654321',
+            'is_customer' => true,
+            'active' => false,
+        ]);
+
+        $this->get(route('sales.index'))
+            ->assertOk()
+            ->assertSee('value="Proveedor disponible"', false)
+            ->assertDontSee('value="Cliente inactivo"', false);
     }
 
     public function test_sale_saves_payment_method_shows_in_history_and_advances_active_consecutive(): void

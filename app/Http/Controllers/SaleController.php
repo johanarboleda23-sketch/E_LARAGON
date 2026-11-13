@@ -2,12 +2,10 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\ChartOfAccount;
 use App\Models\Company;
 use App\Models\InventoryMovement;
 use App\Models\Item;
 use App\Models\NumberingResolution;
-use App\Models\PaymentMethod;
 use App\Models\Sale;
 use App\Models\SaleDetail;
 use App\Models\ThirdParty;
@@ -41,7 +39,7 @@ class SaleController extends Controller
             ? Sale::with(['details.item', 'paymentMethod', 'accountingVoucher', 'payments'])->findOrFail($selectedSaleId)
             : null;
         $paymentMethods = $this->paymentMethodService->available();
-        $customers = ThirdParty::where('is_customer', true)->where('active', true)->orderBy('name')->get();
+        $customers = ThirdParty::where('active', true)->orderBy('name')->get();
         $withholdings = config('colombia_withholdings');
         $nextConsecutive = NumberingResolution::peekNext('sale');
         $company = Company::findOrFail($request->session()->get('company_id'));
@@ -308,7 +306,7 @@ class SaleController extends Controller
                 'sale_price' => $unit->sale_price,
             ])->values(),
         ])->values();
-        $customers = ThirdParty::where('is_customer', true)->where('active', true)->orderBy('name')->get();
+        $customers = ThirdParty::where('active', true)->orderBy('name')->get();
         $withholdings = config('colombia_withholdings');
 
         return view('sales.edit', compact('sale', 'items', 'paymentMethods', 'productOptions', 'customers', 'withholdings'));
@@ -394,17 +392,11 @@ class SaleController extends Controller
             ->get();
 
         $balance = $documents->sum(fn (Sale $document) => $document->balanceDue((float) $document->total));
-        $paymentMethods = PaymentMethod::query()->with('account')->whereNotNull('chart_of_account_id')->orderBy('name')->get();
-        $counterAccounts = ChartOfAccount::query()->where('active', true)->where('allows_posting', true)->orderBy('code')->get();
-        $defaultCounterAccountId = $counterAccounts->firstWhere('code', '1305')?->id;
 
         return view('sales.statement', [
             'customer' => $sale->customer_name,
             'documents' => $documents,
             'balance' => $balance,
-            'paymentMethods' => $paymentMethods,
-            'counterAccounts' => $counterAccounts,
-            'defaultCounterAccountId' => $defaultCounterAccountId,
         ]);
     }
 

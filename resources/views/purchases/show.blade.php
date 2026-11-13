@@ -15,9 +15,9 @@
         <a href="{{ route('commercial-documents.supplier-debit-notes', ['reference_invoice_id' => $purchase->id]) }}">Crear nota débito</a>
         <button onclick="window.print()">Imprimir / Guardar como PDF</button>
         @if(!$purchase->trashed() && $purchase->balanceDue((float) $purchase->total_pagar) > 0)
-            <a href="{{ route('purchases.statement', $purchase) }}#payment-{{ $purchase->id }}">Registrar pago · Egreso</a>
+            <a href="{{ route('purchases.payments.create', $purchase) }}">Registrar pago · Egreso</a>
         @endif
-        <a href="{{ route('purchases.statement', $purchase) }}" target="_blank">Ver estado de cartera</a>
+        <a href="{{ route('purchases.statement', $purchase).'#payment-'.$purchase->id }}" target="_blank">Ver estado de cartera</a>
         @if($purchase->accounting_voucher_id)
             <a target="_blank" href="{{ route('accounting.vouchers.accounting', $purchase->accounting_voucher_id) }}">Ver contabilización</a>
         @else

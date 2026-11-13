@@ -55,6 +55,11 @@
                         <input name="address" value="{{ old('address') }}" placeholder="Dirección de domicilio" class="w-full rounded border-gray-300 text-sm">
                         <input name="city" value="{{ old('city') }}" placeholder="Ciudad" class="w-full rounded border-gray-300 text-sm">
                         <input name="neighborhood" value="{{ old('neighborhood') }}" placeholder="Barrio" class="w-full rounded border-gray-300 text-sm">
+                        <div>
+                            <label for="new-fiscal-responsibilities" class="mb-1 block text-xs font-semibold text-gray-700">Responsabilidades fiscales (RUT, casilla 53)</label>
+                            <input id="new-fiscal-responsibilities" name="fiscal_responsibilities" value="{{ old('fiscal_responsibilities') }}" placeholder="Ej.: 05, 07, 48" class="w-full rounded border-gray-300 text-sm">
+                            <p class="mt-1 text-xs text-gray-500">Escribe los códigos del RUT separados por coma; se pueden completar al leer el PDF.</p>
+                        </div>
                         <div class="space-y-2 text-sm">
                             <label class="block"><input type="checkbox" name="is_customer" value="1" @checked(old('is_customer'))> CLIENTE</label>
                             <label class="block"><input type="checkbox" name="is_supplier" value="1" @checked(old('is_supplier'))> PROVEEDOR</label>
@@ -112,6 +117,7 @@
                             <tr>
                                 <th class="p-2">Nombre</th>
                                 <th class="p-2">Documento / NIT</th>
+                                <th class="p-2">Responsabilidades RUT</th>
                                 <th class="p-2">Perfiles</th>
                                 <th class="p-2">Contrato</th>
                                 <th class="p-2">Correo</th>
@@ -130,6 +136,7 @@
                                             - {{ $thirdParty->verification_digit }}
                                         @endif
                                     </td>
+                                    <td class="p-2">{{ implode(', ', $thirdParty->fiscal_responsibilities ?? []) ?: '—' }}</td>
                                     <td class="p-2">
                                         @if ($thirdParty->is_customer)
                                             <span class="mr-1 rounded bg-blue-100 px-1 text-xs text-blue-700">CLIENTE</span>
@@ -191,6 +198,11 @@
                                                 <input name="address" value="{{ $thirdParty->address }}" placeholder="Dirección de domicilio" class="rounded border-gray-300 text-sm sm:col-span-2">
                                                 <input name="city" value="{{ $thirdParty->city }}" placeholder="Ciudad" class="rounded border-gray-300 text-sm">
                                                 <input name="neighborhood" value="{{ $thirdParty->neighborhood }}" placeholder="Barrio" class="rounded border-gray-300 text-sm">
+                                                <div class="sm:col-span-2">
+                                                    <label for="fiscal-responsibilities-{{ $thirdParty->id }}" class="mb-1 block text-xs font-semibold text-gray-700">Responsabilidades fiscales (RUT, casilla 53)</label>
+                                                    <input id="fiscal-responsibilities-{{ $thirdParty->id }}" name="fiscal_responsibilities" value="{{ implode(', ', $thirdParty->fiscal_responsibilities ?? []) }}" placeholder="Ej.: 05, 07, 48" class="w-full rounded border-gray-300 text-sm">
+                                                    <p class="mt-1 text-xs text-gray-500">Códigos separados por coma; también puedes autocompletar desde el PDF del RUT.</p>
+                                                </div>
                                                 <div class="space-y-2 text-sm sm:col-span-2">
                                                     <label class="block"><input type="checkbox" name="is_customer" value="1" @checked($thirdParty->is_customer)> CLIENTE</label>
                                                     <label class="block"><input type="checkbox" name="is_supplier" value="1" @checked($thirdParty->is_supplier)> PROVEEDOR</label>
@@ -213,7 +225,7 @@
                                     </div>
                                 </dialog>
                             @empty
-                                <tr><td colspan="8" class="p-3">No hay terceros registrados.</td></tr>
+                                <tr><td colspan="9" class="p-3">No hay terceros registrados.</td></tr>
                             @endforelse
                         </tbody>
                     </table>

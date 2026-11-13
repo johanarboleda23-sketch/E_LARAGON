@@ -5,8 +5,6 @@ const normalize = (value) => value
 
 const controls = new WeakMap();
 let nextListId = 0;
-const MAX_VISIBLE_OPTIONS = 8;
-
 const style = document.createElement('style');
 style.textContent = `
     .select-search-native {
@@ -26,12 +24,9 @@ style.textContent = `
         flex: 1 1 auto;
     }
     .select-search-results {
-        position: absolute;
-        top: calc(100% + .25rem);
-        left: 0;
-        z-index: 50;
+        position: fixed;
+        z-index: 9999;
         display: none;
-        width: 100%;
         max-height: 12rem;
         overflow-y: auto;
         border: 1px solid #cbd6cf;
@@ -58,14 +53,10 @@ style.textContent = `
     .select-search-option[aria-selected="true"] {
         background: #edf7f4;
     }
-    .select-search-empty,
-    .select-search-count {
+    .select-search-empty {
         padding: .5rem .65rem;
         color: #71807a;
         font-size: .7rem;
-    }
-    .select-search-count {
-        border-top: 1px solid #e6ede8;
     }
     .select-search-input {
         box-sizing: border-box;
@@ -79,12 +70,16 @@ style.textContent = `
         font: inherit;
         font-size: .75rem;
     }
+    .select-search-input:disabled {
+        cursor: not-allowed;
+        opacity: .6;
+    }
 `;
 document.head.appendChild(style);
 
 function availableOptions(select) {
     return Array.from(select.options).filter((option) =>
-        option.value !== '' && !option.hidden && !option.matches(':disabled') && !option.parentElement?.hidden
+        (!select.required || option.value !== '') && !option.hidden && !option.matches(':disabled') && !option.parentElement?.hidden
     );
 }
 
@@ -95,48 +90,62 @@ function optionLabel(option, options) {
         : text;
 }
 
-function renderOptions(select, input, list) {
-    const query = normalize(input.value.trim());
+function positionList(input, list) {
+    const rect = input.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const height = Math.min(192, Math.max(spaceBelow, rect.top) - 8);
+    list.style.left = `${rect.left}px`;
+    list.style.width = `${rect.width}px`;
+    list.style.maxHeight = `${Math.max(height, 40)}px`;
+    list.style.top = spaceBelow < 120 && rect.top > spaceBelow
+        ? `${Math.max(4, rect.top - Math.min(list.scrollHeight, height) - 4)}px`
+        : `${rect.bottom + 4}px`;
+}
+
+function renderOptions(select, input, list, searchValue = input.value) {
+    const query = normalize(searchValue.trim());
     const options = availableOptions(select);
+    const labelCounts = new Map();
+    options.forEach((option) => {
+        const label = option.text.trim();
+        labelCounts.set(label, (labelCounts.get(label) || 0) + 1);
+    });
     const matches = query
         ? options.filter((option) => normalize(`${option.text} ${option.value}`).includes(query))
-        : [];
-    const visibleOptions = matches.slice(0, MAX_VISIBLE_OPTIONS);
+        : options;
 
     list.replaceChildren();
-    visibleOptions.forEach((option, index) => {
+    const fragment = document.createDocumentFragment();
+    matches.forEach((option) => {
         const suggestion = document.createElement('button');
         suggestion.type = 'button';
         suggestion.className = 'select-search-option';
         suggestion.setAttribute('role', 'option');
         suggestion.setAttribute('aria-selected', 'false');
         suggestion.dataset.value = option.value;
-        suggestion.textContent = optionLabel(option, options);
+        const label = option.text.trim();
+        suggestion.textContent = labelCounts.get(label) > 1 ? `${label} (${option.value})` : label;
         suggestion.addEventListener('mousedown', (event) => event.preventDefault());
         suggestion.addEventListener('click', () => chooseOption(select, input, option));
-        list.append(suggestion);
+        fragment.append(suggestion);
     });
+    list.append(fragment);
 
-    if (query && matches.length === 0) {
+    if (matches.length === 0) {
         const empty = document.createElement('div');
         empty.className = 'select-search-empty';
         empty.textContent = 'No hay opciones que coincidan.';
         list.append(empty);
-    } else if (matches.length > MAX_VISIBLE_OPTIONS) {
-        const count = document.createElement('div');
-        count.className = 'select-search-count';
-        count.textContent = `Mostrando ${MAX_VISIBLE_OPTIONS} de ${matches.length} resultados. Sigue escribiendo para filtrar.`;
-        list.append(count);
     }
 
-    const isOpen = query.length > 0;
-    list.setAttribute('aria-hidden', String(!isOpen));
-    input.setAttribute('aria-expanded', String(isOpen));
+    list.setAttribute('aria-hidden', 'false');
+    input.setAttribute('aria-expanded', 'true');
+    positionList(input, list);
 }
 
 function syncSelection(select, input) {
     const option = select.selectedOptions[0];
-    input.value = option && option.value !== ''
+    input.value = option && (option.value !== '' || !select.required)
         ? optionLabel(option, availableOptions(select))
         : '';
     input.setCustomValidity('');
@@ -169,14 +178,11 @@ function addSearch(select) {
         || 'opciones';
 
     wrapper.className = 'select-search-control';
-    input.type = 'search';
-    const inheritedClasses = select.className
-        .split(/\s+/)
-        .filter((name) => name && !/(^|:)hidden$/.test(name))
-        .join(' ');
-    input.className = `select-search-input ${inheritedClasses}`;
-    input.placeholder = `Escribe código o palabra para buscar ${label}`;
+    input.type = 'text';
+    input.className = 'select-search-input';
+    input.placeholder = 'Escribe para buscar o escoge una opción';
     input.setAttribute('autocomplete', 'off');
+    input.setAttribute('role', 'combobox');
     input.setAttribute('aria-label', label);
     input.id = `select-search-input-${nextListId}`;
     input.setAttribute('aria-controls', listId);
@@ -196,8 +202,6 @@ function addSearch(select) {
     list.setAttribute('role', 'listbox');
     list.setAttribute('aria-hidden', 'true');
 
-    const wasRequired = select.required;
-    select.required = false;
     select.classList.add('select-search-native');
     select.setAttribute('aria-hidden', 'true');
     select.tabIndex = -1;
@@ -210,56 +214,46 @@ function addSearch(select) {
         const hidden = select.hidden || window.getComputedStyle(select).display === 'none';
         wrapper.hidden = hidden;
         input.disabled = select.matches(':disabled');
-        input.required = wasRequired && !input.disabled && !hidden;
+        input.required = select.required && !input.disabled && !hidden;
     };
     syncState();
     new MutationObserver(syncState).observe(select, {
         attributes: true,
-        attributeFilter: ['class', 'hidden', 'disabled', 'style'],
+        attributeFilter: ['class', 'hidden', 'disabled', 'style', 'required'],
     });
-    window.addEventListener('resize', syncState);
 
     input.addEventListener('focus', () => {
-        if (select.value) {
+        if (input.value) {
             input.select();
         }
-        renderOptions(select, input, list);
+        renderOptions(select, input, list, '');
+    });
+    input.addEventListener('click', () => {
+        if (input.getAttribute('aria-expanded') === 'false') {
+            renderOptions(select, input, list, '');
+        }
     });
     input.addEventListener('input', () => {
-        const query = normalize(input.value.trim());
-        const options = availableOptions(select);
-        const exact = options.filter((option) =>
-            normalize(option.value) === query || normalize(optionLabel(option, options)) === query
-        );
-
-        if (exact.length === 1) {
-            chooseOption(select, input, exact[0]);
-        } else {
+        if (select.value !== '') {
             select.value = '';
-            input.setCustomValidity(input.value.trim() ? 'Elige una opción de la lista.' : '');
+            select.dispatchEvent(new Event('input', { bubbles: true }));
+            select.dispatchEvent(new Event('change', { bubbles: true }));
         }
-
+        input.setCustomValidity(input.value.trim() ? 'Elige una opción de la lista.' : '');
         renderOptions(select, input, list);
     });
-    input.addEventListener('change', () => {
-        const query = normalize(input.value.trim());
-        const options = availableOptions(select);
-        const matches = options.filter((option) =>
-            normalize(option.value) === query || normalize(optionLabel(option, options)) === query
-        );
-        if (matches.length === 1) {
-            chooseOption(select, input, matches[0]);
-        }
-    });
     input.addEventListener('keydown', (event) => {
-        const suggestions = Array.from(list.querySelectorAll('.select-search-option'));
-        const selectedIndex = suggestions.findIndex((suggestion) => suggestion.getAttribute('aria-selected') === 'true');
-
         if (event.key === 'Escape') {
             list.setAttribute('aria-hidden', 'true');
             input.setAttribute('aria-expanded', 'false');
             return;
         }
+
+        if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && input.getAttribute('aria-expanded') === 'false') {
+            renderOptions(select, input, list, '');
+        }
+        const suggestions = Array.from(list.querySelectorAll('.select-search-option'));
+        const selectedIndex = suggestions.findIndex((suggestion) => suggestion.getAttribute('aria-selected') === 'true');
 
         if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
             if (suggestions.length === 0) {
@@ -273,9 +267,10 @@ function addSearch(select) {
             suggestions.forEach((suggestion, index) => {
                 suggestion.setAttribute('aria-selected', String(index === nextIndex));
             });
+            suggestions[nextIndex].scrollIntoView({ block: 'nearest' });
         }
 
-        if (event.key === 'Enter' && suggestions.length > 0) {
+        if (event.key === 'Enter' && input.getAttribute('aria-expanded') === 'true' && suggestions.length > 0) {
             const activeOption = suggestions[selectedIndex] || suggestions[0];
             const option = availableOptions(select).find((candidate) => candidate.value === activeOption.dataset.value);
             if (option) {
@@ -291,20 +286,135 @@ function addSearch(select) {
         list.setAttribute('aria-hidden', 'true');
         input.setAttribute('aria-expanded', 'false');
     });
-    select.addEventListener('change', () => syncSelection(select, input));
-    new MutationObserver(() => {
-        renderOptions(select, input, list);
-        if (select.value) {
+    select.addEventListener('change', () => {
+        if (document.activeElement !== input || select.value !== '') {
             syncSelection(select, input);
         }
+    });
+    select.addEventListener('invalid', (event) => {
+        event.preventDefault();
+        input.setCustomValidity('Elige una opción de la lista.');
+        input.reportValidity();
+    });
+    new MutationObserver(() => {
+        if (document.activeElement !== input) {
+            syncSelection(select, input);
+        }
+        if (document.activeElement === input && input.getAttribute('aria-expanded') === 'true') {
+            renderOptions(select, input, list);
+        }
     }).observe(select, { childList: true, subtree: true, attributes: true });
+}
+
+function addDatalistSearch(input) {
+    if (controls.has(input) || input.closest('template')) {
+        return;
+    }
+
+    const datalist = input.list;
+    if (!datalist) {
+        return;
+    }
+
+    const wrapper = document.createElement('div');
+    const list = document.createElement('div');
+    const listId = `select-search-list-${++nextListId}`;
+    wrapper.className = 'select-search-control';
+    list.id = listId;
+    list.className = 'select-search-results';
+    list.setAttribute('role', 'listbox');
+    list.setAttribute('aria-hidden', 'true');
+    input.before(wrapper);
+    wrapper.append(input, list);
+    input.removeAttribute('list');
+    input.classList.add('datalist-search-input');
+    input.setAttribute('role', 'combobox');
+    input.setAttribute('aria-controls', listId);
+    input.setAttribute('aria-expanded', 'false');
+    input.setAttribute('aria-autocomplete', 'list');
+    controls.set(input, { list });
+
+    const close = () => {
+        list.setAttribute('aria-hidden', 'true');
+        input.setAttribute('aria-expanded', 'false');
+    };
+    const choose = (option) => {
+        input.value = option.value;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+        close();
+        input.focus();
+    };
+    const render = (searchValue = input.value) => {
+        const query = normalize(searchValue.trim());
+        const options = Array.from(datalist.options).filter((option) =>
+            option.value && !option.disabled && !option.hidden
+            && (!query || normalize(`${option.value} ${option.label}`).includes(query))
+        );
+        const fragment = document.createDocumentFragment();
+        options.forEach((option) => {
+            const suggestion = document.createElement('button');
+            suggestion.type = 'button';
+            suggestion.className = 'select-search-option';
+            suggestion.setAttribute('role', 'option');
+            suggestion.setAttribute('aria-selected', 'false');
+            suggestion.textContent = option.label || option.value;
+            suggestion.addEventListener('mousedown', (event) => event.preventDefault());
+            suggestion.addEventListener('click', () => choose(option));
+            fragment.append(suggestion);
+        });
+        list.replaceChildren(fragment);
+        if (options.length === 0) {
+            const empty = document.createElement('div');
+            empty.className = 'select-search-empty';
+            empty.textContent = 'No hay opciones que coincidan.';
+            list.append(empty);
+        }
+        list.setAttribute('aria-hidden', 'false');
+        input.setAttribute('aria-expanded', 'true');
+        positionList(input, list);
+    };
+
+    input.addEventListener('focus', () => render(''));
+    input.addEventListener('click', () => {
+        if (input.getAttribute('aria-expanded') === 'false') {
+            render('');
+        }
+    });
+    input.addEventListener('input', () => render());
+    input.addEventListener('blur', close);
+    input.addEventListener('keydown', (event) => {
+        if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && input.getAttribute('aria-expanded') === 'false') {
+            render('');
+        }
+        const suggestions = Array.from(list.querySelectorAll('.select-search-option'));
+        const selectedIndex = suggestions.findIndex((suggestion) => suggestion.getAttribute('aria-selected') === 'true');
+        if (event.key === 'Escape') {
+            close();
+        } else if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && suggestions.length) {
+            event.preventDefault();
+            const nextIndex = selectedIndex === -1
+                ? (event.key === 'ArrowDown' ? 0 : suggestions.length - 1)
+                : (selectedIndex + (event.key === 'ArrowDown' ? 1 : -1) + suggestions.length) % suggestions.length;
+            suggestions.forEach((suggestion, index) => {
+                suggestion.setAttribute('aria-selected', String(index === nextIndex));
+            });
+            suggestions[nextIndex].scrollIntoView({ block: 'nearest' });
+        } else if (event.key === 'Enter' && suggestions.length && input.getAttribute('aria-expanded') === 'true') {
+            event.preventDefault();
+            (suggestions[selectedIndex] || suggestions[0]).click();
+        }
+    });
 }
 
 function addSearches(root) {
     if (root instanceof HTMLSelectElement) {
         addSearch(root);
+    } else if (root instanceof HTMLInputElement && root.hasAttribute('list')) {
+        addDatalistSearch(root);
     } else if (root instanceof Element || root instanceof Document) {
         root.querySelectorAll('select').forEach(addSearch);
+        root.querySelectorAll('input[list]').forEach(addDatalistSearch);
     }
 }
 
@@ -312,3 +422,27 @@ addSearches(document);
 new MutationObserver((mutations) => {
     mutations.forEach((mutation) => mutation.addedNodes.forEach(addSearches));
 }).observe(document.body, { childList: true, subtree: true });
+
+document.addEventListener('reset', (event) => {
+    window.setTimeout(() => {
+        event.target.querySelectorAll('select').forEach((select) => {
+            const control = controls.get(select);
+            if (control) {
+                syncSelection(select, control.input);
+            }
+        });
+    }, 0);
+});
+
+window.addEventListener('scroll', () => {
+    const input = document.activeElement;
+    if (input?.matches('.select-search-input[aria-expanded="true"], .datalist-search-input[aria-expanded="true"]')) {
+        positionList(input, input.parentElement.querySelector('.select-search-results'));
+    }
+}, true);
+window.addEventListener('resize', () => {
+    const input = document.activeElement;
+    if (input?.matches('.select-search-input[aria-expanded="true"], .datalist-search-input[aria-expanded="true"]')) {
+        positionList(input, input.parentElement.querySelector('.select-search-results'));
+    }
+});

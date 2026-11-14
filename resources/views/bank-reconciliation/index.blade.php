@@ -219,6 +219,7 @@
                             {{ $statement->status === 'reconciled' ? 'Conciliado' : 'Pendiente' }}
                             @if($statement->accountingVoucher)
                                 <br><a class="text-xs text-sky-700 underline" target="_blank" href="{{ route('accounting.vouchers.accounting', $statement->accountingVoucher) }}">{{ $statement->accountingVoucher->consecutive }}</a>
+                                <a class="ml-2 text-xs font-semibold text-sky-700 underline" target="_blank" href="{{ route('accounting.vouchers.edit', $statement->accountingVoucher) }}">Editar</a>
                             @endif
                         </td>
                         <td class="p-3">

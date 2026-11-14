@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\AccountingVoucher;
+use App\Models\BankStatement;
 use App\Models\ChartOfAccount;
 use App\Models\CommercialDocument;
 use App\Models\Company;
@@ -12,8 +13,10 @@ use App\Services\AccountingPeriodService;
 use App\Support\SpreadsheetReader;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Throwable;
 
 class AccountingVoucherController extends Controller
@@ -207,6 +210,134 @@ class AccountingVoucherController extends Controller
         $company = Company::find(session('company_id'));
 
         return view('accounting.vouchers.accounting', compact('voucher', 'company'));
+    }
+
+    public function edit(AccountingVoucher $voucher)
+    {
+        $voucher->load('lines.account');
+        $linkedDocument = $this->hasLinkedDocument($voucher);
+        $statements = BankStatement::query()->where('accounting_voucher_id', $voucher->id)->get();
+        $lockedLines = $linkedDocument || $statements->contains(fn (BankStatement $statement): bool => $statement->matched_type !== 'manual');
+        $accounts = ChartOfAccount::query()->where('active', true)->where('allows_posting', true)->orderBy('code')->get();
+        $version = $this->voucherVersion($voucher);
+
+        return view('accounting.vouchers.edit', compact('voucher', 'accounts', 'version', 'lockedLines'));
+    }
+
+    public function update(Request $request, AccountingVoucher $voucher)
+    {
+        $data = $request->validate([
+            'version' => 'required|string|size:64',
+            'voucher_date' => 'required|date',
+            'third_party' => 'nullable|string|max:255',
+            'description' => 'nullable|string|max:2000',
+            'lines' => 'required|array|min:2',
+            'lines.*.chart_of_account_id' => 'required|integer',
+            'lines.*.detail' => 'nullable|string|max:255',
+            'lines.*.debit' => 'required|numeric|min:0|decimal:0,2',
+            'lines.*.credit' => 'required|numeric|min:0|decimal:0,2',
+        ]);
+
+        DB::transaction(function () use ($voucher, $data): void {
+            $voucher = AccountingVoucher::query()->lockForUpdate()->findOrFail($voucher->id);
+            $voucher->load('lines.account');
+            abort_unless(hash_equals($this->voucherVersion($voucher), $data['version']), 409, 'El comprobante cambió. Vuelve a abrirlo antes de guardar.');
+            $statements = BankStatement::query()->where('accounting_voucher_id', $voucher->id)->orderBy('id')->lockForUpdate()->get();
+            $linkedDocument = $this->hasLinkedDocument($voucher);
+            $lockedLines = $linkedDocument || $statements->contains(fn (BankStatement $statement): bool => $statement->matched_type !== 'manual');
+            $module = $this->periodModule($voucher->voucher_type);
+            foreach (array_unique([$voucher->voucher_date->toDateString(), $data['voucher_date']]) as $date) {
+                foreach ($module ? [$module] : ['purchases', 'income', 'expenses'] as $periodModule) {
+                    $this->periodService->assertWritable($periodModule, $date);
+                }
+                if ($statements->isNotEmpty()) {
+                    $this->periodService->assertWritable('bank', $date);
+                }
+            }
+            foreach ($statements as $statement) {
+                $this->periodService->assertWritable('bank', $statement->transaction_date->toDateString());
+            }
+
+            $lines = collect($data['lines'])->map(fn (array $line): array => [
+                'chart_of_account_id' => (int) $line['chart_of_account_id'],
+                'detail' => $line['detail'] ?? null,
+                'debit' => round((float) $line['debit'], 2),
+                'credit' => round((float) $line['credit'], 2),
+            ]);
+            $original = $voucher->lines->map(fn ($line): array => [
+                'chart_of_account_id' => (int) $line->chart_of_account_id,
+                'debit' => (float) $line->debit,
+                'credit' => (float) $line->credit,
+            ])->values()->all();
+            $financial = $lines->map(fn (array $line): array => [
+                'chart_of_account_id' => $line['chart_of_account_id'], 'debit' => $line['debit'], 'credit' => $line['credit'],
+            ])->values()->all();
+            if ($lockedLines) {
+                if ($financial !== $original || $data['voucher_date'] !== $voucher->voucher_date->toDateString()
+                    || ($data['third_party'] ?? null) !== $voucher->third_party) {
+                    throw ValidationException::withMessages(['lines' => 'Este comprobante está vinculado a otro documento o pago. Solo puedes cambiar la descripción y los detalles.']);
+                }
+                foreach ($voucher->lines->values() as $index => $line) {
+                    $line->update(['detail' => $lines[$index]['detail']]);
+                }
+            } else {
+                foreach ($lines as $line) {
+                    if (($line['debit'] > 0) === ($line['credit'] > 0)
+                        || ! ChartOfAccount::query()->whereKey($line['chart_of_account_id'])->where('active', true)->where('allows_posting', true)->exists()) {
+                        throw ValidationException::withMessages(['lines' => 'Cada línea debe usar una cuenta auxiliar activa y tener solo débito o crédito.']);
+                    }
+                }
+                if (round($lines->sum('debit'), 2) <= 0 || round($lines->sum('debit'), 2) !== round($lines->sum('credit'), 2)) {
+                    throw ValidationException::withMessages(['lines' => 'El comprobante debe cuadrar: débito y crédito deben ser iguales y mayores que cero.']);
+                }
+                foreach ($statements as $statement) {
+                    $bankAccountId = $statement->paymentMethod?->chart_of_account_id;
+                    $bankLines = $lines->where('chart_of_account_id', $bankAccountId);
+                    $bankAmount = $statement->transaction_type === 'credit' ? $bankLines->sum('debit') - $bankLines->sum('credit') : $bankLines->sum('credit') - $bankLines->sum('debit');
+                    if (! $bankAccountId || round($bankAmount, 2) !== (float) $statement->amount) {
+                        throw ValidationException::withMessages(['lines' => 'La cuenta y el valor bancario deben seguir coincidiendo con el extracto conciliado.']);
+                    }
+                }
+                $voucher->lines()->delete();
+                $voucher->lines()->createMany($lines->all());
+                $voucher->total_debit = round($lines->sum('debit'), 2);
+                $voucher->total_credit = round($lines->sum('credit'), 2);
+                $voucher->voucher_date = $data['voucher_date'];
+                $voucher->third_party = $data['third_party'] ?? null;
+            }
+            $voucher->description = $data['description'] ?? null;
+            $voucher->save();
+        });
+
+        return redirect()->route('accounting.vouchers.accounting', $voucher)->with('success', 'Comprobante actualizado correctamente.');
+    }
+
+    private function hasLinkedDocument(AccountingVoucher $voucher): bool
+    {
+        if ($voucher->commercial_document_id || in_array($voucher->voucher_type, ['venta', 'compra', 'documento_soporte', 'nomina'], true)) {
+            return true;
+        }
+        foreach (['payments', 'sales', 'purchases', 'support_documents', 'payroll_runs', 'opening_balance_invoices', 'cash_register_movements', 'cash_register_expenses'] as $table) {
+            if (DB::table($table)->where('accounting_voucher_id', $voucher->id)->exists()) {
+                return true;
+            }
+            if (DB::table('opening_balance_invoices')
+                ->whereIn('accounting_voucher_line_id', $voucher->lines()->select('id'))
+                ->exists()) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function voucherVersion(AccountingVoucher $voucher): string
+    {
+        return hash('sha256', json_encode([
+            $voucher->voucher_date->toDateString(), $voucher->third_party, $voucher->description,
+            $voucher->total_debit, $voucher->total_credit,
+            $voucher->lines->map(fn ($line): array => [$line->id, $line->chart_of_account_id, $line->detail, $line->debit, $line->credit])->all(),
+        ], JSON_THROW_ON_ERROR));
     }
 
     /**

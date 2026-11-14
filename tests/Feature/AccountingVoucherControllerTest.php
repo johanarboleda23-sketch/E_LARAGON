@@ -4,9 +4,13 @@ namespace Tests\Feature;
 
 use App\Models\AccountingPeriod;
 use App\Models\AccountingVoucher;
+use App\Models\BankStatement;
 use App\Models\ChartOfAccount;
 use App\Models\CommercialDocument;
 use App\Models\Company;
+use App\Models\Payment;
+use App\Models\PaymentMethod;
+use App\Models\Sale;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -15,6 +19,164 @@ use Tests\TestCase;
 class AccountingVoucherControllerTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_a_manually_reconciled_voucher_can_edit_its_counter_account_without_changing_the_bank_movement(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $bank = $this->createAccount('111099', 'Banco', 1);
+        $expense = $this->createAccount('519599', 'Gasto', 5);
+        $otherExpense = $this->createAccount('519598', 'Otro gasto', 5);
+        $method = PaymentMethod::create(['name' => 'Banco', 'chart_of_account_id' => $bank->id]);
+        $voucher = AccountingVoucher::create([
+            'consecutive' => 'EG-BNK-1', 'voucher_type' => 'egreso', 'voucher_date' => '2026-11-11',
+            'total_debit' => 100, 'total_credit' => 100,
+        ]);
+        $voucher->lines()->createMany([
+            ['chart_of_account_id' => $expense->id, 'debit' => 100, 'credit' => 0],
+            ['chart_of_account_id' => $bank->id, 'debit' => 0, 'credit' => 100],
+        ]);
+        $statement = BankStatement::create([
+            'company_id' => $company->id, 'payment_method_id' => $method->id,
+            'transaction_date' => '2026-11-11', 'transaction_type' => 'debit', 'amount' => 100,
+            'status' => 'reconciled', 'matched_type' => 'manual', 'matched_id' => $voucher->id,
+            'accounting_voucher_id' => $voucher->id,
+        ]);
+        $url = route('accounting.vouchers.edit', $voucher);
+        $this->get(route('accounting.vouchers.accounting', $voucher))->assertSee($url, false);
+        $response = $this->get($url)->assertOk();
+        preg_match('/name="version" value="([^"]+)"/', $response->getContent(), $version);
+        $payload = [
+            'version' => $version[1], 'voucher_date' => '2026-11-11', 'third_party' => 'Proveedor',
+            'description' => 'Corregido',
+            'lines' => [
+                ['chart_of_account_id' => $otherExpense->id, 'detail' => 'Cambio', 'debit' => 100, 'credit' => 0],
+                ['chart_of_account_id' => $bank->id, 'detail' => 'Banco', 'debit' => 0, 'credit' => 100],
+            ],
+        ];
+        $this->put(route('accounting.vouchers.update', $voucher), $payload)
+            ->assertRedirect(route('accounting.vouchers.accounting', $voucher));
+        $this->assertDatabaseHas('accounting_voucher_lines', ['accounting_voucher_id' => $voucher->id, 'chart_of_account_id' => $otherExpense->id, 'debit' => 100]);
+        $this->assertDatabaseHas('bank_statements', ['id' => $statement->id, 'status' => 'reconciled', 'accounting_voucher_id' => $voucher->id]);
+        $this->put(route('accounting.vouchers.update', $voucher), $payload)->assertConflict();
+    }
+
+    public function test_a_reconciled_voucher_rejects_changing_the_bank_amount(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $bank = $this->createAccount('111099', 'Banco', 1);
+        $expense = $this->createAccount('519599', 'Gasto', 5);
+        $method = PaymentMethod::create(['name' => 'Banco', 'chart_of_account_id' => $bank->id]);
+        $voucher = AccountingVoucher::create([
+            'consecutive' => 'EG-BNK-2', 'voucher_type' => 'egreso', 'voucher_date' => '2026-11-11',
+            'total_debit' => 100, 'total_credit' => 100,
+        ]);
+        $voucher->lines()->createMany([
+            ['chart_of_account_id' => $expense->id, 'debit' => 100, 'credit' => 0],
+            ['chart_of_account_id' => $bank->id, 'debit' => 0, 'credit' => 100],
+        ]);
+        BankStatement::create([
+            'company_id' => $company->id, 'payment_method_id' => $method->id,
+            'transaction_date' => '2026-11-11', 'transaction_type' => 'debit', 'amount' => 100,
+            'status' => 'reconciled', 'matched_type' => 'manual', 'matched_id' => $voucher->id,
+            'accounting_voucher_id' => $voucher->id,
+        ]);
+        $response = $this->get(route('accounting.vouchers.edit', $voucher));
+        preg_match('/name="version" value="([^"]+)"/', $response->getContent(), $version);
+        $this->put(route('accounting.vouchers.update', $voucher), [
+            'version' => $version[1], 'voucher_date' => '2026-11-11',
+            'lines' => [
+                ['chart_of_account_id' => $expense->id, 'debit' => 120, 'credit' => 0],
+                ['chart_of_account_id' => $bank->id, 'debit' => 0, 'credit' => 120],
+            ],
+        ])->assertSessionHasErrors('lines');
+        $this->assertDatabaseHas('accounting_vouchers', ['id' => $voucher->id, 'total_debit' => 100]);
+    }
+
+    public function test_payment_voucher_only_allows_description_and_detail_changes(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $bank = $this->createAccount('111099', 'Banco', 1);
+        $receivable = $this->createAccount('130599', 'Cartera', 1);
+        $sale = Sale::create(['company_id' => $company->id, 'invoice_number' => 'FV-EDIT', 'customer_name' => 'Cliente',
+            'sale_date' => '2026-11-11', 'total' => 200]);
+        $voucher = AccountingVoucher::create(['consecutive' => 'RC-PAG-1', 'voucher_type' => 'recibo_caja',
+            'voucher_date' => '2026-11-11', 'third_party' => 'Cliente', 'total_debit' => 110, 'total_credit' => 110]);
+        $voucher->lines()->createMany([
+            ['chart_of_account_id' => $bank->id, 'debit' => 110, 'credit' => 0],
+            ['chart_of_account_id' => $receivable->id, 'debit' => 0, 'credit' => 110],
+        ]);
+        $payment = Payment::create(['payable_type' => Sale::class, 'payable_id' => $sale->id,
+            'amount' => 100, 'withholding_total' => 10, 'payment_date' => '2026-11-11', 'accounting_voucher_id' => $voucher->id]);
+        $response = $this->get(route('accounting.vouchers.edit', $voucher))->assertSee('solo se pueden cambiar la descripción y los detalles');
+        preg_match('/name="version" value="([^"]+)"/', $response->getContent(), $version);
+        $payload = ['version' => $version[1], 'voucher_date' => '2026-11-11', 'third_party' => 'Cliente', 'description' => 'Pago corregido',
+            'lines' => [
+                ['chart_of_account_id' => $bank->id, 'detail' => 'Detalle corregido', 'debit' => 110, 'credit' => 0],
+                ['chart_of_account_id' => $receivable->id, 'debit' => 0, 'credit' => 110],
+            ]];
+        $modified = $payload;
+        $modified['lines'][0]['debit'] = 120;
+        $modified['lines'][1]['credit'] = 120;
+        $this->put(route('accounting.vouchers.update', $voucher), $modified)->assertSessionHasErrors('lines');
+        $this->put(route('accounting.vouchers.update', $voucher), $payload)->assertRedirect(route('accounting.vouchers.accounting', $voucher));
+        $this->assertDatabaseHas('payments', ['id' => $payment->id, 'amount' => 100, 'withholding_total' => 10]);
+        $this->assertDatabaseHas('accounting_voucher_lines', ['accounting_voucher_id' => $voucher->id, 'detail' => 'Detalle corregido', 'debit' => 110]);
+    }
+
+    public function test_voucher_edit_respects_closed_periods_and_company_isolation(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $debit = $this->createAccount('510599', 'Gasto', 5);
+        $credit = $this->createAccount('111099', 'Banco', 1);
+        $voucher = AccountingVoucher::create(['consecutive' => 'EG-CLOSED-EDIT', 'voucher_type' => 'egreso',
+            'voucher_date' => '2026-10-15', 'total_debit' => 100, 'total_credit' => 100]);
+        $voucher->lines()->createMany([
+            ['chart_of_account_id' => $debit->id, 'debit' => 100, 'credit' => 0],
+            ['chart_of_account_id' => $credit->id, 'debit' => 0, 'credit' => 100],
+        ]);
+        $response = $this->get(route('accounting.vouchers.edit', $voucher));
+        preg_match('/name="version" value="([^"]+)"/', $response->getContent(), $version);
+        $this->closeOctober($company);
+        $this->put(route('accounting.vouchers.update', $voucher), ['version' => $version[1], 'voucher_date' => '2026-11-01',
+            'lines' => [
+                ['chart_of_account_id' => $debit->id, 'debit' => 100, 'credit' => 0],
+                ['chart_of_account_id' => $credit->id, 'debit' => 0, 'credit' => 100],
+            ]])->assertConflict();
+        $other = Company::factory()->create();
+        $otherVoucher = AccountingVoucher::create(['company_id' => $other->id, 'consecutive' => 'EG-OTHER-EDIT',
+            'voucher_type' => 'egreso', 'voucher_date' => '2026-11-11', 'total_debit' => 100, 'total_credit' => 100]);
+        $this->get(route('accounting.vouchers.edit', $otherVoucher))->assertNotFound();
+        $this->put(route('accounting.vouchers.update', $otherVoucher), [])->assertNotFound();
+    }
+
+    public function test_edit_rejects_unbalanced_lines_and_accounts_from_another_company(): void
+    {
+        $this->authenticateWithCompany();
+        $debit = $this->createAccount('510599', 'Gasto', 5);
+        $credit = $this->createAccount('111099', 'Banco', 1);
+        $other = Company::factory()->create();
+        $foreignAccount = ChartOfAccount::create([
+            'company_id' => $other->id, 'code' => 'FOREIGN', 'name' => 'Otra empresa', 'class' => 5,
+            'nature' => 'debit', 'allows_posting' => true, 'active' => true,
+        ]);
+        $voucher = AccountingVoucher::create(['consecutive' => 'EG-MANUAL-EDIT', 'voucher_type' => 'egreso',
+            'voucher_date' => '2026-11-11', 'total_debit' => 100, 'total_credit' => 100]);
+        $voucher->lines()->createMany([
+            ['chart_of_account_id' => $debit->id, 'debit' => 100, 'credit' => 0],
+            ['chart_of_account_id' => $credit->id, 'debit' => 0, 'credit' => 100],
+        ]);
+        $response = $this->get(route('accounting.vouchers.edit', $voucher));
+        preg_match('/name="version" value="([^"]+)"/', $response->getContent(), $version);
+        $payload = ['version' => $version[1], 'voucher_date' => '2026-11-11', 'lines' => [
+            ['chart_of_account_id' => $debit->id, 'debit' => 120, 'credit' => 0],
+            ['chart_of_account_id' => $credit->id, 'debit' => 0, 'credit' => 100],
+        ]];
+        $this->put(route('accounting.vouchers.update', $voucher), $payload)->assertSessionHasErrors('lines');
+        $payload['lines'][0]['chart_of_account_id'] = $foreignAccount->id;
+        $payload['lines'][0]['debit'] = 100;
+        $this->put(route('accounting.vouchers.update', $voucher), $payload)->assertSessionHasErrors('lines');
+        $this->assertDatabaseHas('accounting_vouchers', ['id' => $voucher->id, 'total_debit' => 100]);
+    }
 
     public function test_guest_cannot_open_the_accounting_form(): void
     {

@@ -7,6 +7,7 @@
             </div>
             <div class="flex gap-2 print:hidden">
                 <a href="{{ route('accounting.vouchers.index') }}" class="rounded-lg border border-[#d7dfd8] bg-white px-3 py-2 text-xs font-bold text-[#227c70]">⌂ Comprobantes</a>
+                <a href="{{ route('accounting.vouchers.edit', $voucher) }}" class="rounded-lg border border-[#227c70] bg-white px-3 py-2 text-xs font-bold text-[#227c70]">Editar comprobante</a>
                 @if($voucher->voucher_type === 'seguridad_social' && $company?->social_security_operator_url)
                     <a href="{{ $company->social_security_operator_url }}" target="_blank" class="rounded-lg bg-[#f5c96a] px-3 py-2 text-xs font-bold text-[#263b36]">↗ Ir a {{ $company->social_security_operator_name ?? 'Enlace Operativo' }}</a>
                 @endif

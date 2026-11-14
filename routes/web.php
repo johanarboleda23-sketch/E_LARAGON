@@ -272,6 +272,8 @@ Route::middleware(['auth', 'company'])->group(function () {
             ->name('accounting.vouchers.store.typed');
         Route::delete('/comprobantes/{voucher}', [AccountingVoucherController::class, 'destroy'])->name('accounting.vouchers.destroy');
         Route::get('/comprobantes/{voucher}/contabilizacion', [AccountingVoucherController::class, 'accounting'])->name('accounting.vouchers.accounting');
+        Route::get('/comprobantes/{voucher}/editar', [AccountingVoucherController::class, 'edit'])->name('accounting.vouchers.edit');
+        Route::put('/comprobantes/{voucher}', [AccountingVoucherController::class, 'update'])->name('accounting.vouchers.update');
         Route::get('/comprobantes/{voucher}/estado-cuenta', [AccountingVoucherController::class, 'statement'])->name('accounting.vouchers.statement');
         Route::post('/comprobantes/{voucher}/correo', [AccountingVoucherController::class, 'email'])->name('accounting.vouchers.email');
     });

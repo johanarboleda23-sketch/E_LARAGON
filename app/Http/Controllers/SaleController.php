@@ -289,6 +289,7 @@ class SaleController extends Controller
 
     public function edit(Sale $sale)
     {
+        abort_if($sale->factus_status === 'enviada', 409, 'Esta factura fue aceptada por Factus y no puede editarse. Usa una nota de corrección.');
         $sale->load(['details.item', 'paymentMethod']);
         $items = Item::with('unitConversions')->where('type', 'producto')->orderBy('name')->get();
         $paymentMethods = $this->paymentMethodService->available();
@@ -314,6 +315,7 @@ class SaleController extends Controller
 
     public function update(Request $request, Sale $sale)
     {
+        abort_if($sale->factus_status === 'enviada', 409, 'Esta factura fue aceptada por Factus y no puede editarse. Usa una nota de corrección.');
         $data = $request->validate([
             'invoice_number' => ['required', 'string', 'max:255', Rule::unique('sales', 'invoice_number')->where('company_id', session('company_id'))->ignore($sale->id)],
             'customer_name' => 'required|string|max:255',

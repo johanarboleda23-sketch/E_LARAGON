@@ -229,77 +229,78 @@
                                     </div>
                                     <div id="suggestions-{{ $statement->id }}" class="mt-2 text-xs text-slate-600"></div>
                                     @php($reopeningManualForm = (string) old('manual_reconcile_statement_id', session('manual_reconcile_statement_id')) === (string) $statement->id)
-                                    <details class="mt-2" @if($reopeningManualForm) open @endif>
-                                        <summary class="cursor-pointer rounded-md bg-emerald-600 px-3 py-1 text-xs font-semibold text-white">Conciliar movimiento</summary>
-                                    <form
-                                        id="manual-reconcile-form-{{ $statement->id }}"
-                                        method="POST"
-                                        action="{{ route('bank-reconciliation.reconcile', $statement) }}"
-                                        data-invoices-url="{{ route('bank-reconciliation.invoices', ['statement' => $statement->id, 'thirdParty' => '__PARTY__']) }}"
-                                        data-old-invoice="{{ $reopeningManualForm ? old('invoice', '') : '' }}"
-                                        class="mt-2 grid min-w-72 gap-3 rounded-lg border border-slate-200 bg-white p-3"
-                                    >
-                                        @csrf
-                                        <input type="hidden" name="matched_type" value="manual">
-                                        <input type="hidden" name="manual_reconcile_statement_id" value="{{ $statement->id }}">
-                                        @if($reopeningManualForm && $errors->has('manual_reconcile'))
-                                            <p class="rounded-md bg-red-50 px-3 py-2 text-xs font-medium text-red-700" role="alert">{{ $errors->first('manual_reconcile') }}</p>
-                                        @endif
-                                        <div class="rounded-md bg-sky-50 px-3 py-2 text-xs text-sky-900">
-                                            <p class="font-semibold">{{ $statement->transaction_type === 'credit' ? 'Es un ingreso al banco' : 'Es un egreso del banco' }} de ${{ number_format((float) $statement->amount, 2) }}.</p>
-                                            <p class="mt-1">Al elegir una factura, se registra un abono por este valor. Si no eliges factura, se crea un comprobante manual. El valor debe coincidir con el movimiento bancario.</p>
+                                    <details class="relative mt-2">
+                                        <summary class="cursor-pointer rounded-md bg-emerald-600 px-3 py-1 text-xs font-semibold text-white">Conciliar ▾</summary>
+                                        <div class="mt-1 grid w-48 gap-1 rounded-md border border-slate-200 bg-white p-2 shadow-lg">
+                                            <button type="button" class="rounded px-2 py-2 text-left text-xs hover:bg-slate-100" onclick="openReconciliation({{ $statement->id }}, 'invoice')">Conciliar factura</button>
+                                            <button type="button" class="rounded px-2 py-2 text-left text-xs hover:bg-slate-100" onclick="openReconciliation({{ $statement->id }}, 'account')">Establecer cuenta PUC</button>
+                                            <button type="button" class="rounded px-2 py-2 text-left text-xs hover:bg-slate-100" onclick="openReconciliation({{ $statement->id }}, 'transfer')">Transferencia interna</button>
                                         </div>
-                                        <p class="text-xs text-slate-600">
-                                            Diario / cuenta bancaria:
-                                            <strong>{{ $statement->paymentMethod?->bankJournal?->name ?? 'Sin diario asignado' }}</strong>
-                                            · {{ $statement->paymentMethod?->name ?? 'Sin cuenta asignada' }}
-                                            @if($statement->paymentMethod?->account)
-                                                · PUC {{ $statement->paymentMethod->account->code }}
-                                            @endif
-                                        </p>
-                                        <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
-                                            <label class="grid content-start gap-1 text-xs font-semibold text-slate-700">Tercero
-                                                <select name="third_party_id" data-third-party-select class="rounded border-slate-300 text-xs">
-                                                <option value="">Sin tercero</option>
-                                                @foreach($thirdParties as $thirdParty)
-                                                    @if ($statement->transaction_type === 'credit' ? $thirdParty->is_customer : $thirdParty->is_supplier)
-                                                        <option value="{{ $thirdParty->id }}" @selected($reopeningManualForm && old('third_party_id') == $thirdParty->id)>{{ $thirdParty->name }}{{ $thirdParty->document ? ' · '.$thirdParty->document : '' }}</option>
-                                                    @endif
-                                                @endforeach
-                                                </select>
-                                            </label>
-                                            <label class="grid content-start gap-1 text-xs font-semibold text-slate-700">{{ $statement->transaction_type === 'credit' ? 'Factura que nos pagaron (opcional)' : 'Factura por pagar (opcional)' }}
-                                                <select name="invoice" data-invoice-select class="rounded border-slate-300 text-xs" disabled>
-                                                    <option value="">Selecciona un tercero primero</option>
-                                                </select>
-                                            </label>
-                                            <label class="grid content-start gap-1 text-xs font-semibold text-slate-700">Banco / diario
-                                                <input type="text" value="{{ $statement->paymentMethod?->bankJournal?->name ?? $statement->paymentMethod?->name ?? 'Sin diario asignado' }}" class="rounded border-slate-300 bg-slate-50 text-xs" readonly>
-                                            </label>
-                                            <label class="grid content-start gap-1 text-xs font-semibold text-slate-700">Valor a conciliar
-                                                <input type="number" step="0.01" min="0.01" name="amount" value="{{ $reopeningManualForm ? old('amount', number_format((float) $statement->amount, 2, '.', '')) : number_format((float) $statement->amount, 2, '.', '') }}" class="rounded border-slate-300 text-xs" required>
-                                            </label>
-                                            <label class="grid content-start gap-1 text-xs font-semibold text-slate-700">Cuenta PUC de contrapartida
-                                                <select name="counter_account_id" class="rounded border-slate-300 text-xs" required>
-                                                    <option value="">Selecciona una cuenta</option>
-                                                    @foreach($postingAccounts as $account)
-                                                        <option value="{{ $account->id }}" @selected($reopeningManualForm && old('counter_account_id') == $account->id)>{{ $account->code }} - {{ $account->name }}</option>
-                                                    @endforeach
-                                                </select>
-                                            </label>
-                                        </div>
-                                        <p data-invoice-status class="text-xs text-slate-500" aria-live="polite"></p>
-                                        <label class="grid gap-1 text-xs font-semibold text-slate-700">Notas para auditoría (opcional)
-                                            <input type="text" maxlength="1000" name="notes" class="rounded border-slate-300 text-xs" placeholder="Observaciones sobre este movimiento" value="{{ $reopeningManualForm ? old('notes', '') : '' }}">
-                                        </label>
-                                        <button class="rounded-md bg-emerald-700 px-3 py-2 text-xs font-semibold text-white">Registrar y conciliar</button>
-                                        </form>
                                     </details>
+                                    <dialog id="reconciliation-{{ $statement->id }}" data-reopen="{{ $reopeningManualForm ? old('reconciliation_mode', 'invoice') : '' }}" class="w-11/12 max-w-2xl rounded-xl border border-slate-200 bg-white p-0 shadow-xl backdrop:bg-slate-900/50">
+                                        <div class="p-6">
+                                            <div class="flex items-start justify-between gap-4">
+                                                <div><h2 data-dialog-title class="text-lg font-bold text-slate-900"></h2><p class="mt-1 text-sm text-slate-600">{{ $statement->paymentMethod?->bankJournal?->name ?? $statement->paymentMethod?->name }} · {{ $statement->transaction_type === 'credit' ? 'Ingreso' : 'Egreso' }} · <strong>${{ number_format((float) $statement->amount, 2) }}</strong></p></div>
+                                                <button type="button" class="text-xl text-slate-500" aria-label="Cerrar" onclick="this.closest('dialog').close()">×</button>
+                                            </div>
+                                            @if($reopeningManualForm && $errors->any())
+                                                <p class="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{{ $errors->first() }}</p>
+                                            @endif
+                                            <form data-mode="invoice" method="POST" action="{{ route('bank-reconciliation.reconcile', $statement) }}" data-invoices-url="{{ route('bank-reconciliation.invoices', ['statement' => $statement->id, 'thirdParty' => '__PARTY__']) }}" data-old-invoice="{{ $reopeningManualForm ? old('invoice', '') : '' }}" class="mt-5 hidden gap-4" hidden>
+                                                @csrf
+                                                <input type="hidden" name="matched_type" value="manual">
+                                                <input type="hidden" name="reconciliation_mode" value="invoice">
+                                                <input type="hidden" name="manual_reconcile_statement_id" value="{{ $statement->id }}">
+                                                <input type="hidden" name="amount" value="{{ number_format((float) $statement->amount, 2, '.', '') }}">
+                                                <label class="grid gap-1 text-sm font-semibold">Buscar tercero
+                                                    <select name="third_party_id" data-third-party-select required>
+                                                        <option value="">Selecciona un tercero</option>
+                                                        @foreach($thirdParties as $thirdParty)
+                                                            @if ($statement->transaction_type === 'credit' ? $thirdParty->is_customer : $thirdParty->is_supplier)
+                                                                <option value="{{ $thirdParty->id }}" @selected($reopeningManualForm && old('third_party_id') == $thirdParty->id)>{{ $thirdParty->name }}{{ $thirdParty->document ? ' · '.$thirdParty->document : '' }}</option>
+                                                            @endif
+                                                        @endforeach
+                                                    </select>
+                                                </label>
+                                                <label class="grid gap-1 text-sm font-semibold">Factura pendiente
+                                                    <select name="invoice" data-invoice-select required disabled><option value="">Selecciona un tercero primero</option></select>
+                                                </label>
+                                                <p data-invoice-status class="text-sm text-slate-600" aria-live="polite"></p>
+                                                <button type="submit" data-invoice-submit class="rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Registrar pago y conciliar</button>
+                                            </form>
+                                            <form data-mode="account" method="POST" action="{{ route('bank-reconciliation.reconcile', $statement) }}" class="mt-5 hidden gap-4" hidden>
+                                                @csrf
+                                                <input type="hidden" name="matched_type" value="manual">
+                                                <input type="hidden" name="reconciliation_mode" value="account">
+                                                <input type="hidden" name="manual_reconcile_statement_id" value="{{ $statement->id }}">
+                                                <input type="hidden" name="amount" value="{{ number_format((float) $statement->amount, 2, '.', '') }}">
+                                                <label class="grid gap-1 text-sm font-semibold">Cuenta PUC de contrapartida
+                                                    <select name="counter_account_id" required>
+                                                        <option value="">Busca una cuenta PUC</option>
+                                                        @foreach($postingAccounts as $account)
+                                                            <option value="{{ $account->id }}" @selected($reopeningManualForm && old('counter_account_id') == $account->id)>{{ $account->code }} - {{ $account->name }}</option>
+                                                        @endforeach
+                                                    </select>
+                                                </label>
+                                                <button class="rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white">Crear comprobante y conciliar</button>
+                                            </form>
+                                            <form data-mode="transfer" data-transfer-url="{{ route('bank-reconciliation.transfer-candidates', $statement) }}" method="POST" action="{{ route('bank-reconciliation.transfer', $statement) }}" class="mt-5 hidden gap-4" hidden>
+                                                @csrf
+                                                <input type="hidden" name="reconciliation_mode" value="transfer">
+                                                <input type="hidden" name="manual_reconcile_statement_id" value="{{ $statement->id }}">
+                                                <label class="grid gap-1 text-sm font-semibold">Movimiento del otro banco
+                                                    <select name="counter_statement_id" data-transfer-select required disabled><option value="">Cargando movimientos...</option></select>
+                                                </label>
+                                                <p data-transfer-status class="text-sm text-slate-600" aria-live="polite"></p>
+                                                <button type="submit" data-transfer-submit disabled class="rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Conciliar transferencia</button>
+                                            </form>
+                                        </div>
+                                    </dialog>
                                 @else
                                     <span class="text-xs text-amber-700">Asigna un diario bancario antes de conciliar este movimiento.</span>
                                 @endif
                             @else
-                                @if($statement->matched_type === 'manual' && $statement->accounting_voucher_id)
+                                @if(in_array($statement->matched_type, ['manual', 'transfer'], true) && $statement->accounting_voucher_id)
                                     <span class="text-xs text-slate-500">Comprobante publicado; usa un ajuste para corregirlo.</span>
                                 @else
                                     <form method="POST" action="{{ route('bank-reconciliation.unmatch', $statement) }}">
@@ -321,19 +322,63 @@
     @endif
 </div>
 <script>
+    function openReconciliation(id, mode) {
+        const dialog = document.getElementById(`reconciliation-${id}`);
+        const titles = { invoice: 'Conciliar factura', account: 'Establecer cuenta PUC', transfer: 'Transferencia interna' };
+        dialog.querySelector('[data-dialog-title]').textContent = titles[mode];
+        dialog.querySelectorAll('form[data-mode]').forEach((form) => {
+            const active = form.dataset.mode === mode;
+            form.hidden = !active;
+            form.classList.toggle('hidden', !active);
+            form.classList.toggle('grid', active);
+        });
+        if (!dialog.open) dialog.showModal();
+        if (mode === 'transfer') loadTransfers(dialog.querySelector('[data-mode="transfer"]'));
+    }
+
+    async function loadTransfers(form) {
+        const select = form.querySelector('[data-transfer-select]');
+        const status = form.querySelector('[data-transfer-status]');
+        const submit = form.querySelector('[data-transfer-submit]');
+        submit.disabled = true;
+        select.replaceChildren(new Option('Cargando movimientos...', ''));
+        select.disabled = true;
+        status.textContent = '';
+        try {
+            const response = await fetch(form.dataset.transferUrl, { headers: { Accept: 'application/json' } });
+            if (!response.ok) throw new Error('No fue posible consultar los movimientos del otro banco.');
+            const data = await response.json();
+            select.replaceChildren(new Option('Selecciona el movimiento correspondiente', ''), ...data.movements.map((movement) => new Option(movement.label, movement.id)));
+            select.disabled = data.movements.length === 0;
+            status.textContent = data.movements.length ? 'Solo aparecen movimientos pendientes del mismo valor y sentido contrario.' : 'No hay movimientos pendientes del otro banco con el mismo valor.';
+        } catch (error) {
+            status.textContent = error instanceof Error ? error.message : 'Error al consultar los movimientos.';
+        }
+    }
+
+    document.querySelectorAll('[data-transfer-select]').forEach((select) => {
+        select.addEventListener('change', () => {
+            select.form.querySelector('[data-transfer-submit]').disabled = !select.value;
+        });
+    });
+
     document.querySelectorAll('[data-third-party-select]').forEach((thirdPartySelect) => {
         const form = thirdPartySelect.closest('form');
         const invoiceSelect = form.querySelector('[data-invoice-select]');
         const status = form.querySelector('[data-invoice-status]');
+        const submit = form.querySelector('[data-invoice-submit]');
         const placeholder = 'Selecciona un tercero primero';
+        let requestNumber = 0;
+        const syncSubmit = () => { submit.disabled = !invoiceSelect.value; };
 
         const resetInvoices = () => {
             invoiceSelect.replaceChildren(new Option(placeholder, ''));
             invoiceSelect.disabled = true;
-            thirdPartySelect.required = false;
+            syncSubmit();
         };
 
         const loadInvoices = async () => {
+            const currentRequest = ++requestNumber;
             if (!thirdPartySelect.value) {
                 resetInvoices();
                 status.textContent = '';
@@ -342,6 +387,7 @@
 
             invoiceSelect.replaceChildren(new Option('Cargando facturas...', ''));
             invoiceSelect.disabled = true;
+            syncSubmit();
             status.textContent = '';
             try {
                 const url = form.dataset.invoicesUrl.replace('__PARTY__', encodeURIComponent(thirdPartySelect.value));
@@ -351,33 +397,37 @@
                 }
 
                 const data = await response.json();
-                const options = [new Option('Sin factura (comprobante manual)', '')];
+                if (currentRequest !== requestNumber) return;
+                const options = [new Option('Selecciona una factura pendiente', '')];
                 data.invoices.forEach((invoice) => options.push(new Option(invoice.label, invoice.value)));
                 invoiceSelect.replaceChildren(...options);
-                invoiceSelect.disabled = false;
+                invoiceSelect.disabled = data.invoices.length === 0;
                 const oldInvoice = form.dataset.oldInvoice;
                 if (oldInvoice && options.some((option) => option.value === oldInvoice)) {
                     invoiceSelect.value = oldInvoice;
                 }
-                thirdPartySelect.required = Boolean(invoiceSelect.value);
+                syncSubmit();
                 status.textContent = data.invoices.length
-                    ? 'Selecciona una factura abierta o deja “Sin factura” para registrar un movimiento manual.'
-                    : 'Este tercero no tiene facturas pendientes; puedes continuar como comprobante manual.';
+                    ? 'Selecciona la factura para registrar el pago por el valor del movimiento.'
+                    : 'Este tercero no tiene facturas pendientes.';
             } catch (error) {
+                if (currentRequest !== requestNumber) return;
                 invoiceSelect.replaceChildren(new Option('No se pudieron cargar las facturas', ''));
                 status.textContent = error instanceof Error ? error.message : 'Error al consultar las facturas.';
             }
         };
 
         thirdPartySelect.addEventListener('change', loadInvoices);
-        invoiceSelect.addEventListener('change', () => {
-            thirdPartySelect.required = Boolean(invoiceSelect.value);
-        });
+        invoiceSelect.addEventListener('change', syncSubmit);
         if (thirdPartySelect.value) {
             loadInvoices();
         } else {
             resetInvoices();
         }
+    });
+
+    document.querySelectorAll('dialog[data-reopen]').forEach((dialog) => {
+        if (dialog.dataset.reopen) openReconciliation(dialog.id.replace('reconciliation-', ''), dialog.dataset.reopen);
     });
 
     async function findSuggestions(id, url, reconcileUrl) {

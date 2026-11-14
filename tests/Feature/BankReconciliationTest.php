@@ -483,9 +483,9 @@ class BankReconciliationTest extends TestCase
         ]);
 
         $this->get(route('bank-reconciliation.index'))
-            ->assertSee('Tercero')
-            ->assertSee('Factura por pagar (opcional)')
-            ->assertSee('Valor a conciliar')
+            ->assertSee('Buscar tercero')
+            ->assertSee('Factura pendiente')
+            ->assertSee('Transferencia interna')
             ->assertSee('Cuenta PUC de contrapartida');
 
         $this->from(route('bank-reconciliation.index'))
@@ -655,6 +655,194 @@ class BankReconciliationTest extends TestCase
 
         $this->assertFalse($matched);
         $this->assertSame('pending', $statement->fresh()->status);
+    }
+
+    public function test_invoice_modal_registers_payment_using_the_only_available_receivables_account(): void
+    {
+        $company = Company::factory()->create();
+        $bank = $this->createBankAccount($company);
+        $account = ChartOfAccount::create([
+            'company_id' => $company->id, 'code' => '130501', 'name' => 'Clientes',
+            'class' => 1, 'nature' => 'debit', 'allows_posting' => true, 'active' => true,
+        ]);
+        $party = ThirdParty::create([
+            'company_id' => $company->id, 'name' => 'Cliente modal', 'document' => '901111111',
+            'is_customer' => true, 'active' => true,
+        ]);
+        $sale = Sale::create([
+            'company_id' => $company->id, 'invoice_number' => 'FV-MODAL',
+            'customer_name' => $party->name, 'customer_document' => $party->document,
+            'sale_date' => '2026-11-11', 'total' => 500,
+        ]);
+        $statement = BankStatement::create([
+            'company_id' => $company->id, 'payment_method_id' => $bank->id, 'transaction_date' => '2026-11-11',
+            'transaction_type' => 'credit', 'amount' => 100, 'status' => 'pending',
+        ]);
+        $user = User::factory()->create();
+        $user->companies()->attach($company->id, ['role' => 'admin']);
+        $this->actingAs($user)->withSession(['company_id' => $company->id]);
+
+        $this->post(route('bank-reconciliation.reconcile', $statement), [
+            'matched_type' => 'manual', 'reconciliation_mode' => 'invoice',
+            'third_party_id' => $party->id, 'invoice' => 'sale:'.$sale->id, 'amount' => 100,
+        ])->assertRedirect()->assertSessionHas('success');
+
+        $payment = Payment::query()->firstOrFail();
+        $this->assertSame('reconciled', $statement->fresh()->status);
+        $this->assertDatabaseHas('accounting_voucher_lines', [
+            'accounting_voucher_id' => $payment->accounting_voucher_id,
+            'chart_of_account_id' => $account->id, 'credit' => 100,
+        ]);
+        $this->assertSame(400.0, $sale->fresh()->balanceDue(500));
+    }
+
+    public function test_invoice_modal_does_not_post_without_an_unambiguous_receivables_account(): void
+    {
+        $company = Company::factory()->create();
+        $bank = $this->createBankAccount($company);
+        $party = ThirdParty::create([
+            'company_id' => $company->id, 'name' => 'Cliente sin cuenta', 'document' => '902222222',
+            'is_customer' => true, 'active' => true,
+        ]);
+        $sale = Sale::create([
+            'company_id' => $company->id, 'invoice_number' => 'FV-SIN-CUENTA',
+            'customer_name' => $party->name, 'customer_document' => $party->document,
+            'sale_date' => '2026-11-11', 'total' => 100,
+        ]);
+        $statement = BankStatement::create([
+            'company_id' => $company->id, 'payment_method_id' => $bank->id, 'transaction_date' => '2026-11-11',
+            'transaction_type' => 'credit', 'amount' => 100, 'status' => 'pending',
+        ]);
+        $user = User::factory()->create();
+        $user->companies()->attach($company->id, ['role' => 'admin']);
+        $this->actingAs($user)->withSession(['company_id' => $company->id]);
+
+        $this->post(route('bank-reconciliation.reconcile', $statement), [
+            'matched_type' => 'manual', 'reconciliation_mode' => 'invoice',
+            'third_party_id' => $party->id, 'invoice' => 'sale:'.$sale->id, 'amount' => 100,
+        ])->assertRedirect()->assertSessionHasErrors('manual_reconcile');
+
+        $this->assertSame('pending', $statement->fresh()->status);
+        $this->assertDatabaseCount('payments', 0);
+        $this->assertDatabaseCount('accounting_vouchers', 0);
+    }
+
+    public function test_invoice_modal_requires_an_invoice_and_does_not_create_a_manual_voucher(): void
+    {
+        $company = Company::factory()->create();
+        $bank = $this->createBankAccount($company);
+        $party = ThirdParty::create([
+            'company_id' => $company->id, 'name' => 'Cliente sin factura',
+            'is_customer' => true, 'active' => true,
+        ]);
+        $statement = BankStatement::create([
+            'company_id' => $company->id, 'payment_method_id' => $bank->id, 'transaction_date' => '2026-11-11',
+            'transaction_type' => 'credit', 'amount' => 100, 'status' => 'pending',
+        ]);
+        $user = User::factory()->create();
+        $user->companies()->attach($company->id, ['role' => 'admin']);
+        $this->actingAs($user)->withSession(['company_id' => $company->id]);
+
+        $this->get(route('bank-reconciliation.invoices', ['statement' => $statement, 'thirdParty' => $party]))
+            ->assertJsonCount(0, 'invoices');
+        $this->post(route('bank-reconciliation.reconcile', $statement), [
+            'matched_type' => 'manual', 'reconciliation_mode' => 'invoice',
+            'third_party_id' => $party->id, 'amount' => 100,
+        ])->assertRedirect()->assertSessionHasErrors('invoice');
+
+        $this->assertSame('pending', $statement->fresh()->status);
+        $this->assertDatabaseCount('accounting_vouchers', 0);
+    }
+
+    public function test_internal_transfer_reconciles_both_bank_movements_with_one_voucher(): void
+    {
+        $company = Company::factory()->create();
+        $source = $this->createBankAccount($company);
+        $destinationAccount = ChartOfAccount::create([
+            'company_id' => $company->id, 'code' => '111002', 'name' => 'Otro banco',
+            'class' => 1, 'nature' => 'debit', 'allows_posting' => true, 'active' => true,
+        ]);
+        $destination = PaymentMethod::create([
+            'company_id' => $company->id, 'name' => 'Banco destino', 'chart_of_account_id' => $destinationAccount->id,
+            'is_cash' => false, 'is_editable' => true,
+        ]);
+        $outgoing = BankStatement::create([
+            'company_id' => $company->id, 'payment_method_id' => $source->id, 'transaction_date' => '2026-11-11',
+            'transaction_type' => 'debit', 'amount' => 5000, 'status' => 'pending',
+        ]);
+        $incoming = BankStatement::create([
+            'company_id' => $company->id, 'payment_method_id' => $destination->id, 'transaction_date' => '2026-11-12',
+            'transaction_type' => 'credit', 'amount' => 5000, 'status' => 'pending',
+        ]);
+        $user = User::factory()->create();
+        $user->companies()->attach($company->id, ['role' => 'admin']);
+        $this->actingAs($user)->withSession(['company_id' => $company->id]);
+
+        $this->get(route('bank-reconciliation.transfer-candidates', $outgoing))
+            ->assertJsonPath('movements.0.id', $incoming->id);
+        $this->post(route('bank-reconciliation.transfer', $outgoing), [
+            'counter_statement_id' => $incoming->id, 'reconciliation_mode' => 'transfer',
+        ])->assertRedirect()->assertSessionHas('success');
+
+        $voucherId = $outgoing->fresh()->accounting_voucher_id;
+        $this->assertDatabaseHas('bank_statements', ['id' => $outgoing->id, 'status' => 'reconciled', 'matched_type' => 'transfer', 'matched_id' => $incoming->id, 'accounting_voucher_id' => $voucherId]);
+        $this->assertDatabaseHas('bank_statements', ['id' => $incoming->id, 'status' => 'reconciled', 'matched_type' => 'transfer', 'matched_id' => $outgoing->id, 'accounting_voucher_id' => $voucherId]);
+        $this->assertDatabaseHas('accounting_voucher_lines', ['accounting_voucher_id' => $voucherId, 'chart_of_account_id' => $source->chart_of_account_id, 'credit' => 5000]);
+        $this->assertDatabaseHas('accounting_voucher_lines', ['accounting_voucher_id' => $voucherId, 'chart_of_account_id' => $destinationAccount->id, 'debit' => 5000]);
+        $this->assertDatabaseCount('accounting_vouchers', 1);
+        $this->post(route('bank-reconciliation.unmatch', $incoming))->assertConflict();
+    }
+
+    public function test_internal_transfer_rejects_mismatched_amounts_without_posting(): void
+    {
+        $company = Company::factory()->create();
+        $source = $this->createBankAccount($company);
+        $other = PaymentMethod::create(['company_id' => $company->id, 'name' => 'Otro banco', 'is_cash' => false, 'is_editable' => true]);
+        $outgoing = BankStatement::create([
+            'company_id' => $company->id, 'payment_method_id' => $source->id, 'transaction_date' => '2026-11-11',
+            'transaction_type' => 'debit', 'amount' => 100, 'status' => 'pending',
+        ]);
+        $incoming = BankStatement::create([
+            'company_id' => $company->id, 'payment_method_id' => $other->id, 'transaction_date' => '2026-11-11',
+            'transaction_type' => 'credit', 'amount' => 101, 'status' => 'pending',
+        ]);
+        $user = User::factory()->create();
+        $user->companies()->attach($company->id, ['role' => 'admin']);
+        $this->actingAs($user)->withSession(['company_id' => $company->id]);
+
+        $this->get(route('bank-reconciliation.transfer-candidates', $outgoing))->assertJsonCount(0, 'movements');
+        $this->post(route('bank-reconciliation.transfer', $outgoing), [
+            'counter_statement_id' => $incoming->id,
+        ])->assertRedirect()->assertSessionHasErrors('manual_reconcile');
+
+        $this->assertSame('pending', $outgoing->fresh()->status);
+        $this->assertSame('pending', $incoming->fresh()->status);
+        $this->assertDatabaseCount('accounting_vouchers', 0);
+    }
+
+    public function test_internal_transfer_rejects_a_movement_from_another_company(): void
+    {
+        $company = Company::factory()->create();
+        $otherCompany = Company::factory()->create();
+        $bank = $this->createBankAccount($company);
+        $statement = BankStatement::create([
+            'company_id' => $company->id, 'payment_method_id' => $bank->id, 'transaction_date' => '2026-11-11',
+            'transaction_type' => 'debit', 'amount' => 100, 'status' => 'pending',
+        ]);
+        $foreign = BankStatement::create([
+            'company_id' => $otherCompany->id, 'transaction_date' => '2026-11-11',
+            'transaction_type' => 'credit', 'amount' => 100, 'status' => 'pending',
+        ]);
+        $user = User::factory()->create();
+        $user->companies()->attach($company->id, ['role' => 'admin']);
+        $this->actingAs($user)->withSession(['company_id' => $company->id]);
+
+        $this->post(route('bank-reconciliation.transfer', $statement), [
+            'counter_statement_id' => $foreign->id,
+        ])->assertRedirect()->assertSessionHasErrors('counter_statement_id');
+
+        $this->assertSame('pending', $statement->fresh()->status);
+        $this->assertDatabaseCount('accounting_vouchers', 0);
     }
 
     private function createBankAccount(Company $company): PaymentMethod

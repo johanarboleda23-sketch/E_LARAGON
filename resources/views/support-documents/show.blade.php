@@ -11,7 +11,11 @@
 <body>
     @if(session('success'))<div style="padding:10px;background:#ecfdf5;color:#047857;margin-bottom:14px;border-radius:6px;font-weight:bold;">{{ session('success') }}</div>@endif
     <div class="actions">
-        <a href="{{ route('support-documents.edit', $document) }}">✏ Editar</a>
+        @if($document->factus_status !== 'enviada')
+            <a href="{{ route('support-documents.edit', $document) }}">✏ Editar</a>
+        @else
+            <span>Documento aceptado por Factus: usa una nota de ajuste para corregirlo.</span>
+        @endif
         <button onclick="window.print()">Imprimir / Guardar como PDF</button>
         @if($document->balanceDue((float) $document->total) > 0)
             <a href="{{ route('support-documents.payments.create', $document) }}">Registrar pago · Egreso</a>

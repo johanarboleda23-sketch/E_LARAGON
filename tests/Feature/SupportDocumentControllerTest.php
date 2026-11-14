@@ -19,6 +19,35 @@ class SupportDocumentControllerTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_a_support_document_accepted_by_factus_cannot_be_edited(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $supplier = $this->createSupplier();
+        $document = SupportDocument::create([
+            'company_id' => $company->id,
+            'third_party_id' => $supplier->id,
+            'consecutive' => 'DS-ACCEPTED',
+            'document_date' => '2026-11-11',
+            'concept' => 'Servicio',
+            'subtotal' => 100,
+            'total' => 100,
+            'factus_status' => 'enviada',
+        ]);
+
+        $this->get(route('support-documents.edit', $document))->assertConflict();
+        $this->put(route('support-documents.update', $document), [])->assertConflict();
+        $this->get(route('support-documents.show', $document))
+            ->assertOk()
+            ->assertDontSee(route('support-documents.edit', $document), false)
+            ->assertSeeText('Documento aceptado por Factus');
+        $this->get(route('support-documents.index'))
+            ->assertOk()
+            ->assertDontSee(route('support-documents.edit', $document), false)
+            ->assertSeeText('Aceptado por Factus');
+
+        $this->assertSame('DS-ACCEPTED', $document->fresh()->consecutive);
+    }
+
     public function test_support_document_is_accounted_automatically_with_balanced_debits_and_credits(): void
     {
         $this->authenticateWithCompany();
@@ -85,6 +114,24 @@ class SupportDocumentControllerTest extends TestCase
         $this->assertNull($document->factus_status);
         $response->assertSessionHas('success', fn (string $message) => str_contains($message, 'No se envió a la DIAN'));
         Http::assertNothingSent();
+    }
+
+    public function test_a_support_document_rejected_by_factus_can_be_edited(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $supplier = $this->createSupplier();
+        $this->createFactusCredential($company);
+        Http::fake([
+            '*/oauth/token' => Http::response(['access_token' => 'token-123', 'expires_in' => 600]),
+            '*/v2/support-documents/validate' => Http::response(['message' => 'Datos inválidos'], 422),
+        ]);
+
+        $this->post(route('support-documents.store'), $this->payload($supplier, subtotal: 1_000_000))
+            ->assertSessionHasNoErrors();
+
+        $document = SupportDocument::query()->where('consecutive', 'DS-TEST-001')->firstOrFail();
+        $this->assertSame('error', $document->factus_status);
+        $this->get(route('support-documents.edit', $document))->assertOk();
     }
 
     public function test_support_document_uses_automatic_sequential_numbering_when_a_resolution_is_active(): void

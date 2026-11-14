@@ -92,7 +92,11 @@
                                             <a href="{{ route('support-documents.index', ['preview' => $document->id]) }}" class="text-pink-600">Vista previa</a>
                                             <a href="{{ route('support-documents.xml', $document) }}" class="text-pink-600">XML</a>
                                             <a href="{{ route('support-documents.show', $document) }}" target="_blank" rel="noopener" class="text-pink-600">Ver documento</a>
-                                            <a href="{{ route('support-documents.edit', $document) }}" class="text-pink-600">✏ Editar</a>
+                                            @if($document->factus_status !== 'enviada')
+                                                <a href="{{ route('support-documents.edit', $document) }}" class="text-pink-600">✏ Editar</a>
+                                            @else
+                                                <span class="text-gray-500">Aceptado por Factus</span>
+                                            @endif
                                             <a href="{{ route('support-documents.statement', $document) }}" target="_blank" rel="noopener" class="text-pink-600">Cartera</a>
                                             @if ($document->accounting_voucher_id)
                                                 <a href="{{ route('accounting.vouchers.accounting', $document->accounting_voucher_id) }}" target="_blank" rel="noopener" class="text-pink-600">Ver contabilización</a>

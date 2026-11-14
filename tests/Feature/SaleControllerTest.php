@@ -21,6 +21,32 @@ class SaleControllerTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_a_sale_accepted_by_factus_cannot_be_edited(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $sale = Sale::create([
+            'company_id' => $company->id,
+            'invoice_number' => 'FV-ACCEPTED',
+            'customer_name' => 'Cliente',
+            'sale_date' => '2026-11-11',
+            'total' => 100,
+            'factus_status' => 'enviada',
+        ]);
+
+        $this->get(route('sales.edit', $sale))->assertConflict();
+        $this->put(route('sales.update', $sale), [])->assertConflict();
+        $this->get(route('sales.show', $sale))
+            ->assertOk()
+            ->assertDontSee(route('sales.edit', $sale), false)
+            ->assertSeeText('Factura aceptada por Factus');
+        $this->get(route('sales.index', ['preview' => $sale->id]))
+            ->assertOk()
+            ->assertDontSee(route('sales.edit', $sale), false)
+            ->assertSeeText('Aceptada por Factus');
+
+        $this->assertSame('FV-ACCEPTED', $sale->fresh()->invoice_number);
+    }
+
     public function test_sales_module_displays_sales_withholding_concepts_instead_of_purchase_labels(): void
     {
         $this->authenticateWithCompany();
@@ -350,6 +376,7 @@ class SaleControllerTest extends TestCase
         $sale = Sale::query()->where('invoice_number', 'VTA-TEST-001')->firstOrFail();
         $this->assertSame('error', $sale->factus_status);
         $response->assertSessionHas('success', fn (string $message) => str_contains($message, 'Factus rechazó la factura'));
+        $this->get(route('sales.edit', $sale))->assertOk();
     }
 
     public function test_sale_skips_factus_when_no_credentials_are_configured(): void

@@ -11,7 +11,11 @@
 <body>
     @if(session('success'))<div style="padding:10px;background:#ecfdf5;color:#047857;margin-bottom:14px;border-radius:6px;font-weight:bold;">{{ session('success') }}</div>@endif
     <div class="actions">
-        <a href="{{ route('sales.edit', $sale) }}">✏ Editar</a>
+        @if($sale->factus_status !== 'enviada')
+            <a href="{{ route('sales.edit', $sale) }}">✏ Editar</a>
+        @else
+            <span>Factura aceptada por Factus: usa una nota crédito para corregirla.</span>
+        @endif
         <a href="{{ route('commercial-documents.customer-credit-notes', ['reference_invoice_id' => $sale->id]) }}">Crear nota crédito</a>
         <button onclick="window.print()">Imprimir / Guardar como PDF</button>
         @if($sale->balanceDue((float) $sale->total) > 0)

@@ -194,6 +194,8 @@ Route::middleware(['auth', 'company'])->group(function () {
         Route::get('/conciliacion-bancaria/{statement}/terceros/{thirdParty}/facturas', [BankReconciliationController::class, 'invoices'])->name('bank-reconciliation.invoices');
         Route::post('/conciliacion-bancaria/{statement}/cuenta', [BankReconciliationController::class, 'assignAccount'])->name('bank-reconciliation.assign-account');
         Route::get('/conciliacion-bancaria/{statement}/sugerencias', [BankReconciliationController::class, 'suggestions'])->name('bank-reconciliation.suggestions');
+        Route::get('/conciliacion-bancaria/{statement}/transferencias', [BankReconciliationController::class, 'transferCandidates'])->name('bank-reconciliation.transfer-candidates');
+        Route::post('/conciliacion-bancaria/{statement}/transferencias', [BankReconciliationController::class, 'transfer'])->name('bank-reconciliation.transfer');
         Route::post('/conciliacion-bancaria/{statement}/conciliar', [BankReconciliationController::class, 'reconcile'])->name('bank-reconciliation.reconcile');
         Route::post('/conciliacion-bancaria/{statement}/desconciliar', [BankReconciliationController::class, 'unmatch'])->name('bank-reconciliation.unmatch');
     });

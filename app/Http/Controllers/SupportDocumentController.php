@@ -41,6 +41,7 @@ class SupportDocumentController extends Controller
 
     public function edit(SupportDocument $document)
     {
+        abort_if($document->factus_status === 'enviada', 409, 'Este documento soporte fue aceptado por Factus y no puede editarse. Usa una nota de ajuste.');
         $suppliers = ThirdParty::where('is_supplier', true)->where('active', true)->orderBy('name')->get();
         $withholdings = config('colombia_withholdings');
 
@@ -49,6 +50,7 @@ class SupportDocumentController extends Controller
 
     public function update(Request $request, SupportDocument $document)
     {
+        abort_if($document->factus_status === 'enviada', 409, 'Este documento soporte fue aceptado por Factus y no puede editarse. Usa una nota de ajuste.');
         $data = $request->validate([
             'consecutive' => ['required', 'string', 'max:60', Rule::unique('support_documents', 'consecutive')->ignore($document->id)],
             'document_date' => 'required|date',

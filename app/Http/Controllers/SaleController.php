@@ -34,7 +34,7 @@ class SaleController extends Controller
     {
         $items = Item::with('unitConversions')->where('type', 'producto')->orderBy('name')->get();
         $sales = Sale::with(['details.item', 'creator', 'paymentMethod', 'payments'])->latest()->take(20)->get();
-        $selectedSaleId = $request->integer('preview') ?: $request->session()->get('preview_sale_id');
+        $selectedSaleId = $request->boolean('create') ? null : ($request->integer('preview') ?: $request->session()->get('preview_sale_id'));
         $selectedSale = $selectedSaleId
             ? Sale::with(['details.item', 'paymentMethod', 'accountingVoucher', 'payments'])->findOrFail($selectedSaleId)
             : null;

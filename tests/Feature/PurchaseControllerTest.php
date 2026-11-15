@@ -19,6 +19,25 @@ class PurchaseControllerTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_saved_purchase_preview_hides_creation_form_and_offers_new_invoice(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $purchase = Purchase::create([
+            'company_id' => $company->id, 'invoice_number' => 'COMP-PREVIEW',
+            'provider' => 'Proveedor', 'purchase_date' => '2026-11-11', 'total_pagar' => 100,
+        ]);
+
+        $this->get(route('purchases.index', ['preview' => $purchase->id]))
+            ->assertSeeText('Factura de compra · COMP-PREVIEW')
+            ->assertSeeText('Historial de facturas y responsables')
+            ->assertSee(route('purchases.index', ['create' => 1]), false)
+            ->assertDontSee('id="purchase-form"', false);
+        $this->withSession(['preview_purchase_id' => $purchase->id])
+            ->get(route('purchases.index', ['create' => 1]))
+            ->assertSee('id="purchase-form"', false)
+            ->assertDontSeeText('Factura de compra · COMP-PREVIEW');
+    }
+
     public function test_purchase_page_loads_with_product_and_puc_options(): void
     {
         $this->authenticateWithCompany();

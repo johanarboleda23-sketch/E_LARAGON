@@ -396,6 +396,8 @@ class BankReconciliationController extends Controller
             ],
             'invoice' => ['required_if:reconciliation_mode,invoice', 'prohibited_if:reconciliation_mode,account', 'nullable', 'string', 'max:40', 'regex:/^(sale|purchase|support_document):[1-9][0-9]*$/'],
             'amount' => ['required_if:matched_type,manual', 'numeric', 'gt:0'],
+            'adjustment_total' => ['nullable', 'numeric', 'min:0', 'decimal:0,2'],
+            'adjustment_account_id' => ['nullable', 'integer', Rule::exists('chart_of_accounts', 'id')->where('company_id', (int) session('company_id'))],
             'counter_account_id' => [
                 Rule::requiredIf($request->input('matched_type') === 'manual' && ! $request->filled('invoice')),
                 'nullable',
@@ -467,7 +469,8 @@ class BankReconciliationController extends Controller
 
                 $total = (float) ($invoice instanceof Purchase ? $invoice->total_pagar : $invoice->total);
                 $balance = $invoice->balanceDue($total);
-                if ($amount > round($balance, 2)) {
+                $adjustmentTotal = round((float) ($data['adjustment_total'] ?? 0), 2);
+                if ($amount + $adjustmentTotal > round($balance, 2)) {
                     return $this->manualReconciliationError($lockedStatement->id, 'El abono supera el saldo pendiente de la factura ($'.number_format($balance, 2, ',', '.').').');
                 }
 
@@ -476,6 +479,14 @@ class BankReconciliationController extends Controller
                     : $this->invoiceCounterAccount($invoice, $isCredit);
                 if (! $counterAccount || $counterAccount->id === $bankPucAccount->id) {
                     return $this->manualReconciliationError($lockedStatement->id, 'No se pudo determinar una cuenta auxiliar de cartera o proveedores para esta factura. Revisa su contabilización y la configuración PUC.');
+                }
+                $adjustmentAccount = null;
+                if ($adjustmentTotal > 0) {
+                    $adjustmentAccount = ChartOfAccount::query()->whereKey($data['adjustment_account_id'] ?? 0)
+                        ->where('active', true)->where('allows_posting', true)->first();
+                    if (! $adjustmentAccount || in_array($adjustmentAccount->id, [$bankPucAccount->id, $counterAccount->id])) {
+                        return $this->manualReconciliationError($lockedStatement->id, 'Selecciona una cuenta auxiliar activa para el ajuste, distinta de banco y cartera o proveedores.');
+                    }
                 }
 
                 $this->periodService->assertWritable($isCredit ? 'income' : 'expenses', $lockedStatement->transaction_date->toDateString());
@@ -489,6 +500,8 @@ class BankReconciliationController extends Controller
                     $lockedStatement->transaction_date->toDateString(),
                     $lockedStatement->reference,
                     $data['notes'] ?? null,
+                    $adjustmentAccount,
+                    $adjustmentTotal,
                 );
                 $voucher = $payment->accountingVoucher;
                 $lockedStatement->update([
@@ -688,16 +701,16 @@ class BankReconciliationController extends Controller
                         $query->where('customer_name', $thirdParty->name);
                     }
                 })
-                ->withSum('payments as paid_amount', 'amount')
+                ->with('payments')
                 ->withSum('creditNotes as credited_amount', 'total')
                 ->whereRaw(
-                    'sales.total > COALESCE((SELECT SUM(payments.amount) FROM payments WHERE payments.payable_type = ? AND payments.payable_id = sales.id), 0) + COALESCE((SELECT SUM(commercial_documents.total) FROM commercial_documents WHERE commercial_documents.reference_sale_id = sales.id AND commercial_documents.document_type = ? AND commercial_documents.company_id = ?), 0)',
+                    'sales.total > COALESCE((SELECT SUM(payments.amount + payments.withholding_total + payments.adjustment_total) FROM payments WHERE payments.payable_type = ? AND payments.payable_id = sales.id), 0) + COALESCE((SELECT SUM(commercial_documents.total) FROM commercial_documents WHERE commercial_documents.reference_sale_id = sales.id AND commercial_documents.document_type = ? AND commercial_documents.company_id = ?), 0)',
                     [Sale::class, 'customer_credit_note', (int) session('company_id')],
                 )
                 ->latest('sale_date')
                 ->get()
                 ->map(function (Sale $sale): array {
-                    $balance = round((float) $sale->total - (float) $sale->paid_amount - (float) $sale->credited_amount, 2);
+                    $balance = round((float) $sale->total - $sale->paidAmount() - (float) $sale->credited_amount, 2);
 
                     return [
                         'value' => 'sale:'.$sale->id,
@@ -724,15 +737,15 @@ class BankReconciliationController extends Controller
                     $query->where('provider', $thirdParty->name);
                 }
             })
-            ->withSum('payments as paid_amount', 'amount')
+            ->with('payments')
             ->whereRaw(
-                'purchases.total_pagar > COALESCE((SELECT SUM(payments.amount) FROM payments WHERE payments.payable_type = ? AND payments.payable_id = purchases.id), 0)',
+                'purchases.total_pagar > COALESCE((SELECT SUM(payments.amount + payments.withholding_total + payments.adjustment_total) FROM payments WHERE payments.payable_type = ? AND payments.payable_id = purchases.id), 0)',
                 [Purchase::class],
             )
             ->latest('purchase_date')
             ->get()
             ->map(function (Purchase $purchase): array {
-                $balance = round((float) $purchase->total_pagar - (float) $purchase->paid_amount, 2);
+                $balance = round((float) $purchase->total_pagar - $purchase->paidAmount(), 2);
 
                 return [
                     'value' => 'purchase:'.$purchase->id,
@@ -744,15 +757,15 @@ class BankReconciliationController extends Controller
             ->values();
         $supportDocuments = SupportDocument::query()
             ->where('third_party_id', $thirdParty->id)
-            ->withSum('payments as paid_amount', 'amount')
+            ->with('payments')
             ->whereRaw(
-                'support_documents.total > COALESCE((SELECT SUM(payments.amount) FROM payments WHERE payments.payable_type = ? AND payments.payable_id = support_documents.id), 0)',
+                'support_documents.total > COALESCE((SELECT SUM(payments.amount + payments.withholding_total + payments.adjustment_total) FROM payments WHERE payments.payable_type = ? AND payments.payable_id = support_documents.id), 0)',
                 [SupportDocument::class],
             )
             ->latest('document_date')
             ->get()
             ->map(function (SupportDocument $document): array {
-                $balance = round((float) $document->total - (float) $document->paid_amount, 2);
+                $balance = round((float) $document->total - $document->paidAmount(), 2);
 
                 return [
                     'value' => 'support_document:'.$document->id,

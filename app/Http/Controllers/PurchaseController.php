@@ -40,7 +40,7 @@ class PurchaseController extends Controller
             ->latest()
             ->take(10)
             ->get();
-        $selectedPurchaseId = $request->integer('preview') ?: $request->session()->get('preview_purchase_id');
+        $selectedPurchaseId = $request->boolean('create') ? null : ($request->integer('preview') ?: $request->session()->get('preview_purchase_id'));
         $selectedPurchase = $selectedPurchaseId
             ? Purchase::withTrashed()
                 ->with(['details.item', 'paymentMethod', 'accountingVoucher'])

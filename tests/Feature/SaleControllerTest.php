@@ -21,6 +21,25 @@ class SaleControllerTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_saved_sale_preview_hides_creation_form_and_offers_new_invoice(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $sale = Sale::create([
+            'company_id' => $company->id, 'invoice_number' => 'FV-PREVIEW',
+            'customer_name' => 'Cliente', 'sale_date' => '2026-11-11', 'total' => 100,
+        ]);
+
+        $this->get(route('sales.index', ['preview' => $sale->id]))
+            ->assertSeeText('Factura de venta · FV-PREVIEW')
+            ->assertSeeText('Facturas recientes')
+            ->assertSee(route('sales.index', ['create' => 1]), false)
+            ->assertDontSee('id="sale-form"', false);
+        $this->withSession(['preview_sale_id' => $sale->id])
+            ->get(route('sales.index', ['create' => 1]))
+            ->assertSee('id="sale-form"', false)
+            ->assertDontSeeText('Factura de venta · FV-PREVIEW');
+    }
+
     public function test_a_sale_accepted_by_factus_cannot_be_edited(): void
     {
         $company = $this->authenticateWithCompany();

@@ -16,6 +16,7 @@ class Payment extends Model
     protected $casts = [
         'payment_date' => 'date',
         'withholding_total' => 'decimal:2',
+        'adjustment_total' => 'decimal:2',
     ];
 
     public function payable(): MorphTo

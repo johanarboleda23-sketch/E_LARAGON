@@ -90,7 +90,7 @@ class CashRegisterController extends Controller
                 ->whereNotNull('provider')
                 ->where('provider', '<>', '')
                 ->where('purchases.total_pagar', '>', function (Builder $query): void {
-                    $query->selectRaw('COALESCE(SUM(payments.amount), 0)')
+                    $query->selectRaw('COALESCE(SUM(payments.amount + payments.withholding_total + payments.adjustment_total), 0)')
                         ->from('payments')
                         ->whereColumn('payments.payable_id', 'purchases.id')
                         ->where('payments.payable_type', (new Purchase)->getMorphClass());
@@ -124,11 +124,11 @@ class CashRegisterController extends Controller
             ->latest('sale_date')
             ->get();
         $receivableSales = Sale::query()
-            ->with('payments')
+            ->with(['payments', 'creditNotes'])
             ->latest('sale_date')
             ->take(100)
             ->get()
-            ->filter(fn (Sale $sale): bool => (float) $sale->total - (float) $sale->payments->sum('amount') > 0);
+            ->filter(fn (Sale $sale): bool => $sale->balanceDue((float) $sale->total) > 0);
         $availableItems = Item::query()->with('unitConversions')->where('type', 'producto')->orderBy('name')->get();
 
         return view('cash-register.index', [

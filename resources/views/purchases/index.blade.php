@@ -53,7 +53,12 @@
 <body>
 
     <div class="form-container">
+        @if(session('success'))<div style="padding:10px;background:#ecfdf5;color:#047857;margin-bottom:12px;border-radius:8px;font-weight:bold;font-size:12px;">{{ session('success') }}</div>@endif
         @if($selectedPurchase && !$selectedPurchase->trashed())
+            <div class="top-bar">
+                <a href="{{ route('dashboard') }}" class="btn-white" style="text-decoration:none;">⌂ Tablero</a>
+                <a href="{{ route('purchases.index', ['create' => 1]) }}" class="btn-pink-dark" style="text-decoration:none;">＋ Crear factura de compra</a>
+            </div>
             <x-document-preview
                 title="Factura de compra"
                 :number="$selectedPurchase->invoice_number"
@@ -85,6 +90,9 @@
                 :accounting-message="$selectedPurchase->accounting_voucher_id || $selectedPurchase->trashed() ? null : 'La factura aún no tiene contabilización.'"
                 :actions="array_merge(
                     [['label' => 'Abrir documento', 'url' => route('purchases.show', $selectedPurchase)]],
+                    [['label' => 'Editar', 'url' => route('purchases.edit', $selectedPurchase)]],
+                    [['label' => 'Nota débito', 'url' => route('commercial-documents.supplier-debit-notes', ['reference_invoice_id' => $selectedPurchase->id])]],
+                    [['label' => 'Estado de cuenta', 'url' => route('purchases.statement', $selectedPurchase)]],
                     !$selectedPurchase->trashed() && $selectedPurchase->balanceDue((float) $selectedPurchase->total_pagar) > 0
                         ? [['label' => 'Registrar pago · Egreso', 'url' => route('purchases.payments.create', $selectedPurchase)]]
                         : [],
@@ -92,7 +100,7 @@
             />
         @endif
         <!-- FORMULARIO GENERAL DE COMPRAS -->
-        @if(session('success'))<div style="padding:10px;background:#ecfdf5;color:#047857;margin-bottom:12px;border-radius:8px;font-weight:bold;font-size:12px;">{{ session('success') }}</div>@endif
+        @unless($selectedPurchase && !$selectedPurchase->trashed())
         <form action="{{ route('purchases.store') }}" method="POST" id="purchase-form">
             @csrf
 
@@ -285,6 +293,7 @@
             <input type="hidden" name="retention_base" id="retention-base-value" value="0">
             <input type="hidden" name="total_pagar" id="total-value" value="0">
         </form>
+        @endunless
     </div>
 
     <div class="form-container" style="margin-top:15px;">
@@ -341,6 +350,7 @@
         </div>
     </div>
 
+    @unless($selectedPurchase && !$selectedPurchase->trashed())
     <script>
         let rowIndex = 1;
         const purchaseProducts = @json($productOptions);
@@ -614,6 +624,7 @@
         document.querySelectorAll('.item-row').forEach(syncLineFields);
         calculateTotals();
     </script>
+    @endunless
     <x-voucher-modal />
 </body>
 </html>

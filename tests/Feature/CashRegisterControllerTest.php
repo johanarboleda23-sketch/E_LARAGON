@@ -45,7 +45,8 @@ class CashRegisterControllerTest extends TestCase
         $this->createPurchase($company, 'FC-CARTERA-001', 'Proveedor pendiente', 500);
         $paidPurchase = $this->createPurchase($company, 'FC-CARTERA-002', 'Proveedor al día', 200);
         $paidPurchase->payments()->create([
-            'amount' => 200,
+            'amount' => 199,
+            'adjustment_total' => 1,
             'payment_date' => now()->toDateString(),
             'method' => '1105',
         ]);

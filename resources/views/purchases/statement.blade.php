@@ -58,6 +58,7 @@
                         @foreach($document->payments as $payment)
                             <div>${{ number_format((float) $payment->amount, 2) }} efectivo · {{ $payment->payment_date->format('d/m/Y') }} · {{ $payment->paymentMethod?->name ?? $payment->method ?? 'Pago' }}
                                 @if((float) $payment->withholding_total > 0) <span>+ ${{ number_format((float) $payment->withholding_total, 2) }} retenido</span> @endif
+                                @if((float) $payment->adjustment_total > 0) <span>+ ${{ number_format((float) $payment->adjustment_total, 2) }} ajustado</span> @endif
                                 @if($payment->reference) <span>({{ $payment->reference }})</span> @endif
                                 @if($payment->accountingVoucher)<br><a href="{{ route('accounting.vouchers.accounting', $payment->accountingVoucher) }}" target="_blank">{{ $payment->accountingVoucher->consecutive }}</a>@endif
                             </div>

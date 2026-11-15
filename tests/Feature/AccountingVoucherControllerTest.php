@@ -20,6 +20,39 @@ class AccountingVoucherControllerTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_a_payment_voucher_can_apply_a_later_adjustment_without_changing_the_cash_payment(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $bank = $this->createAccount('111099', 'Banco', 1);
+        $receivable = $this->createAccount('130599', 'Cartera', 1);
+        $adjustment = $this->createAccount('539599', 'Ajuste pesos', 5);
+        $method = PaymentMethod::create(['name' => 'Banco', 'chart_of_account_id' => $bank->id]);
+        $sale = Sale::create(['company_id' => $company->id, 'invoice_number' => 'FV-ADJ', 'customer_name' => 'Cliente',
+            'sale_date' => '2026-11-11', 'total' => 100]);
+        $voucher = AccountingVoucher::create(['consecutive' => 'RC-ADJ', 'voucher_type' => 'recibo_caja',
+            'voucher_date' => '2026-11-11', 'total_debit' => 99, 'total_credit' => 99]);
+        $voucher->lines()->createMany([
+            ['chart_of_account_id' => $bank->id, 'debit' => 99, 'credit' => 0],
+            ['chart_of_account_id' => $receivable->id, 'debit' => 0, 'credit' => 99],
+        ]);
+        $payment = Payment::create(['payable_type' => Sale::class, 'payable_id' => $sale->id, 'amount' => 99,
+            'payment_method_id' => $method->id, 'payment_date' => '2026-11-11', 'accounting_voucher_id' => $voucher->id]);
+        $statement = BankStatement::create(['company_id' => $company->id, 'payment_method_id' => $method->id,
+            'transaction_date' => '2026-11-11', 'transaction_type' => 'credit', 'amount' => 99, 'status' => 'reconciled',
+            'matched_type' => 'payment', 'matched_id' => $payment->id, 'accounting_voucher_id' => $voucher->id]);
+        $response = $this->get(route('accounting.vouchers.edit', $voucher))->assertSeeText('Aplicar ajuste al saldo de la factura');
+        preg_match('/name="version" value="([^"]+)"/', $response->getContent(), $version);
+        $payload = ['version' => $version[1], 'adjustment_total' => 2, 'adjustment_account_id' => $adjustment->id];
+        $this->post(route('accounting.vouchers.adjust-payment', $voucher), $payload)->assertSessionHasErrors('adjustment_total');
+        $payload['adjustment_total'] = 1;
+        $this->post(route('accounting.vouchers.adjust-payment', $voucher), $payload)->assertRedirect(route('accounting.vouchers.accounting', $voucher));
+        $this->assertDatabaseHas('payments', ['id' => $payment->id, 'amount' => 99, 'adjustment_total' => 1]);
+        $this->assertDatabaseHas('bank_statements', ['id' => $statement->id, 'amount' => 99, 'status' => 'reconciled']);
+        $this->assertDatabaseHas('accounting_voucher_lines', ['accounting_voucher_id' => $voucher->id, 'chart_of_account_id' => $adjustment->id, 'debit' => 1]);
+        $this->assertSame(0.0, $sale->fresh()->balanceDue(100));
+        $this->post(route('accounting.vouchers.adjust-payment', $voucher), $payload)->assertConflict();
+    }
+
     public function test_a_manually_reconciled_voucher_can_edit_its_counter_account_without_changing_the_bank_movement(): void
     {
         $company = $this->authenticateWithCompany();
@@ -43,7 +76,7 @@ class AccountingVoucherControllerTest extends TestCase
         ]);
         $url = route('accounting.vouchers.edit', $voucher);
         $this->get(route('accounting.vouchers.accounting', $voucher))->assertSee($url, false);
-        $response = $this->get($url)->assertOk();
+        $response = $this->get($url)->assertOk()->assertSeeText('Agregar cuenta');
         preg_match('/name="version" value="([^"]+)"/', $response->getContent(), $version);
         $payload = [
             'version' => $version[1], 'voucher_date' => '2026-11-11', 'third_party' => 'Proveedor',
@@ -51,11 +84,14 @@ class AccountingVoucherControllerTest extends TestCase
             'lines' => [
                 ['chart_of_account_id' => $otherExpense->id, 'detail' => 'Cambio', 'debit' => 100, 'credit' => 0],
                 ['chart_of_account_id' => $bank->id, 'detail' => 'Banco', 'debit' => 0, 'credit' => 100],
+                ['chart_of_account_id' => $expense->id, 'detail' => 'Ajuste', 'debit' => 1, 'credit' => 0],
+                ['chart_of_account_id' => $otherExpense->id, 'detail' => 'Contrapartida', 'debit' => 0, 'credit' => 1],
             ],
         ];
         $this->put(route('accounting.vouchers.update', $voucher), $payload)
             ->assertRedirect(route('accounting.vouchers.accounting', $voucher));
         $this->assertDatabaseHas('accounting_voucher_lines', ['accounting_voucher_id' => $voucher->id, 'chart_of_account_id' => $otherExpense->id, 'debit' => 100]);
+        $this->assertDatabaseHas('accounting_voucher_lines', ['accounting_voucher_id' => $voucher->id, 'chart_of_account_id' => $expense->id, 'detail' => 'Ajuste', 'debit' => 1]);
         $this->assertDatabaseHas('bank_statements', ['id' => $statement->id, 'status' => 'reconciled', 'accounting_voucher_id' => $voucher->id]);
         $this->put(route('accounting.vouchers.update', $voucher), $payload)->assertConflict();
     }

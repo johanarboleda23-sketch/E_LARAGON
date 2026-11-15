@@ -28,6 +28,78 @@ class BankReconciliationTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_invoice_reconciliation_applies_explicit_adjustment_without_changing_cash(): void
+    {
+        $company = Company::factory()->create();
+        $bank = $this->createBankAccount($company);
+        $user = User::factory()->create();
+        $user->companies()->attach($company->id, ['role' => 'admin']);
+        $this->actingAs($user)->withSession(['company_id' => $company->id]);
+        $receivable = ChartOfAccount::create([
+            'company_id' => $company->id, 'code' => '130501', 'name' => 'Cartera',
+            'class' => 1, 'nature' => 'debit', 'active' => true, 'allows_posting' => true,
+        ]);
+        $adjustment = ChartOfAccount::create([
+            'company_id' => $company->id, 'code' => '539599', 'name' => 'Ajuste pesos',
+            'class' => 5, 'nature' => 'debit', 'active' => true, 'allows_posting' => true,
+        ]);
+        $party = ThirdParty::create(['company_id' => $company->id, 'name' => 'Cliente ajuste', 'document' => '123',
+            'is_customer' => true, 'active' => true]);
+        $sale = Sale::create(['company_id' => $company->id, 'invoice_number' => 'FV-AJUSTE', 'customer_name' => $party->name,
+            'customer_document' => $party->document, 'sale_date' => '2026-11-11', 'total' => 100]);
+        $statement = BankStatement::create(['company_id' => $company->id, 'payment_method_id' => $bank->id,
+            'transaction_date' => '2026-11-11', 'transaction_type' => 'credit', 'amount' => 99, 'status' => 'pending']);
+        $payload = ['matched_type' => 'manual', 'reconciliation_mode' => 'invoice', 'third_party_id' => $party->id,
+            'invoice' => 'sale:'.$sale->id, 'amount' => 99, 'counter_account_id' => $receivable->id,
+            'adjustment_total' => 2, 'adjustment_account_id' => $adjustment->id];
+
+        $this->post(route('bank-reconciliation.reconcile', $statement), $payload)->assertSessionHasErrors('manual_reconcile');
+        $this->assertDatabaseCount('payments', 0);
+        $payload['adjustment_total'] = 1;
+        $this->post(route('bank-reconciliation.reconcile', $statement), $payload)->assertSessionHas('success');
+
+        $payment = Payment::query()->firstOrFail();
+        $this->assertDatabaseHas('payments', ['id' => $payment->id, 'amount' => 99, 'adjustment_total' => 1]);
+        $this->assertDatabaseHas('accounting_voucher_lines', ['accounting_voucher_id' => $payment->accounting_voucher_id,
+            'chart_of_account_id' => $adjustment->id, 'debit' => 1, 'credit' => 0]);
+        $this->assertDatabaseHas('accounting_voucher_lines', ['accounting_voucher_id' => $payment->accounting_voucher_id,
+            'chart_of_account_id' => $receivable->id, 'credit' => 100]);
+        $this->assertSame(0.0, $sale->fresh()->balanceDue(100));
+        $this->get(route('bank-reconciliation.invoices', ['statement' => $statement, 'thirdParty' => $party]))
+            ->assertJsonPath('invoices', []);
+    }
+
+    public function test_purchase_adjustment_keeps_the_unapplied_balance_open(): void
+    {
+        $company = Company::factory()->create();
+        $bank = $this->createBankAccount($company);
+        $user = User::factory()->create();
+        $user->companies()->attach($company->id, ['role' => 'admin']);
+        $this->actingAs($user)->withSession(['company_id' => $company->id]);
+        $payable = ChartOfAccount::create(['company_id' => $company->id, 'code' => '220501', 'name' => 'Proveedores',
+            'class' => 2, 'nature' => 'credit', 'active' => true, 'allows_posting' => true]);
+        $adjustment = ChartOfAccount::create(['company_id' => $company->id, 'code' => '429599', 'name' => 'Ajuste pesos',
+            'class' => 4, 'nature' => 'credit', 'active' => true, 'allows_posting' => true]);
+        $party = ThirdParty::create(['company_id' => $company->id, 'name' => 'Proveedor ajuste', 'document' => '321',
+            'is_supplier' => true, 'active' => true]);
+        $purchase = Purchase::create(['company_id' => $company->id, 'invoice_number' => 'COMP-AJUSTE', 'provider' => $party->name,
+            'provider_nit' => $party->document, 'purchase_date' => '2026-11-11', 'total_pagar' => 200]);
+        $statement = BankStatement::create(['company_id' => $company->id, 'payment_method_id' => $bank->id,
+            'transaction_date' => '2026-11-11', 'transaction_type' => 'debit', 'amount' => 99, 'status' => 'pending']);
+
+        $this->post(route('bank-reconciliation.reconcile', $statement), ['matched_type' => 'manual',
+            'reconciliation_mode' => 'invoice', 'third_party_id' => $party->id, 'invoice' => 'purchase:'.$purchase->id,
+            'amount' => 99, 'counter_account_id' => $payable->id, 'adjustment_total' => 1,
+            'adjustment_account_id' => $adjustment->id])->assertSessionHas('success');
+
+        $payment = Payment::query()->firstOrFail();
+        $this->assertSame(100.0, $purchase->fresh()->balanceDue(200));
+        $this->assertDatabaseHas('accounting_voucher_lines', ['accounting_voucher_id' => $payment->accounting_voucher_id,
+            'chart_of_account_id' => $adjustment->id, 'credit' => 1, 'debit' => 0]);
+        $this->get(route('bank-reconciliation.invoices', ['statement' => $statement, 'thirdParty' => $party]))
+            ->assertJsonPath('invoices.0.label', 'Compra COMP-AJUSTE · 11/11/2026 · Pendiente $100,00');
+    }
+
     public function test_it_imports_and_reconciles_a_bank_movement(): void
     {
         $company = Company::factory()->create();

@@ -267,6 +267,18 @@
                                                     <select name="invoice" data-invoice-select required disabled><option value="">Selecciona un tercero primero</option></select>
                                                 </label>
                                                 <p data-invoice-status class="text-sm text-slate-600" aria-live="polite"></p>
+                                                <label class="grid gap-1 text-sm font-semibold">Ajuste de pesos aplicado a la factura (opcional)
+                                                    <input type="number" name="adjustment_total" min="0" step="0.01" value="{{ $reopeningManualForm ? old('adjustment_total', '0') : '0' }}">
+                                                </label>
+                                                <label class="grid gap-1 text-sm font-semibold">Cuenta PUC del ajuste
+                                                    <select name="adjustment_account_id">
+                                                        <option value="">Sin ajuste</option>
+                                                        @foreach($postingAccounts as $account)
+                                                            <option value="{{ $account->id }}" @selected($reopeningManualForm && old('adjustment_account_id') == $account->id)>{{ $account->code }} - {{ $account->name }}</option>
+                                                        @endforeach
+                                                    </select>
+                                                </label>
+                                                <p class="text-xs text-slate-600">El ajuste reduce el saldo de la factura. Déjalo en cero si la diferencia es un abono pendiente o una retención no causada.</p>
                                                 <button type="submit" data-invoice-submit class="rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Registrar pago y conciliar</button>
                                             </form>
                                             <form data-mode="account" method="POST" action="{{ route('bank-reconciliation.reconcile', $statement) }}" class="mt-5 hidden gap-4" hidden>

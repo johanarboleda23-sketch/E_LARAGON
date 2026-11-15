@@ -12,7 +12,12 @@
 </head>
 <body>
 <div class="sale-shell">
+    @if(session('success'))<div style="padding:8px;background:#ecfdf5;color:#047857;margin-bottom:10px;">{{ session('success') }}</div>@endif
     @if($selectedSale)
+        <div class="top-bar">
+            <a href="{{ route('dashboard') }}" class="btn" style="text-decoration:none;">⌂ Tablero</a>
+            <a href="{{ route('sales.index', ['create' => 1]) }}" class="btn btn-main" style="text-decoration:none;">＋ Crear factura de venta</a>
+        </div>
         <x-document-preview
             title="Factura de venta"
             :number="$selectedSale->invoice_number"
@@ -41,9 +46,17 @@
             :accounting-url="$selectedSale->accounting_voucher_id ? route('accounting.vouchers.accounting', $selectedSale->accounting_voucher_id) : null"
             :accounting-action="$selectedSale->accounting_voucher_id ? null : route('sales.account', $selectedSale)"
             :accounting-message="$selectedSale->accounting_voucher_id ? null : 'La factura aún no tiene contabilización.'"
-            :actions="[['label' => 'Abrir documento', 'url' => route('sales.show', $selectedSale)]]"
+            :actions="array_merge(
+                [['label' => 'Abrir documento', 'url' => route('sales.show', $selectedSale)]],
+                $selectedSale->factus_status !== 'enviada' ? [['label' => 'Editar', 'url' => route('sales.edit', $selectedSale)]] : [],
+                $selectedSale->balanceDue((float) $selectedSale->total) > 0 ? [['label' => 'Registrar pago / Recibo de caja', 'url' => route('sales.payments.create', $selectedSale)]] : [],
+                [['label' => 'Nota crédito / débito', 'url' => route('commercial-documents.customer-credit-notes', ['reference_invoice_id' => $selectedSale->id])]],
+                [['label' => 'Estado de cuenta', 'url' => route('sales.statement', $selectedSale).'#payment-'.$selectedSale->id]],
+            )"
         />
+        @if($selectedSale->factus_status === 'enviada')<p>Aceptada por Factus</p>@endif
     @endif
+    @unless($selectedSale)
     <form method="POST" action="{{ route('sales.store') }}" id="sale-form">
         @csrf
         <div class="top-bar">
@@ -92,7 +105,6 @@
             <div class="workflow-step"><span class="workflow-number">03</span><span><strong>Cobro</strong><small>Impuestos y total</small></span></div>
         </div>
 
-        @if(session('success'))<div style="padding:8px;background:#ecfdf5;color:#047857;margin-bottom:10px;">{{ session('success') }}</div>@endif
         @if($errors->any())<div style="padding:8px;background:#fef2f2;color:#b91c1c;margin-bottom:10px;">{{ $errors->first() }}</div>@endif
 
         <p class="section-label">01 / Datos del cliente</p>
@@ -117,9 +129,11 @@
         <div class="totals"><div class="row"><span>Subtotal</span><strong id="subtotal">$0.00</strong></div><div class="row"><span>IVA</span><strong id="iva-total">$0.00</strong></div><div class="row"><span>Descuentos</span><strong id="discount-total">$0.00</strong></div><div class="row"><span>Retención</span><strong id="retention-total">$0.00</strong></div><div class="row total"><span>Neto a cobrar</span><strong id="grand-total">$0.00</strong></div></div>
         <input type="hidden" name="subtotal" id="subtotal-value"><input type="hidden" name="iva_total" id="iva-value"><input type="hidden" name="discount_total" id="discount-value"><input type="hidden" name="retention_base" id="retention-base-value"><input type="hidden" name="retention_total" id="retention-value"><input type="hidden" name="total" id="total-value">
     </form>
+    @endunless
 
     <div class="history"><h3 class="title">Facturas recientes</h3><div class="table-wrap"><table><thead><tr><th>Factura</th><th>Cliente</th><th>Forma de pago</th><th>Total</th><th>Acciones</th></tr></thead><tbody>@forelse($sales as $sale)<tr><td>{{ $sale->invoice_number }}</td><td>{{ $sale->customer_name }}</td><td>{{ $sale->paymentMethod?->name ?? 'No especificada' }}</td><td>${{ number_format($sale->total, 2) }}</td><td><a class="btn" href="{{ route('sales.index', ['preview' => $sale->id]) }}">Vista previa</a> <a class="btn" href="{{ route('sales.show', $sale) }}" target="_blank">Ver documento</a> @if($sale->factus_status !== 'enviada')<a class="btn" href="{{ route('sales.edit', $sale) }}">✏ Editar</a>@else<span class="btn">Aceptada por Factus</span>@endif <a class="btn" href="{{ route('sales.xml', $sale) }}">XML</a>@if($sale->balanceDue((float) $sale->total) > 0)<a class="btn btn-main" href="{{ route('sales.payments.create', $sale) }}">Registrar pago</a>@endif     <a class="btn" href="{{ route('sales.statement', $sale).'#payment-'.$sale->id }}" target="_blank">Cartera</a>@if($sale->accounting_voucher_id)<a class="btn" target="_blank" href="{{ route('accounting.vouchers.accounting', $sale->accounting_voucher_id) }}">Ver contabilización</a>@else<form method="POST" action="{{ route('sales.account', $sale) }}" style="display:inline-block" onsubmit="return confirm('¿Contabilizar esta factura ahora?')">@csrf<button type="submit" class="btn">Contabilizar ahora</button></form>@endif<form method="POST" action="{{ route('sales.email', $sale) }}" style="display:inline-flex;gap:3px">@csrf<input name="email" type="email" value="{{ $sale->customer_email }}" placeholder="correo" required class="input" style="width:140px"><button class="btn btn-main">Enviar</button></form></td></tr>@empty<tr><td colspan="5">No hay facturas de venta registradas.</td></tr>@endforelse</tbody></table></div></div>
 </div>
+@unless($selectedSale)
 <script>
 let lineIndex=1;
 const products=@json($productOptions);
@@ -145,6 +159,7 @@ function shareByEmail(){document.getElementById('customer-email').focus();showMe
 function sendToDian(){showMessage('La factura quedará lista para envío a la DIAN cuando se configuren las credenciales y el certificado digital.')}
 document.addEventListener('change',event=>{const row=event.target.closest('.sale-line');if(row&&event.target.matches('.product'))syncUnitOptions(row,true);else if(row&&event.target.matches('.unit-select'))updatePrice(row);calculate()});document.addEventListener('input',calculate);document.addEventListener('click',event=>{if(!event.target.closest('#more-menu'))document.getElementById('more-menu').classList.remove('open')});document.querySelectorAll('.sale-line').forEach(row=>syncUnitOptions(row));calculate()
 </script>
+@endunless
 <x-voucher-modal />
 </body>
 </html>

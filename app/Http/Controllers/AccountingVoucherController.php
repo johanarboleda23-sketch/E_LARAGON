@@ -7,6 +7,10 @@ use App\Models\BankStatement;
 use App\Models\ChartOfAccount;
 use App\Models\CommercialDocument;
 use App\Models\Company;
+use App\Models\Payment;
+use App\Models\Purchase;
+use App\Models\Sale;
+use App\Models\SupportDocument;
 use App\Models\ThirdParty;
 use App\Services\AccountingEntryService;
 use App\Services\AccountingPeriodService;
@@ -220,8 +224,72 @@ class AccountingVoucherController extends Controller
         $lockedLines = $linkedDocument || $statements->contains(fn (BankStatement $statement): bool => $statement->matched_type !== 'manual');
         $accounts = ChartOfAccount::query()->where('active', true)->where('allows_posting', true)->orderBy('code')->get();
         $version = $this->voucherVersion($voucher);
+        $payment = Payment::query()->where('accounting_voucher_id', $voucher->id)->first();
 
-        return view('accounting.vouchers.edit', compact('voucher', 'accounts', 'version', 'lockedLines'));
+        return view('accounting.vouchers.edit', compact('voucher', 'accounts', 'version', 'lockedLines', 'payment'));
+    }
+
+    public function adjustPayment(Request $request, AccountingVoucher $voucher)
+    {
+        $data = $request->validate([
+            'version' => 'required|string|size:64',
+            'adjustment_total' => 'required|numeric|gt:0|decimal:0,2',
+            'adjustment_account_id' => 'required|integer',
+        ]);
+        DB::transaction(function () use ($voucher, $data): void {
+            $voucher = AccountingVoucher::query()->lockForUpdate()->findOrFail($voucher->id);
+            $voucher->load('lines.account');
+            abort_unless(hash_equals($this->voucherVersion($voucher), $data['version']), 409, 'El comprobante cambió. Vuelve a abrirlo antes de guardar.');
+            $payments = Payment::query()->where('accounting_voucher_id', $voucher->id)->lockForUpdate()->get();
+            if ($payments->count() !== 1) {
+                throw ValidationException::withMessages(['adjustment_total' => 'El comprobante debe estar vinculado a un único pago.']);
+            }
+            $payment = $payments->first();
+            $document = match ($payment->payable_type) {
+                Sale::class => Sale::query()->lockForUpdate()->findOrFail($payment->payable_id),
+                Purchase::class => Purchase::query()->lockForUpdate()->findOrFail($payment->payable_id),
+                SupportDocument::class => SupportDocument::query()->lockForUpdate()->findOrFail($payment->payable_id),
+                default => throw ValidationException::withMessages(['adjustment_total' => 'Este pago no admite ajustes de factura.']),
+            };
+            $isIncome = $document instanceof Sale;
+            $adjustment = round((float) $data['adjustment_total'], 2);
+            $total = (float) ($document instanceof Purchase ? $document->total_pagar : $document->total);
+            if ($adjustment > round($document->balanceDue($total), 2)) {
+                throw ValidationException::withMessages(['adjustment_total' => 'El ajuste supera el saldo pendiente de la factura.']);
+            }
+            $counterAccounts = $voucher->lines->filter(fn ($line): bool => str_starts_with($line->account?->code ?? '', $isIncome ? '1305' : '2205'))
+                ->pluck('chart_of_account_id')->unique()->values();
+            if ($counterAccounts->count() !== 1) {
+                throw ValidationException::withMessages(['adjustment_total' => 'No se pudo identificar una única cuenta de cartera o proveedores en el comprobante.']);
+            }
+            $counterAccountId = (int) $counterAccounts->first();
+            $counterLines = $voucher->lines->where('chart_of_account_id', $counterAccountId);
+            $counterAmount = $isIncome ? $counterLines->sum('credit') - $counterLines->sum('debit') : $counterLines->sum('debit') - $counterLines->sum('credit');
+            $applied = round((float) $payment->amount + (float) $payment->withholding_total + (float) $payment->adjustment_total, 2);
+            if (round($counterAmount, 2) !== $applied || ! ChartOfAccount::query()->whereKey($counterAccountId)->where('active', true)->where('allows_posting', true)->exists()) {
+                throw ValidationException::withMessages(['adjustment_total' => 'La cuenta de cartera o proveedores no coincide con el pago registrado.']);
+            }
+            $account = ChartOfAccount::query()->whereKey($data['adjustment_account_id'])->where('active', true)->where('allows_posting', true)->first();
+            $bankId = $payment->paymentMethod?->chart_of_account_id;
+            if (! $account || $account->id === $counterAccountId || $account->id === $bankId) {
+                throw ValidationException::withMessages(['adjustment_account_id' => 'Selecciona una cuenta auxiliar activa distinta de banco y cartera o proveedores.']);
+            }
+            $this->periodService->assertWritable($isIncome ? 'income' : 'expenses', $voucher->voucher_date->toDateString());
+            $statements = BankStatement::query()->where('accounting_voucher_id', $voucher->id)->lockForUpdate()->get();
+            foreach ($statements as $statement) {
+                abort_if($statement->matched_type !== 'payment' || $statement->matched_id !== $payment->id, 409, 'La conciliación de este comprobante requiere revisión.');
+                abort_if((int) $statement->payment_method_id !== (int) $payment->payment_method_id || (float) $statement->amount !== (float) $payment->amount, 409, 'El pago no coincide con el extracto conciliado.');
+                $this->periodService->assertWritable('bank', $statement->transaction_date->toDateString());
+            }
+            $voucher->lines()->createMany([
+                ['chart_of_account_id' => $account->id, 'detail' => 'Ajuste de diferencia en pago', 'debit' => $isIncome ? $adjustment : 0, 'credit' => $isIncome ? 0 : $adjustment],
+                ['chart_of_account_id' => $counterAccountId, 'detail' => 'Aplicación de ajuste a factura', 'debit' => $isIncome ? 0 : $adjustment, 'credit' => $isIncome ? $adjustment : 0],
+            ]);
+            $payment->update(['adjustment_total' => round((float) $payment->adjustment_total + $adjustment, 2)]);
+            $voucher->update(['total_debit' => round((float) $voucher->total_debit + $adjustment, 2), 'total_credit' => round((float) $voucher->total_credit + $adjustment, 2)]);
+        });
+
+        return redirect()->route('accounting.vouchers.accounting', $voucher)->with('success', 'Ajuste aplicado al saldo de la factura.');
     }
 
     public function update(Request $request, AccountingVoucher $voucher)

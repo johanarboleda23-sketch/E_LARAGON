@@ -27,6 +27,8 @@ class PaymentPostingService
         ?string $notes,
         ?ChartOfAccount $adjustmentAccount = null,
         float $adjustmentTotal = 0,
+        ?ChartOfAccount $excessAccount = null,
+        float $excessTotal = 0,
     ): Payment {
         $payment = $document->payments()->create([
             'amount' => $amount,
@@ -49,8 +51,8 @@ class PaymentPostingService
         $bankLine = [
             'chart_of_account_id' => $paymentMethod->chart_of_account_id,
             'detail' => ($isIncome ? 'Ingreso por pago de ' : 'Pago a ').$party,
-            'debit' => $isIncome ? $amount : 0,
-            'credit' => $isIncome ? 0 : $amount,
+            'debit' => $isIncome ? $amount + $excessTotal : 0,
+            'credit' => $isIncome ? 0 : $amount + $excessTotal,
         ];
         $counterLine = [
             'chart_of_account_id' => $counterAccount->id,
@@ -70,6 +72,12 @@ class PaymentPostingService
             'debit' => $isIncome ? $adjustmentTotal : 0,
             'credit' => $isIncome ? 0 : $adjustmentTotal,
         ]] : [];
+        $excessLines = $excessAccount && $excessTotal > 0 ? [[
+            'chart_of_account_id' => $excessAccount->id,
+            'detail' => 'Diferencia no aplicada a la factura · '.$party,
+            'debit' => $isIncome ? 0 : $excessTotal,
+            'credit' => $isIncome ? $excessTotal : 0,
+        ]] : [];
         $voucher = $this->accountingEntryService->post([
             'voucher_type' => $isIncome ? 'recibo_caja' : 'egreso',
             'consecutive' => ($isIncome ? 'RC-PAG-' : 'EG-PAG-').$payment->id,
@@ -80,7 +88,7 @@ class PaymentPostingService
                 $document instanceof Purchase => 'compra '.$document->invoice_number,
                 default => 'documento soporte '.$document->consecutive,
             },
-        ], collect([$bankLine, ...$retentionLines->all(), ...$adjustmentLines, $counterLine]));
+        ], collect([$bankLine, ...$retentionLines->all(), ...$adjustmentLines, ...$excessLines, $counterLine]));
 
         $payment->update(['accounting_voucher_id' => $voucher->id]);
 

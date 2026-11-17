@@ -216,7 +216,7 @@
                             @endif
                         </td>
                         <td class="p-3">
-                            {{ $statement->status === 'reconciled' ? 'Conciliado' : 'Pendiente' }}
+                            {{ $statement->status === 'reconciled' ? 'Conciliado' : (str_starts_with($statement->matched_type ?? '', 'pending_') ? 'Pendiente de distribución' : 'Pendiente') }}
                             @if($statement->accountingVoucher)
                                 <br><a class="text-xs text-sky-700 underline" target="_blank" href="{{ route('accounting.vouchers.accounting', $statement->accountingVoucher) }}">{{ $statement->accountingVoucher->consecutive }}</a>
                                 <a class="ml-2 text-xs font-semibold text-sky-700 underline" target="_blank" href="{{ route('accounting.vouchers.edit', $statement->accountingVoucher) }}">Editar</a>
@@ -224,6 +224,13 @@
                         </td>
                         <td class="p-3">
                             @if ($statement->status === 'pending')
+                                @if(str_starts_with($statement->matched_type ?? '', 'pending_'))
+                                    <p class="mb-2 text-xs text-amber-700">Factura vinculada: {{ $pendingInvoices[$statement->id]['number'] ?? 'no disponible' }}. Completa la distribución para registrar el comprobante.</p>
+                                    <form method="POST" action="{{ route('bank-reconciliation.unmatch', $statement) }}">
+                                        @csrf
+                                        <button class="mb-2 rounded-md border border-amber-200 px-3 py-1 text-xs font-semibold text-amber-700">Quitar vínculo pendiente</button>
+                                    </form>
+                                @endif
                                 @if ($statement->paymentMethod)
                                     <div class="flex flex-wrap gap-2">
                                         <button type="button" class="rounded-md border border-sky-200 px-3 py-1 text-xs font-semibold text-sky-700" onclick="findSuggestions({{ $statement->id }}, '{{ route('bank-reconciliation.suggestions', $statement) }}', '{{ route('bank-reconciliation.reconcile', $statement) }}')">Buscar coincidencias exactas</button>
@@ -247,7 +254,7 @@
                                             @if($reopeningManualForm && $errors->any())
                                                 <p class="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{{ $errors->first() }}</p>
                                             @endif
-                                            <form data-mode="invoice" method="POST" action="{{ route('bank-reconciliation.reconcile', $statement) }}" data-invoices-url="{{ route('bank-reconciliation.invoices', ['statement' => $statement->id, 'thirdParty' => '__PARTY__']) }}" data-old-invoice="{{ $reopeningManualForm ? old('invoice', '') : '' }}" class="mt-5 hidden gap-4" hidden>
+                                            <form data-mode="invoice" method="POST" action="{{ route('bank-reconciliation.reconcile', $statement) }}" data-invoices-url="{{ route('bank-reconciliation.invoices', ['statement' => $statement->id, 'thirdParty' => '__PARTY__']) }}" data-old-invoice="{{ $reopeningManualForm ? old('invoice', '') : ($pendingInvoices[$statement->id]['invoice'] ?? '') }}" class="mt-5 hidden gap-4" hidden>
                                                 @csrf
                                                 <input type="hidden" name="matched_type" value="manual">
                                                 <input type="hidden" name="reconciliation_mode" value="invoice">
@@ -258,7 +265,7 @@
                                                         <option value="">Selecciona un tercero</option>
                                                         @foreach($thirdParties as $thirdParty)
                                                             @if ($statement->transaction_type === 'credit' ? $thirdParty->is_customer : $thirdParty->is_supplier)
-                                                                <option value="{{ $thirdParty->id }}" @selected($reopeningManualForm && old('third_party_id') == $thirdParty->id)>{{ $thirdParty->name }}{{ $thirdParty->document ? ' · '.$thirdParty->document : '' }}</option>
+                                                                <option value="{{ $thirdParty->id }}" @selected(($reopeningManualForm ? old('third_party_id') : ($pendingInvoices[$statement->id]['third_party_id'] ?? null)) == $thirdParty->id)>{{ $thirdParty->name }}{{ $thirdParty->document ? ' · '.$thirdParty->document : '' }}</option>
                                                             @endif
                                                         @endforeach
                                                     </select>
@@ -279,6 +286,19 @@
                                                     </select>
                                                 </label>
                                                 <p class="text-xs text-slate-600">El ajuste reduce el saldo de la factura. Déjalo en cero si la diferencia es un abono pendiente o una retención no causada.</p>
+                                                <label class="grid gap-1 text-sm font-semibold">Valor del movimiento aplicado a la factura (opcional)
+                                                    <input type="number" name="applied_amount" min="0.01" step="0.01" value="{{ $reopeningManualForm ? old('applied_amount', '') : '' }}">
+                                                </label>
+                                                <p class="text-xs text-slate-600">Si lo dejas vacío, se aplica hasta el saldo pendiente. El resto se asigna a la cuenta indicada abajo.</p>
+                                                <label class="grid gap-1 text-sm font-semibold">Cuenta PUC para el excedente (opcional)
+                                                    <select name="excess_account_id">
+                                                        <option value="">Dejar pendiente de distribución</option>
+                                                        @foreach($postingAccounts as $account)
+                                                            <option value="{{ $account->id }}" @selected($reopeningManualForm && old('excess_account_id') == $account->id)>{{ $account->code }} - {{ $account->name }}</option>
+                                                        @endforeach
+                                                    </select>
+                                                </label>
+                                                <p class="text-xs text-slate-600">Si el banco supera el saldo y no eliges cuenta, la factura queda abierta y podrás distribuir el movimiento después.</p>
                                                 <button type="submit" data-invoice-submit class="rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Registrar pago y conciliar</button>
                                             </form>
                                             <form data-mode="account" method="POST" action="{{ route('bank-reconciliation.reconcile', $statement) }}" class="mt-5 hidden gap-4" hidden>
@@ -310,6 +330,13 @@
                                         </div>
                                     </dialog>
                                 @else
+                                    @if($statement->accountingVoucher)
+                                        <form method="POST" action="{{ route('bank-reconciliation.delete-voucher', $statement) }}" onsubmit="return confirm('Se anulará el comprobante y su pago, si existe. El movimiento volverá a pendientes. ¿Deseas continuar?')">
+                                            @csrf
+                                            @method('DELETE')
+                                            <button class="mb-2 rounded-md border border-red-200 px-3 py-1 text-xs font-semibold text-red-700">Eliminar comprobante</button>
+                                        </form>
+                                    @endif
                                     <span class="text-xs text-amber-700">Asigna un diario bancario antes de conciliar este movimiento.</span>
                                 @endif
                             @else

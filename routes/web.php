@@ -198,6 +198,7 @@ Route::middleware(['auth', 'company'])->group(function () {
         Route::post('/conciliacion-bancaria/{statement}/transferencias', [BankReconciliationController::class, 'transfer'])->name('bank-reconciliation.transfer');
         Route::post('/conciliacion-bancaria/{statement}/conciliar', [BankReconciliationController::class, 'reconcile'])->name('bank-reconciliation.reconcile');
         Route::post('/conciliacion-bancaria/{statement}/desconciliar', [BankReconciliationController::class, 'unmatch'])->name('bank-reconciliation.unmatch');
+        Route::delete('/conciliacion-bancaria/{statement}/comprobante', [BankReconciliationController::class, 'deleteReconciliationVoucher'])->name('bank-reconciliation.delete-voucher');
     });
 
     Route::middleware('module:period-closing')->group(function () {

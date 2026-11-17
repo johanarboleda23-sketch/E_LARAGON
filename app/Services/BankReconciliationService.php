@@ -61,7 +61,7 @@ class BankReconciliationService
 
         return DB::transaction(function () use ($statement): bool {
             $lockedStatement = BankStatement::query()->lockForUpdate()->findOrFail($statement->id);
-            if ($lockedStatement->status !== 'pending') {
+            if ($lockedStatement->status !== 'pending' || $lockedStatement->matched_type !== null) {
                 return false;
             }
 
@@ -140,7 +140,8 @@ class BankReconciliationService
             ->where('reference', $payment->reference)
             ->where('amount', $payment->amount)
             ->where('transaction_type', $transactionType)
-            ->where('status', 'pending');
+            ->where('status', 'pending')
+            ->whereNull('matched_type');
     }
 
     private function matchingStatementsForStatement(BankStatement $statement): Builder
@@ -150,7 +151,8 @@ class BankReconciliationService
             ->where('reference', $statement->reference)
             ->where('amount', $statement->amount)
             ->where('transaction_type', $statement->transaction_type)
-            ->where('status', 'pending');
+            ->where('status', 'pending')
+            ->whereNull('matched_type');
     }
 
     /**

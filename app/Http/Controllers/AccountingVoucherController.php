@@ -278,7 +278,9 @@ class AccountingVoucherController extends Controller
             $statements = BankStatement::query()->where('accounting_voucher_id', $voucher->id)->lockForUpdate()->get();
             foreach ($statements as $statement) {
                 abort_if($statement->matched_type !== 'payment' || $statement->matched_id !== $payment->id, 409, 'La conciliación de este comprobante requiere revisión.');
-                abort_if((int) $statement->payment_method_id !== (int) $payment->payment_method_id || (float) $statement->amount !== (float) $payment->amount, 409, 'El pago no coincide con el extracto conciliado.');
+                $bankLines = $voucher->lines->where('chart_of_account_id', $payment->paymentMethod?->chart_of_account_id);
+                $bankAmount = $isIncome ? $bankLines->sum('debit') - $bankLines->sum('credit') : $bankLines->sum('credit') - $bankLines->sum('debit');
+                abort_if((int) $statement->payment_method_id !== (int) $payment->payment_method_id || round($bankAmount, 2) !== (float) $statement->amount, 409, 'El comprobante no coincide con el extracto conciliado.');
                 $this->periodService->assertWritable('bank', $statement->transaction_date->toDateString());
             }
             $voucher->lines()->createMany([

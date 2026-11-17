@@ -92,6 +92,7 @@ class CashRegisterController extends Controller
                 ->where('purchases.total_pagar', '>', function (Builder $query): void {
                     $query->selectRaw('COALESCE(SUM(payments.amount + payments.withholding_total + payments.adjustment_total), 0)')
                         ->from('payments')
+                        ->whereNull('payments.deleted_at')
                         ->whereColumn('payments.payable_id', 'purchases.id')
                         ->where('payments.payable_type', (new Purchase)->getMorphClass());
 

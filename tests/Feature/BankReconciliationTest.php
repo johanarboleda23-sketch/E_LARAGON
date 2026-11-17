@@ -291,7 +291,7 @@ class BankReconciliationTest extends TestCase
             ->assertJsonPath('invoices.0.label', 'Factura FV-0001 · 11/11/2026 · Pendiente $200,00');
     }
 
-    public function test_invoice_reconciliation_rejects_a_bank_amount_above_the_open_invoice_balance(): void
+    public function test_excess_bank_amount_can_remain_pending_and_then_be_assigned_to_an_account(): void
     {
         $company = Company::factory()->create();
         $bankAccount = $this->createBankAccount($company);
@@ -301,6 +301,15 @@ class BankReconciliationTest extends TestCase
             'name' => 'Clientes de prueba',
             'class' => 1,
             'nature' => 'debit',
+            'allows_posting' => true,
+            'active' => true,
+        ]);
+        $advanceAccount = ChartOfAccount::create([
+            'company_id' => $company->id,
+            'code' => '280505',
+            'name' => 'Anticipos recibidos',
+            'class' => 2,
+            'nature' => 'credit',
             'allows_posting' => true,
             'active' => true,
         ]);
@@ -331,23 +340,69 @@ class BankReconciliationTest extends TestCase
         $user->companies()->attach($company->id, ['role' => 'admin']);
         $this->actingAs($user)->withSession(['company_id' => $company->id]);
 
+        $payload = [
+            'matched_type' => 'manual',
+            'manual_reconcile_statement_id' => $statement->id,
+            'third_party_id' => $thirdParty->id,
+            'invoice' => 'sale:'.$sale->id,
+            'amount' => 301,
+            'counter_account_id' => $counterAccount->id,
+        ];
         $this->from(route('bank-reconciliation.index'))
-            ->post(route('bank-reconciliation.reconcile', $statement), [
-                'matched_type' => 'manual',
-                'manual_reconcile_statement_id' => $statement->id,
-                'third_party_id' => $thirdParty->id,
-                'invoice' => 'sale:'.$sale->id,
-                'amount' => 301,
-                'counter_account_id' => $counterAccount->id,
-            ])
+            ->post(route('bank-reconciliation.reconcile', $statement), $payload)
             ->assertRedirect(route('bank-reconciliation.index'))
-            ->assertSessionHasErrors([
-                'manual_reconcile' => 'El abono supera el saldo pendiente de la factura ($300,00).',
-            ]);
+            ->assertSessionHas('success');
 
         $this->assertDatabaseCount('payments', 0);
         $this->assertDatabaseCount('accounting_vouchers', 0);
         $this->assertSame('pending', $statement->fresh()->status);
+        $this->assertSame('pending_sale', $statement->fresh()->matched_type);
+        $this->assertSame(300.0, $sale->fresh()->balanceDue(300));
+        $this->assertFalse(app(BankReconciliationService::class)->matchStatement($statement->fresh()));
+        $this->get(route('bank-reconciliation.index'))->assertSeeText('Pendiente de distribución')
+            ->assertSeeText('FV-SALDO-001')
+            ->assertSee('data-old-invoice="sale:'.$sale->id.'"', false);
+
+        $payload['excess_account_id'] = $bankAccount->chart_of_account_id;
+        $this->post(route('bank-reconciliation.reconcile', $statement), $payload)
+            ->assertSessionHasErrors('manual_reconcile');
+        $this->assertDatabaseCount('payments', 0);
+        $payload['excess_account_id'] = $advanceAccount->id;
+        $this->post(route('bank-reconciliation.reconcile', $statement), $payload)
+            ->assertSessionHas('success');
+
+        $payment = Payment::query()->firstOrFail();
+        $this->assertSame(300.0, (float) $payment->amount);
+        $this->assertSame(0.0, $sale->fresh()->balanceDue(300));
+        $this->assertSame('reconciled', $statement->fresh()->status);
+        $this->assertDatabaseHas('accounting_voucher_lines', [
+            'accounting_voucher_id' => $payment->accounting_voucher_id,
+            'chart_of_account_id' => $advanceAccount->id,
+            'credit' => 1,
+        ]);
+        $this->assertDatabaseHas('accounting_vouchers', [
+            'id' => $payment->accounting_voucher_id,
+            'total_debit' => 301,
+            'total_credit' => 301,
+        ]);
+
+        $period = AccountingPeriod::create([
+            'company_id' => $company->id, 'period_type' => 'month', 'period_key' => '2026-11',
+            'period_start' => '2026-11-01', 'period_end' => '2026-11-30',
+            'status' => 'closed', 'locked_modules' => ['bank'],
+        ]);
+        $this->delete(route('bank-reconciliation.delete-voucher', $statement))->assertConflict();
+        $this->assertSame(0.0, $sale->fresh()->balanceDue(300));
+        $this->assertSame('reconciled', $statement->fresh()->status);
+        $period->update(['status' => 'open']);
+        $this->delete(route('bank-reconciliation.delete-voucher', $statement))->assertSessionHas('success');
+
+        $this->assertSoftDeleted('payments', ['id' => $payment->id]);
+        $this->assertSoftDeleted('accounting_vouchers', ['id' => $payment->accounting_voucher_id]);
+        $this->assertSame(300.0, $sale->fresh()->balanceDue(300));
+        $this->assertDatabaseHas('bank_statements', ['id' => $statement->id, 'status' => 'pending', 'matched_type' => null, 'accounting_voucher_id' => null]);
+        $this->get(route('bank-reconciliation.invoices', ['statement' => $statement, 'thirdParty' => $thirdParty]))
+            ->assertJsonPath('invoices.0.value', 'sale:'.$sale->id);
     }
 
     public function test_it_registers_payments_for_purchase_and_support_document_invoices(): void
@@ -456,6 +511,50 @@ class BankReconciliationTest extends TestCase
         ]);
         $this->assertSame('reconciled', $purchaseStatement->fresh()->status);
         $this->assertSame('reconciled', $supportStatement->fresh()->status);
+    }
+
+    public function test_supplier_overpayment_can_be_split_and_reversed_without_losing_the_invoice_balance(): void
+    {
+        $company = Company::factory()->create();
+        $bank = $this->createBankAccount($company);
+        $user = User::factory()->create();
+        $user->companies()->attach($company->id, ['role' => 'admin']);
+        $this->actingAs($user)->withSession(['company_id' => $company->id]);
+        $payable = ChartOfAccount::create(['company_id' => $company->id, 'code' => '220501', 'name' => 'Proveedores',
+            'class' => 2, 'nature' => 'credit', 'active' => true, 'allows_posting' => true]);
+        $advance = ChartOfAccount::create(['company_id' => $company->id, 'code' => '133005', 'name' => 'Anticipos',
+            'class' => 1, 'nature' => 'debit', 'active' => true, 'allows_posting' => true]);
+        $party = ThirdParty::create(['company_id' => $company->id, 'name' => 'Proveedor exceso', 'is_supplier' => true, 'active' => true]);
+        $purchase = Purchase::create(['company_id' => $company->id, 'invoice_number' => 'FC-EXCESO', 'provider' => $party->name,
+            'purchase_date' => '2026-11-11', 'total_pagar' => 100]);
+        $statement = BankStatement::create(['company_id' => $company->id, 'payment_method_id' => $bank->id,
+            'transaction_date' => '2026-11-11', 'transaction_type' => 'debit', 'amount' => 150, 'status' => 'pending']);
+        $payload = ['matched_type' => 'manual', 'reconciliation_mode' => 'invoice', 'third_party_id' => $party->id,
+            'invoice' => 'purchase:'.$purchase->id, 'amount' => 150, 'applied_amount' => 50,
+            'counter_account_id' => $payable->id, 'excess_account_id' => $advance->id];
+
+        $this->post(route('bank-reconciliation.reconcile', $statement), $payload)->assertSessionHas('success');
+        $payment = Payment::query()->firstOrFail();
+        $this->assertSame(50.0, $purchase->fresh()->balanceDue(100));
+        $this->assertDatabaseHas('accounting_voucher_lines', ['accounting_voucher_id' => $payment->accounting_voucher_id,
+            'chart_of_account_id' => $advance->id, 'debit' => 100, 'credit' => 0]);
+
+        $this->delete(route('bank-reconciliation.delete-voucher', $statement))->assertSessionHas('success');
+        $this->assertSame(100.0, $purchase->fresh()->balanceDue(100));
+        $this->assertSoftDeleted('payments', ['id' => $payment->id]);
+    }
+
+    public function test_another_company_cannot_delete_a_reconciliation_voucher(): void
+    {
+        $company = Company::factory()->create();
+        $otherCompany = Company::factory()->create();
+        $foreign = BankStatement::create(['company_id' => $otherCompany->id, 'transaction_date' => '2026-11-11',
+            'transaction_type' => 'credit', 'amount' => 10, 'status' => 'reconciled']);
+        $user = User::factory()->create();
+        $user->companies()->attach($company->id, ['role' => 'admin']);
+        $this->actingAs($user)->withSession(['company_id' => $company->id]);
+
+        $this->delete(route('bank-reconciliation.delete-voucher', $foreign))->assertNotFound();
     }
 
     public function test_it_imports_the_three_column_excel_export_shape_as_credit_or_debit(): void
@@ -863,6 +962,13 @@ class BankReconciliationTest extends TestCase
         $this->assertDatabaseHas('accounting_voucher_lines', ['accounting_voucher_id' => $voucherId, 'chart_of_account_id' => $destinationAccount->id, 'debit' => 5000]);
         $this->assertDatabaseCount('accounting_vouchers', 1);
         $this->post(route('bank-reconciliation.unmatch', $incoming))->assertConflict();
+        $this->delete(route('bank-reconciliation.delete-voucher', $incoming))->assertSessionHas('success');
+        $this->assertSoftDeleted('accounting_vouchers', ['id' => $voucherId]);
+        $this->assertDatabaseHas('bank_statements', ['id' => $outgoing->id, 'status' => 'pending', 'accounting_voucher_id' => null]);
+        $this->assertDatabaseHas('bank_statements', ['id' => $incoming->id, 'status' => 'pending', 'accounting_voucher_id' => null]);
+        $this->post(route('bank-reconciliation.transfer', $outgoing), [
+            'counter_statement_id' => $incoming->id, 'reconciliation_mode' => 'transfer',
+        ])->assertSessionHas('success');
     }
 
     public function test_internal_transfer_rejects_mismatched_amounts_without_posting(): void

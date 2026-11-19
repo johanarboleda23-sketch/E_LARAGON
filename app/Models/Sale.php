@@ -39,13 +39,23 @@ class Sale extends Model
             ->where('document_type', 'customer_credit_note');
     }
 
+    public function debitNotes(): HasMany
+    {
+        return $this->hasMany(CommercialDocument::class, 'reference_sale_id')
+            ->where('document_type', 'customer_debit_note');
+    }
+
     public function balanceDue(float $total): float
     {
         $creditedAmount = $this->relationLoaded('creditNotes')
             ? (float) $this->creditNotes->sum('total')
             : (float) $this->creditNotes()->sum('total');
 
-        return max(0, round($total - $this->paidAmount() - $creditedAmount, 2));
+        $debitedAmount = $this->relationLoaded('debitNotes')
+            ? (float) $this->debitNotes->sum('total')
+            : (float) $this->debitNotes()->sum('total');
+
+        return max(0, round($total + $debitedAmount - $this->paidAmount() - $creditedAmount, 2));
     }
 
     public function accountingVoucher()

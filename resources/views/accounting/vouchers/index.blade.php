@@ -79,8 +79,8 @@
                                 <option value="seguridad_social" @selected(old('voucher_type', request('type')) === 'seguridad_social')>Pago de seguridad social</option>
                                 <option value="provision_empleados" @selected(old('voucher_type', request('type')) === 'provision_empleados')>Provisión de empleados</option>
                                 <option value="nota_credito_cliente" @selected(old('voucher_type', $voucherPrefill['voucher_type'] ?? request('type')) === 'nota_credito_cliente')>Nota crédito cliente</option>
-                                <option value="nota_credito_proveedor" @selected(old('voucher_type', request('type')) === 'nota_credito_proveedor')>Nota crédito proveedor</option>
-                                <option value="nota_debito_cliente" @selected(old('voucher_type', request('type')) === 'nota_debito_cliente')>Nota débito cliente</option>
+                                <option value="nota_credito_proveedor" @selected(old('voucher_type', $voucherPrefill['voucher_type'] ?? request('type')) === 'nota_credito_proveedor')>Nota crédito proveedor</option>
+                                <option value="nota_debito_cliente" @selected(old('voucher_type', $voucherPrefill['voucher_type'] ?? request('type')) === 'nota_debito_cliente')>Nota débito cliente</option>
                                 <option value="nota_debito_proveedor" @selected(old('voucher_type', $voucherPrefill['voucher_type'] ?? request('type')) === 'nota_debito_proveedor')>Nota débito proveedor</option>
                             </select>
                             @endif
@@ -230,7 +230,7 @@
         function updateTotals() { document.getElementById('total-debit').textContent = '$' + fmt([...document.querySelectorAll('.debit')].reduce((sum, input) => sum + Number(input.value || 0), 0)); document.getElementById('total-credit').textContent = '$' + fmt([...document.querySelectorAll('.credit')].reduce((sum, input) => sum + Number(input.value || 0), 0)); }
         document.addEventListener('input', updateTotals);
         function filterThirdParties(voucherType, resetSelection = true) {
-            const supplierTypes = ['egreso', 'seguridad_social', 'provision_empleados', 'nota_debito_proveedor'];
+            const supplierTypes = ['egreso', 'seguridad_social', 'provision_empleados', 'nota_debito_proveedor', 'nota_credito_proveedor'];
             const profile = supplierTypes.includes(voucherType) ? 'supplier' : 'customer';
             document.querySelectorAll('#third-party-select optgroup option').forEach((option) => {
                 option.hidden = option.dataset.profile !== profile;

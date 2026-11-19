@@ -19,7 +19,7 @@
     </header>
 
     <section class="meta">
-        <div><span class="muted">{{ in_array($document->document_type, ['purchase_order', 'supplier_debit_note'], true) ? 'Proveedor' : 'Cliente' }}</span><br>{{ $document->third_party_name }}</div>
+        <div><span class="muted">{{ in_array($document->document_type, ['purchase_order', 'supplier_debit_note', 'supplier_credit_note'], true) ? 'Proveedor' : 'Cliente' }}</span><br>{{ $document->third_party_name }}</div>
         <div><span class="muted">Fecha</span><br>{{ $document->document_date->format('d/m/Y') }}</div>
         @if ($document->referenceSale || $document->referencePurchase)
             <div><span class="muted">Factura origen</span><br>{{ $document->referenceSale?->invoice_number ?? $document->referencePurchase?->invoice_number }}</div>

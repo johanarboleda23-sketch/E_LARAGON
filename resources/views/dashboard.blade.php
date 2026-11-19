@@ -76,6 +76,8 @@
                     ['name' => 'Conciliación bancaria', 'hint' => 'Extractos y cruces', 'route' => 'bank-reconciliation.index', 'icon' => '🏦'],
                     ['name' => 'Cierres contables', 'hint' => 'Informes y bloqueo de periodos', 'route' => 'period-closing.index', 'icon' => '🔒'],
                     ['name' => 'Nota crédito clientes', 'hint' => 'Devoluciones a clientes', 'route' => 'commercial-documents.customer-credit-notes', 'icon' => '↩️'],
+                    ['name' => 'Nota débito clientes', 'hint' => 'Ajustes a clientes', 'route' => 'commercial-documents.customer-debit-notes', 'icon' => '↪️'],
+                    ['name' => 'Nota crédito proveedores', 'hint' => 'Ajustes de proveedores', 'route' => 'commercial-documents.supplier-credit-notes', 'icon' => '↩️'],
                     ['name' => 'Nota débito proveedores', 'hint' => 'Ajustes a proveedores', 'route' => 'commercial-documents.supplier-debit-notes', 'icon' => '↪️'],
                     ['name' => 'Logística', 'hint' => 'Rutas y entregas', 'route' => 'logistics.index', 'icon' => '🚚'],
                     ['name' => 'Reportes financieros', 'hint' => 'Excel y PDF', 'route' => 'reports.index', 'icon' => '📈'],

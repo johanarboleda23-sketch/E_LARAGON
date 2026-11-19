@@ -17,6 +17,7 @@
             <span>Factura aceptada por Factus: usa una nota crédito para corregirla.</span>
         @endif
         <a href="{{ route('commercial-documents.customer-credit-notes', ['reference_invoice_id' => $sale->id]) }}">Crear nota crédito</a>
+        <a href="{{ route('commercial-documents.customer-debit-notes', ['reference_invoice_id' => $sale->id]) }}">Crear nota débito</a>
         <button onclick="window.print()">Imprimir / Guardar como PDF</button>
         @if($sale->balanceDue((float) $sale->total) > 0)
             <a href="{{ route('sales.payments.create', $sale) }}">Registrar pago · Recibo de caja</a>

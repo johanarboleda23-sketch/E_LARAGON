@@ -455,6 +455,23 @@ class AccountingVoucherControllerTest extends TestCase
         $this->assertDatabaseCount('accounting_voucher_lines', 2);
     }
 
+    public function test_new_note_types_can_be_linked_to_their_accounting_vouchers(): void
+    {
+        $this->authenticateWithCompany();
+        [$debitAccount, $creditAccount] = $this->createAccounts();
+
+        foreach (['customer_debit_note' => 'nota_debito_cliente', 'supplier_credit_note' => 'nota_credito_proveedor'] as $documentType => $voucherType) {
+            $note = $this->createNote($documentType);
+            $payload = $this->voucherPayload($note, $debitAccount, $creditAccount, $voucherType);
+            $payload['consecutive'] = 'CONT-'.$voucherType;
+            $this->post(route('accounting.vouchers.store'), $payload)->assertSessionHasNoErrors();
+            $this->assertDatabaseHas('accounting_vouchers', [
+                'commercial_document_id' => $note->id, 'voucher_type' => $voucherType,
+            ]);
+            $this->assertSame('accounted', $note->fresh()->status);
+        }
+    }
+
     public function test_another_companys_note_cannot_be_opened_or_accounted(): void
     {
         $this->authenticateWithCompany();

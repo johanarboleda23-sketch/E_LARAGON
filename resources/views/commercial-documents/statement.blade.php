@@ -5,7 +5,7 @@
                 <p class="text-xs font-semibold uppercase tracking-[0.18em] text-teal-700">{{ $partyLabel }}</p>
                 <h2 class="text-xl font-bold text-gray-900">Estado de cuenta documental</h2>
             </div>
-            <a href="{{ route($document->document_type === 'customer_credit_note' ? 'commercial-documents.customer-credit-notes' : 'commercial-documents.supplier-debit-notes') }}" class="rounded border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700">Volver</a>
+            <a href="{{ route($indexRoute) }}" class="rounded border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700">Volver</a>
         </div>
     </x-slot>
 

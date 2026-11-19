@@ -18,6 +18,8 @@
                     'remission' => ['label' => 'Remisiones', 'route' => 'commercial-documents.remissions'],
                     'purchase_order' => ['label' => 'Órdenes de compra', 'route' => 'commercial-documents.purchase-orders'],
                     'customer_credit_note' => ['label' => 'Nota crédito clientes', 'route' => 'commercial-documents.customer-credit-notes'],
+                    'customer_debit_note' => ['label' => 'Nota débito clientes', 'route' => 'commercial-documents.customer-debit-notes'],
+                    'supplier_credit_note' => ['label' => 'Nota crédito proveedores', 'route' => 'commercial-documents.supplier-credit-notes'],
                     'supplier_debit_note' => ['label' => 'Nota débito proveedores', 'route' => 'commercial-documents.supplier-debit-notes'],
                 ];
             @endphp
@@ -93,6 +95,8 @@
                         <p class="mt-1 text-sm text-gray-500">
                             @if ($type === 'customer_credit_note')
                                 La nota guardada reduce el saldo de la factura, incluso como borrador. Para enviarla a la DIAN, la factura origen debe estar emitida por Factus.
+                            @elseif ($type === 'customer_debit_note')
+                                La nota guardada aumenta el saldo de la factura, incluso como borrador. El envío a DIAN de notas débito con retención aún no está disponible.
                             @elseif ($type === 'supplier_debit_note')
                                 La nota debe referenciar una factura del mismo proveedor. El envío electrónico corresponde al proveedor.
                             @elseif ($isNote)
@@ -160,9 +164,9 @@
                                     @foreach ($referenceInvoices as $referenceInvoice)
                                         @php
                                             $referenceId = old('reference_invoice_id', $currentDocument?->reference_sale_id ?? $currentDocument?->reference_purchase_id ?? $referenceInvoiceId);
-                                            $referenceDate = $type === 'customer_credit_note' ? $referenceInvoice->sale_date : $referenceInvoice->purchase_date;
-                                            $referenceTotal = $type === 'customer_credit_note' ? $referenceInvoice->total : $referenceInvoice->total_pagar;
-                                            $referenceParty = $type === 'customer_credit_note' ? $referenceInvoice->customer_name : $referenceInvoice->provider;
+                                            $referenceDate = ! $isPurchaseDocument ? $referenceInvoice->sale_date : $referenceInvoice->purchase_date;
+                                            $referenceTotal = ! $isPurchaseDocument ? $referenceInvoice->total : $referenceInvoice->total_pagar;
+                                            $referenceParty = ! $isPurchaseDocument ? $referenceInvoice->customer_name : $referenceInvoice->provider;
                                         @endphp
                                         <option value="{{ $referenceInvoice->id }}" data-party="{{ $referenceParty }}" @selected((string) old('reference_invoice_id', $referenceId) === (string) $referenceInvoice->id)>
                                             {{ $referenceInvoice->invoice_number }} · {{ $referenceParty }} · {{ $referenceDate->format('d/m/Y') }} · ${{ number_format($referenceTotal, 2) }}
@@ -170,8 +174,9 @@
                                     @endforeach
                                 </select>
                             </label>
+                            <p id="reference-lines-message" role="status" class="text-sm text-amber-800 sm:col-span-2 xl:col-span-4">@if ($referenceOmittedLines && ! old('items')) Algunos renglones de la factura no tienen producto asociado y no se pueden cargar en la nota. @endif</p>
                         @endif
-                        @if ($type === 'customer_credit_note')
+                        @if ($isNote && ! $isPurchaseDocument)
                             <label class="text-sm font-medium text-gray-700">
                                 Concepto de retención
                                 <select id="withholding-concept" name="withholding_concept" required class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-teal-600 focus:ring-teal-600">
@@ -231,6 +236,9 @@
                                         <td class="px-3 py-2"><input name="items[{{ $index }}][unit_price]" type="number" min="0" max="999999999" step="0.01" value="{{ $line['unit_price'] ?? '' }}" required class="unit-price block w-full rounded-md border-gray-300 text-sm"></td>
                                         <td class="px-3 py-2">
                                             <select name="items[{{ $index }}][iva_percentage]" class="iva-percentage block w-full rounded-md border-gray-300 text-sm">
+                                                @if (! in_array((float) ($line['iva_percentage'] ?? 19), [0.0, 5.0, 19.0], true))
+                                                    <option value="{{ $line['iva_percentage'] }}" selected>{{ $line['iva_percentage'] }}%</option>
+                                                @endif
                                                 @foreach ([0, 5, 19] as $rate)
                                                     <option value="{{ $rate }}" @selected((float) ($line['iva_percentage'] ?? 19) === (float) $rate)>{{ $rate }}%</option>
                                                 @endforeach
@@ -259,7 +267,7 @@
                                 <dt class="text-gray-600">Descuentos</dt><dd id="discount-total" class="text-right font-medium tabular-nums">$0.00</dd>
                             @endif
                             <dt class="text-gray-600">IVA</dt><dd id="iva-total" class="text-right font-medium tabular-nums">$0.00</dd>
-                            @if ($type === 'customer_credit_note')
+                            @if ($isNote && ! $isPurchaseDocument)
                                 <dt class="text-gray-600">Base de retención</dt><dd id="retention-base" class="text-right font-medium tabular-nums">$0.00</dd>
                                 <dt class="text-gray-600">Retención</dt><dd id="retention-total" class="text-right font-medium tabular-nums">$0.00</dd>
                             @endif
@@ -295,8 +303,8 @@
                             @if ($isNote)
                                 <a href="{{ route('accounting.vouchers.index', ['commercial_document_id' => $currentDocument->id]) }}" class="rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white">Contabilizar</a>
                                 <a href="{{ route('commercial-documents.statement', $currentDocument) }}" class="rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700">Ver estado de cuenta</a>
-                                @if ($type === 'customer_credit_note' && $currentDocument->dian_status !== 'sent')
-                                    <form method="POST" action="{{ route('commercial-documents.dian', $currentDocument) }}" onsubmit="return confirm('¿Enviar esta nota crédito a Factus para validación por la DIAN?')">
+                                @if (in_array($type, ['customer_credit_note', 'customer_debit_note'], true) && $currentDocument->dian_status !== 'sent')
+                                    <form method="POST" action="{{ route('commercial-documents.dian', $currentDocument) }}" onsubmit="return confirm('¿Enviar esta nota a Factus para validación por la DIAN?')">
                                         @csrf
                                         <button class="rounded-md bg-indigo-700 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-800">Enviar a DIAN</button>
                                     </form>
@@ -381,12 +389,12 @@
                                                         <button class="rounded bg-amber-600 px-2 py-1 text-xs font-semibold text-white">{{ $configuration['convertLabel'] }}</button>
                                                     </form>
                                                 @endif
-                                                @if ($document->document_type === 'customer_credit_note' && $document->dian_status !== 'sent')
-                                                    <form method="POST" action="{{ route('commercial-documents.dian', $document) }}" onsubmit="return confirm('¿Enviar esta nota crédito a Factus para validación por la DIAN?')">
-                                                        @csrf
-                                                        <button class="rounded bg-indigo-700 px-2 py-1 text-xs font-semibold text-white">Enviar a DIAN</button>
-                                                    </form>
-                                                @endif
+                                            @endif
+                                            @if (in_array($document->document_type, ['customer_credit_note', 'customer_debit_note'], true) && in_array($document->status, ['draft', 'accounted'], true) && $document->dian_status !== 'sent')
+                                                <form method="POST" action="{{ route('commercial-documents.dian', $document) }}" onsubmit="return confirm('¿Enviar esta nota a Factus para validación por la DIAN?')">
+                                                    @csrf
+                                                    <button class="rounded bg-indigo-700 px-2 py-1 text-xs font-semibold text-white">Enviar a DIAN</button>
+                                                </form>
                                             @endif
                                             @if ($document->accountingVoucher)
                                                 <a href="{{ route('accounting.vouchers.accounting', $document->accountingVoucher) }}" class="rounded border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700">Ver contabilización</a>
@@ -418,7 +426,8 @@
         const documentType = @json($type);
         const isPurchaseDocument = @json($isPurchaseDocument);
         const withholdingUvt = @json($uvt);
-        let lineIndex = {{ count($formLines) }};
+        const referenceLinesUrl = @json($isNote ? route($configuration['indexRoute'].'.lines', ['invoice' => 0]) : null);
+        let lineIndex = Math.max(-1, ...[...document.querySelectorAll('.item-select')].map((select) => Number(select.name.match(/^items\[(\d+)\]/)?.[1] ?? -1))) + 1;
 
         function escapeHtml(value) {
             return String(value).replace(/[&<>"']/g, (character) => ({
@@ -441,11 +450,14 @@
             const select = row.querySelector('.unit-select');
             const previousValue = select.value || select.dataset.selected || '';
             select.innerHTML = `<option value="">${escapeHtml(item?.base_unit || 'unidad')} (base)</option>` + (item?.unit_conversions || []).map((unit) => `<option value="${unit.id}">${escapeHtml(unit.name)} × ${unit.factor}</option>`).join('');
-            if (!resetPrice && [...select.options].some((option) => option.value === previousValue)) {
+            const missingUnit = !resetPrice && previousValue && ![...select.options].some((option) => option.value === previousValue);
+            if (missingUnit) select.add(new Option('Unidad original no disponible; selecciona otra', previousValue));
+            if (!resetPrice) {
                 select.value = previousValue;
             }
             delete select.dataset.selected;
             if (resetPrice) updateDocumentPrice(row);
+            return Boolean(missingUnit);
         }
 
         function updateDocumentPrice(row) {
@@ -472,6 +484,7 @@
             document.getElementById('document-lines').appendChild(row);
             lineIndex++;
             calculateTotals();
+            return row;
         }
 
         function fmt(n) {
@@ -537,10 +550,9 @@
         });
         document.addEventListener('click', (event) => {
             if (event.target.matches('.remove-line')) {
-                if (document.querySelectorAll('.document-line').length > 1) {
-                    event.target.closest('.document-line').remove();
-                    calculateTotals();
-                }
+                event.target.closest('.document-line').remove();
+                if (!document.querySelector('.document-line')) addDocumentLine();
+                calculateTotals();
             }
         });
         document.getElementById('third-party').addEventListener('change', (event) => {
@@ -555,7 +567,77 @@
                 });
             }
         });
-        document.querySelectorAll('.document-line').forEach((row) => syncUnitOptions(row));
+        const referenceSelect = document.querySelector('[name="reference_invoice_id"]');
+        if (referenceSelect) {
+            let previousReference = referenceSelect.value;
+            referenceSelect.addEventListener('change', async () => {
+                const hasLines = [...document.querySelectorAll('.item-select')].some((select) => select.value);
+                if (hasLines && ! confirm('Al cambiar la factura se reemplazarán los renglones actuales. ¿Deseas continuar?')) {
+                    referenceSelect.value = previousReference;
+                    return;
+                }
+
+                const message = document.getElementById('reference-lines-message');
+                const submit = document.querySelector('#commercial-document-form button[type="submit"]');
+                const linesBody = document.getElementById('document-lines');
+                const addLine = document.getElementById('add-line');
+                const thirdParty = document.getElementById('third-party');
+                referenceSelect.disabled = true;
+                submit.disabled = true;
+                linesBody.inert = true;
+                addLine.disabled = true;
+                thirdParty.disabled = true;
+                message.textContent = 'Cargando productos de la factura...';
+                try {
+                    let result = { lines: [], omitted_lines: 0 };
+                    if (referenceSelect.value) {
+                        const url = referenceLinesUrl.replace('/0/productos', `/${encodeURIComponent(referenceSelect.value)}/productos`);
+                        const response = await fetch(url, { headers: { Accept: 'application/json' } });
+                        if (!response.ok) throw new Error('No fue posible consultar la factura.');
+                        result = await response.json();
+                    }
+
+                    const availableLines = result.lines.filter((line) => catalog.some((item) => String(item.id) === String(line.item_id)));
+                    const omitted = result.omitted_lines + result.lines.length - availableLines.length;
+                    let missingUnit = false;
+                    document.getElementById('document-lines').replaceChildren();
+                    availableLines.forEach((line) => {
+                        const row = addDocumentLine();
+                        row.querySelector('.item-select').value = String(line.item_id);
+                        row.querySelector('.unit-select').dataset.selected = line.unit_conversion_id || '';
+                        missingUnit = syncUnitOptions(row) || missingUnit;
+                        row.querySelector('.quantity').value = line.quantity;
+                        row.querySelector('.unit-price').value = line.unit_price;
+                        const iva = row.querySelector('.iva-percentage');
+                        const ivaOption = [...iva.options].find((option) => Number(option.value) === Number(line.iva_percentage));
+                        if (!ivaOption) iva.add(new Option(`${line.iva_percentage}%`, line.iva_percentage));
+                        iva.value = ivaOption ? ivaOption.value : String(line.iva_percentage);
+                        row.querySelector('.discount-percentage').value = line.discount_percentage;
+                    });
+                    if (!availableLines.length) addDocumentLine();
+                    calculateTotals();
+                    previousReference = referenceSelect.value;
+                    message.textContent = omitted
+                        ? 'Algunos renglones no tienen un producto disponible y no se pudieron cargar en la nota.'
+                        : (referenceSelect.value && !availableLines.length ? 'La factura no tiene productos para cargar.' : '');
+                    if (missingUnit) message.textContent += ' Una unidad original ya no está disponible; selecciona otra antes de guardar.';
+                } catch (error) {
+                    referenceSelect.value = previousReference;
+                    message.textContent = 'No se pudieron cargar los productos de la factura. Intenta nuevamente.';
+                } finally {
+                    referenceSelect.disabled = false;
+                    submit.disabled = false;
+                    linesBody.inert = false;
+                    addLine.disabled = false;
+                    thirdParty.disabled = false;
+                }
+            });
+        }
+        let missingInitialUnit = false;
+        document.querySelectorAll('.document-line').forEach((row) => { missingInitialUnit = syncUnitOptions(row) || missingInitialUnit; });
+        if (missingInitialUnit && referenceSelect) {
+            document.getElementById('reference-lines-message').textContent += ' Una unidad original ya no está disponible; selecciona otra antes de guardar.';
+        }
         calculateTotals();
     </script>
 </x-app-layout>

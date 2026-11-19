@@ -764,14 +764,15 @@ class BankReconciliationController extends Controller
                 })
                 ->with('payments')
                 ->withSum('creditNotes as credited_amount', 'total')
+                ->withSum('debitNotes as debited_amount', 'total')
                 ->whereRaw(
-                    'sales.total > COALESCE((SELECT SUM(payments.amount + payments.withholding_total + payments.adjustment_total) FROM payments WHERE payments.deleted_at IS NULL AND payments.payable_type = ? AND payments.payable_id = sales.id), 0) + COALESCE((SELECT SUM(commercial_documents.total) FROM commercial_documents WHERE commercial_documents.reference_sale_id = sales.id AND commercial_documents.document_type = ? AND commercial_documents.company_id = ?), 0)',
-                    [Sale::class, 'customer_credit_note', (int) session('company_id')],
+                    'sales.total + COALESCE((SELECT SUM(commercial_documents.total) FROM commercial_documents WHERE commercial_documents.reference_sale_id = sales.id AND commercial_documents.document_type = ? AND commercial_documents.company_id = ?), 0) > COALESCE((SELECT SUM(payments.amount + payments.withholding_total + payments.adjustment_total) FROM payments WHERE payments.deleted_at IS NULL AND payments.payable_type = ? AND payments.payable_id = sales.id), 0) + COALESCE((SELECT SUM(commercial_documents.total) FROM commercial_documents WHERE commercial_documents.reference_sale_id = sales.id AND commercial_documents.document_type = ? AND commercial_documents.company_id = ?), 0)',
+                    ['customer_debit_note', (int) session('company_id'), Sale::class, 'customer_credit_note', (int) session('company_id')],
                 )
                 ->latest('sale_date')
                 ->get()
                 ->map(function (Sale $sale): array {
-                    $balance = round((float) $sale->total - $sale->paidAmount() - (float) $sale->credited_amount, 2);
+                    $balance = round((float) $sale->total + (float) $sale->debited_amount - $sale->paidAmount() - (float) $sale->credited_amount, 2);
 
                     return [
                         'value' => 'sale:'.$sale->id,
@@ -799,14 +800,15 @@ class BankReconciliationController extends Controller
                 }
             })
             ->with('payments')
+            ->withSum('adjustmentNotes as adjusted_amount', 'total')
             ->whereRaw(
-                'purchases.total_pagar > COALESCE((SELECT SUM(payments.amount + payments.withholding_total + payments.adjustment_total) FROM payments WHERE payments.deleted_at IS NULL AND payments.payable_type = ? AND payments.payable_id = purchases.id), 0)',
-                [Purchase::class],
+                'purchases.total_pagar > COALESCE((SELECT SUM(payments.amount + payments.withholding_total + payments.adjustment_total) FROM payments WHERE payments.deleted_at IS NULL AND payments.payable_type = ? AND payments.payable_id = purchases.id), 0) + COALESCE((SELECT SUM(commercial_documents.total) FROM commercial_documents WHERE commercial_documents.reference_purchase_id = purchases.id AND commercial_documents.document_type IN (?, ?) AND commercial_documents.company_id = ?), 0)',
+                [Purchase::class, 'supplier_credit_note', 'supplier_debit_note', (int) session('company_id')],
             )
             ->latest('purchase_date')
             ->get()
             ->map(function (Purchase $purchase): array {
-                $balance = round((float) $purchase->total_pagar - $purchase->paidAmount(), 2);
+                $balance = round((float) $purchase->total_pagar - $purchase->paidAmount() - (float) $purchase->adjusted_amount, 2);
 
                 return [
                     'value' => 'purchase:'.$purchase->id,

@@ -39,6 +39,21 @@ class Purchase extends Model
         return $this->hasMany(PurchaseDetail::class);
     }
 
+    public function adjustmentNotes(): HasMany
+    {
+        return $this->hasMany(CommercialDocument::class, 'reference_purchase_id')
+            ->whereIn('document_type', ['supplier_credit_note', 'supplier_debit_note']);
+    }
+
+    public function balanceDue(float $total): float
+    {
+        $adjustments = $this->relationLoaded('adjustmentNotes')
+            ? (float) $this->adjustmentNotes->sum('total')
+            : (float) $this->adjustmentNotes()->sum('total');
+
+        return round($total - $this->paidAmount() - $adjustments, 2);
+    }
+
     public function accountingVoucher(): BelongsTo
     {
         return $this->belongsTo(AccountingVoucher::class);

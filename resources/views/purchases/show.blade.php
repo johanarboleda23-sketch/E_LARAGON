@@ -13,6 +13,7 @@
     <div class="actions">
         <a href="{{ route('purchases.edit', $purchase) }}">✏ Editar</a>
         <a href="{{ route('commercial-documents.supplier-debit-notes', ['reference_invoice_id' => $purchase->id]) }}">Crear nota débito</a>
+        <a href="{{ route('commercial-documents.supplier-credit-notes', ['reference_invoice_id' => $purchase->id]) }}">Crear nota crédito</a>
         <button onclick="window.print()">Imprimir / Guardar como PDF</button>
         @if(!$purchase->trashed() && $purchase->balanceDue((float) $purchase->total_pagar) > 0)
             <a href="{{ route('purchases.payments.create', $purchase) }}">Registrar pago · Egreso</a>

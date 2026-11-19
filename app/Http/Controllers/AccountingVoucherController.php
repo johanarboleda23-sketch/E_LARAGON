@@ -90,6 +90,8 @@ class AccountingVoucherController extends Controller
             $commercialDocument = CommercialDocument::query()->findOrFail($request->integer('commercial_document_id'));
             $noteVoucherType = match ($commercialDocument->document_type) {
                 'customer_credit_note' => 'nota_credito_cliente',
+                'customer_debit_note' => 'nota_debito_cliente',
+                'supplier_credit_note' => 'nota_credito_proveedor',
                 'supplier_debit_note' => 'nota_debito_proveedor',
                 default => abort(404),
             };
@@ -174,6 +176,8 @@ class AccountingVoucherController extends Controller
             $commercialDocument ??= CommercialDocument::query()->findOrFail($request->integer('commercial_document_id'));
             $expectedDocumentType = match ($data['voucher_type']) {
                 'nota_credito_cliente' => 'customer_credit_note',
+                'nota_debito_cliente' => 'customer_debit_note',
+                'nota_credito_proveedor' => 'supplier_credit_note',
                 'nota_debito_proveedor' => 'supplier_debit_note',
                 default => abort(422, 'El comprobante indicado no admite una nota comercial.'),
             };
@@ -552,7 +556,8 @@ class AccountingVoucherController extends Controller
     private function periodModule(string $voucherType): ?string
     {
         return match ($voucherType) {
-            'recibo_caja' => 'income',
+            'recibo_caja', 'nota_credito_cliente', 'nota_debito_cliente' => 'income',
+            'nota_credito_proveedor', 'nota_debito_proveedor' => 'purchases',
             'egreso', 'ajuste_contable' => 'expenses',
             default => null,
         };

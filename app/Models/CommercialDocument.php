@@ -23,6 +23,8 @@ class CommercialDocument extends Model
         'remission' => 'Remisión',
         'purchase_order' => 'Orden de compra',
         'customer_credit_note' => 'Nota crédito clientes',
+        'customer_debit_note' => 'Nota débito clientes',
+        'supplier_credit_note' => 'Nota crédito proveedores',
         'supplier_debit_note' => 'Nota débito proveedores',
     ];
 

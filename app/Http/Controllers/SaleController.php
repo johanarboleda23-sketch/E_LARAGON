@@ -33,10 +33,10 @@ class SaleController extends Controller
     public function index(Request $request)
     {
         $items = Item::with('unitConversions')->where('type', 'producto')->orderBy('name')->get();
-        $sales = Sale::with(['details.item', 'creator', 'paymentMethod', 'payments'])->latest()->take(20)->get();
+        $sales = Sale::with(['details.item', 'creator', 'paymentMethod', 'payments', 'creditNotes', 'debitNotes'])->latest()->take(20)->get();
         $selectedSaleId = $request->boolean('create') ? null : ($request->integer('preview') ?: $request->session()->get('preview_sale_id'));
         $selectedSale = $selectedSaleId
-            ? Sale::with(['details.item', 'paymentMethod', 'accountingVoucher', 'payments'])->findOrFail($selectedSaleId)
+            ? Sale::with(['details.item', 'paymentMethod', 'accountingVoucher', 'payments', 'creditNotes', 'debitNotes'])->findOrFail($selectedSaleId)
             : null;
         $paymentMethods = $this->paymentMethodService->available();
         $customers = ThirdParty::where('active', true)->orderBy('name')->get();
@@ -388,7 +388,7 @@ class SaleController extends Controller
     {
         $documents = Sale::query()
             ->where('customer_name', $sale->customer_name)
-            ->with(['payments.accountingVoucher', 'payments.paymentMethod', 'creditNotes'])
+            ->with(['payments.accountingVoucher', 'payments.paymentMethod', 'creditNotes', 'debitNotes'])
             ->orderBy('sale_date')
             ->orderBy('id')
             ->get();

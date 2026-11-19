@@ -49,8 +49,8 @@ class FinancialDashboardController extends Controller
         // Cartera: saldo pendiente REAL (total facturado menos abonos registrados), sin
         // importar el periodo filtrado, porque es un saldo a hoy (como un balance), no un
         // movimiento del periodo.
-        $receivables = (float) Sale::with(['payments', 'creditNotes'])->get()->sum(fn (Sale $sale) => $sale->balanceDue((float) $sale->total));
-        $payables = (float) Purchase::with('payments')->get()->sum(fn (Purchase $purchase) => $purchase->balanceDue((float) $purchase->total_pagar));
+        $receivables = (float) Sale::with(['payments', 'creditNotes', 'debitNotes'])->get()->sum(fn (Sale $sale) => $sale->balanceDue((float) $sale->total));
+        $payables = (float) Purchase::with(['payments', 'adjustmentNotes'])->get()->sum(fn (Purchase $purchase) => $purchase->balanceDue((float) $purchase->total_pagar));
 
         // Inventario valorizado al costo promedio actual.
         $inventoryValue = (float) Item::where('type', 'producto')->get()

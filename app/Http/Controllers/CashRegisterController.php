@@ -125,7 +125,7 @@ class CashRegisterController extends Controller
             ->latest('sale_date')
             ->get();
         $receivableSales = Sale::query()
-            ->with(['payments', 'creditNotes'])
+            ->with(['payments', 'creditNotes', 'debitNotes'])
             ->latest('sale_date')
             ->take(100)
             ->get()
@@ -170,7 +170,7 @@ class CashRegisterController extends Controller
 
             $sales = Sale::query()
                 ->whereDate('sale_date', $saleDate)
-                ->with(['paymentMethod.account', 'payments', 'creditNotes'])
+                ->with(['paymentMethod.account', 'payments', 'creditNotes', 'debitNotes'])
                 ->orderBy('id')
                 ->lockForUpdate()
                 ->get();
@@ -319,7 +319,7 @@ class CashRegisterController extends Controller
 
         $invoices = Purchase::query()
             ->where('provider', $data['provider'])
-            ->with('payments')
+            ->with(['payments', 'adjustmentNotes'])
             ->orderByDesc('purchase_date')
             ->orderByDesc('id')
             ->get()

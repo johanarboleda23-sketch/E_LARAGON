@@ -50,7 +50,8 @@
                 [['label' => 'Abrir documento', 'url' => route('sales.show', $selectedSale)]],
                 $selectedSale->factus_status !== 'enviada' ? [['label' => 'Editar', 'url' => route('sales.edit', $selectedSale)]] : [],
                 $selectedSale->balanceDue((float) $selectedSale->total) > 0 ? [['label' => 'Registrar pago / Recibo de caja', 'url' => route('sales.payments.create', $selectedSale)]] : [],
-                [['label' => 'Nota crédito / débito', 'url' => route('commercial-documents.customer-credit-notes', ['reference_invoice_id' => $selectedSale->id])]],
+                [['label' => 'Nota crédito', 'url' => route('commercial-documents.customer-credit-notes', ['reference_invoice_id' => $selectedSale->id])]],
+                [['label' => 'Nota débito', 'url' => route('commercial-documents.customer-debit-notes', ['reference_invoice_id' => $selectedSale->id])]],
                 [['label' => 'Estado de cuenta', 'url' => route('sales.statement', $selectedSale).'#payment-'.$selectedSale->id]],
             )"
         />

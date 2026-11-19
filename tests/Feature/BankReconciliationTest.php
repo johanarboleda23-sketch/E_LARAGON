@@ -8,6 +8,7 @@ use App\Models\AccountingVoucherLine;
 use App\Models\BankJournal;
 use App\Models\BankStatement;
 use App\Models\ChartOfAccount;
+use App\Models\CommercialDocument;
 use App\Models\Company;
 use App\Models\Payment;
 use App\Models\PaymentMethod;
@@ -27,6 +28,48 @@ use Tests\TestCase;
 class BankReconciliationTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_invoice_candidates_reflect_customer_debit_and_supplier_credit_notes(): void
+    {
+        $company = Company::factory()->create();
+        $bank = $this->createBankAccount($company);
+        $user = User::factory()->create();
+        $user->companies()->attach($company->id, ['role' => 'admin']);
+        $this->actingAs($user)->withSession(['company_id' => $company->id]);
+        $party = ThirdParty::create([
+            'company_id' => $company->id, 'name' => 'Tercero con notas', 'document' => '123',
+            'is_customer' => true, 'is_supplier' => true, 'active' => true,
+        ]);
+        $sale = Sale::create([
+            'company_id' => $company->id, 'invoice_number' => 'FV-NOTAS', 'customer_name' => $party->name,
+            'customer_document' => $party->document, 'sale_date' => '2026-11-11', 'total' => 100,
+        ]);
+        $purchase = Purchase::create([
+            'company_id' => $company->id, 'invoice_number' => 'FC-NOTAS', 'provider' => $party->name,
+            'provider_nit' => $party->document, 'purchase_date' => '2026-11-11', 'total_pagar' => 100,
+        ]);
+        CommercialDocument::create([
+            'company_id' => $company->id, 'document_type' => 'customer_debit_note', 'consecutive' => 'NDC-1',
+            'third_party_name' => $party->name, 'document_date' => '2026-11-11', 'reference_sale_id' => $sale->id, 'total' => 20,
+        ]);
+        CommercialDocument::create([
+            'company_id' => $company->id, 'document_type' => 'supplier_credit_note', 'consecutive' => 'NCP-1',
+            'third_party_name' => $party->name, 'document_date' => '2026-11-11', 'reference_purchase_id' => $purchase->id, 'total' => 30,
+        ]);
+        $incoming = BankStatement::create([
+            'company_id' => $company->id, 'payment_method_id' => $bank->id, 'transaction_date' => '2026-11-11',
+            'transaction_type' => 'credit', 'amount' => 120, 'status' => 'pending',
+        ]);
+        $outgoing = BankStatement::create([
+            'company_id' => $company->id, 'payment_method_id' => $bank->id, 'transaction_date' => '2026-11-11',
+            'transaction_type' => 'debit', 'amount' => 70, 'status' => 'pending',
+        ]);
+
+        $this->get(route('bank-reconciliation.invoices', ['statement' => $incoming, 'thirdParty' => $party]))
+            ->assertJsonPath('invoices.0.label', 'Factura FV-NOTAS · 11/11/2026 · Pendiente $120,00');
+        $this->get(route('bank-reconciliation.invoices', ['statement' => $outgoing, 'thirdParty' => $party]))
+            ->assertJsonPath('invoices.0.label', 'Compra FC-NOTAS · 11/11/2026 · Pendiente $70,00');
+    }
 
     public function test_contact_can_be_assigned_to_a_manual_account_reconciliation_and_undone(): void
     {

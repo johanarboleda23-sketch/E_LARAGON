@@ -92,6 +92,7 @@
                     [['label' => 'Abrir documento', 'url' => route('purchases.show', $selectedPurchase)]],
                     [['label' => 'Editar', 'url' => route('purchases.edit', $selectedPurchase)]],
                     [['label' => 'Nota débito', 'url' => route('commercial-documents.supplier-debit-notes', ['reference_invoice_id' => $selectedPurchase->id])]],
+                    [['label' => 'Nota crédito', 'url' => route('commercial-documents.supplier-credit-notes', ['reference_invoice_id' => $selectedPurchase->id])]],
                     [['label' => 'Estado de cuenta', 'url' => route('purchases.statement', $selectedPurchase)]],
                     !$selectedPurchase->trashed() && $selectedPurchase->balanceDue((float) $selectedPurchase->total_pagar) > 0
                         ? [['label' => 'Registrar pago · Egreso', 'url' => route('purchases.payments.create', $selectedPurchase)]]

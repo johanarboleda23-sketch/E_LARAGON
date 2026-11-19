@@ -43,7 +43,7 @@ class PurchaseController extends Controller
         $selectedPurchaseId = $request->boolean('create') ? null : ($request->integer('preview') ?: $request->session()->get('preview_purchase_id'));
         $selectedPurchase = $selectedPurchaseId
             ? Purchase::withTrashed()
-                ->with(['details.item', 'paymentMethod', 'accountingVoucher'])
+                ->with(['details.item', 'paymentMethod', 'accountingVoucher', 'payments', 'adjustmentNotes'])
                 ->findOrFail($selectedPurchaseId)
             : null;
         $paymentMethods = PaymentMethod::query()
@@ -488,7 +488,7 @@ class PurchaseController extends Controller
     public function payables()
     {
         $providers = Purchase::query()
-            ->with(['payments.accountingVoucher', 'payments.paymentMethod'])
+            ->with(['payments.accountingVoucher', 'payments.paymentMethod', 'adjustmentNotes'])
             ->get()
             ->groupBy('provider')
             ->map(function ($documents, $provider) {
@@ -514,7 +514,7 @@ class PurchaseController extends Controller
     {
         $documents = Purchase::withTrashed()
             ->where('provider', $purchase->provider)
-            ->with(['payments.accountingVoucher', 'payments.paymentMethod'])
+            ->with(['payments.accountingVoucher', 'payments.paymentMethod', 'adjustmentNotes'])
             ->orderBy('purchase_date')
             ->orderBy('id')
             ->get();

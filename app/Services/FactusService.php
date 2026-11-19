@@ -67,28 +67,45 @@ class FactusService
 
     public function sendCustomerCreditNote(CommercialDocument $document, ?int $companyId, ?string &$skipReason = null): bool
     {
-        if ($document->document_type !== 'customer_credit_note') {
-            $skipReason = 'Solo se pueden enviar a la DIAN notas crédito de clientes.';
+        return $this->sendCustomerNote($document, $companyId, false, $skipReason);
+    }
+
+    public function sendCustomerDebitNote(CommercialDocument $document, ?int $companyId, ?string &$skipReason = null): bool
+    {
+        return $this->sendCustomerNote($document, $companyId, true, $skipReason);
+    }
+
+    private function sendCustomerNote(CommercialDocument $document, ?int $companyId, bool $isDebit, ?string &$skipReason): bool
+    {
+        $kind = $isDebit ? 'débito' : 'crédito';
+        if ($document->document_type !== ($isDebit ? 'customer_debit_note' : 'customer_credit_note')) {
+            $skipReason = 'Solo se pueden enviar a la DIAN notas '.$kind.' de clientes.';
 
             return false;
         }
 
-        if ($document->status !== 'draft' || $document->dian_status === 'sent') {
+        if (! in_array($document->status, ['draft', 'accounted'], true) || $document->dian_status === 'sent') {
             $skipReason = 'La nota no está disponible para envío a la DIAN.';
+
+            return false;
+        }
+
+        if ($isDebit && (float) $document->retention_total > 0) {
+            $skipReason = 'El envío de notas débito con retención aún no está disponible; no se ha enviado el documento.';
 
             return false;
         }
 
         $credential = $this->resolveCredential($companyId);
         if (! $credential) {
-            $skipReason = 'Configura las credenciales de Factus en Administración para enviar notas crédito a la DIAN.';
+            $skipReason = 'Configura las credenciales de Factus en Administración para enviar notas '.$kind.' a la DIAN.';
 
             return false;
         }
 
         $document->loadMissing(['lines.item', 'referenceSale']);
         if (! $document->referenceSale?->factus_number) {
-            $skipReason = 'La factura origen debe estar emitida electrónicamente por Factus antes de crear su nota crédito.';
+            $skipReason = 'La factura origen debe estar emitida electrónicamente por Factus antes de crear su nota '.$kind.'.';
 
             return false;
         }
@@ -112,14 +129,14 @@ class FactusService
                 ->acceptJson()
                 ->connectTimeout(5)
                 ->timeout(30)
-                ->post($this->baseUrl($credential).'/v2/credit-notes/validate', $this->creditNotePayload($document, $credential));
+                ->post($this->baseUrl($credential).($isDebit ? '/v2/debit-notes/validate' : '/v2/credit-notes/validate'), $this->customerNotePayload($document, $credential, $isDebit));
         } catch (ConnectionException $e) {
             $document->forceFill([
                 'dian_status' => 'error',
                 'dian_response' => ['message' => $e->getMessage()],
                 'dian_sent_at' => now(),
             ])->save();
-            $skipReason = 'No se pudo conectar con Factus para enviar la nota crédito.';
+            $skipReason = 'No se pudo conectar con Factus para enviar la nota '.$kind.'.';
 
             return false;
         }
@@ -132,16 +149,24 @@ class FactusService
 
         if (! $response->successful()) {
             $document->forceFill(['dian_status' => 'error'])->save();
-            $skipReason = 'Factus rechazó la nota crédito: '.($response->json('message') ?? $response->body());
+            $skipReason = 'Factus rechazó la nota '.$kind.': '.($response->json('message') ?? $response->body());
 
             return false;
         }
 
-        $creditNoteData = $response->json('data.credit_note') ?? $response->json('data.creditNote') ?? [];
+        $noteData = $isDebit
+            ? ($response->json('data.debit_note') ?? $response->json('data.debitNote') ?? [])
+            : ($response->json('data.credit_note') ?? $response->json('data.creditNote') ?? []);
+        if ($isDebit && (! is_array($noteData) || ($noteData['is_validated'] ?? false) !== true || empty($noteData['number']))) {
+            $document->forceFill(['dian_status' => 'error'])->save();
+            $skipReason = 'Factus no confirmó la validación de la nota débito. Revisa su estado antes de reintentar.';
+
+            return false;
+        }
         $document->forceFill([
             'dian_status' => 'sent',
-            'dian_number' => is_array($creditNoteData) ? ($creditNoteData['number'] ?? null) : null,
-            'dian_cude' => is_array($creditNoteData) ? ($creditNoteData['cude'] ?? null) : null,
+            'dian_number' => is_array($noteData) ? ($noteData['number'] ?? null) : null,
+            'dian_cude' => is_array($noteData) ? ($noteData['cude'] ?? null) : null,
         ])->save();
 
         return true;
@@ -321,7 +346,7 @@ class FactusService
     /**
      * @return array<string, mixed>
      */
-    private function creditNotePayload(CommercialDocument $document, FactusCredential $credential): array
+    private function customerNotePayload(CommercialDocument $document, FactusCredential $credential, bool $isDebit): array
     {
         $defaults = config('factus.defaults');
         $sale = $document->referenceSale;
@@ -364,8 +389,14 @@ class FactusService
             ])->values()->all(),
         ];
 
-        if ($credential->credit_note_numbering_range_id) {
-            $payload['numbering_range_id'] = $credential->credit_note_numbering_range_id;
+        $numberingRangeId = $isDebit ? $credential->debit_note_numbering_range_id : $credential->credit_note_numbering_range_id;
+        if ($numberingRangeId) {
+            $payload['numbering_range_id'] = $numberingRangeId;
+        }
+
+        if ($isDebit) {
+            $payload['customization_id'] = '30';
+            unset($payload['customer']);
         }
 
         if ($notes !== '') {

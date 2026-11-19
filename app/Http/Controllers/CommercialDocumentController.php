@@ -13,10 +13,12 @@ use App\Models\PurchaseDetail;
 use App\Models\Sale;
 use App\Models\SaleDetail;
 use App\Models\ThirdParty;
+use App\Services\AccountingPeriodService;
 use App\Services\FactusService;
 use App\Services\InventoryUnitService;
 use App\Services\SalesRetentionCalculator;
 use Illuminate\Contracts\View\View;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -36,10 +38,18 @@ class CommercialDocumentController extends Controller
         '6' => 'Descuento comercial por volumen de ventas',
     ];
 
+    private const DIAN_DEBIT_NOTE_REASONS = [
+        '1' => 'Intereses',
+        '2' => 'Gastos por cobrar',
+        '3' => 'Cambio del valor',
+        '4' => 'Otros',
+    ];
+
     public function __construct(
         private readonly InventoryUnitService $inventoryUnitService,
         private readonly FactusService $factusService,
         private readonly SalesRetentionCalculator $salesRetentionCalculator,
+        private readonly AccountingPeriodService $periodService,
     ) {}
 
     private const CONFIGURATION = [
@@ -98,6 +108,28 @@ class CommercialDocumentController extends Controller
             'referenceType' => 'sale',
             'editConsecutive' => false,
         ],
+        'customer_debit_note' => [
+            'label' => 'Nota débito clientes',
+            'prefix' => 'NDC',
+            'party' => 'customer',
+            'partyLabel' => 'Cliente',
+            'indexRoute' => 'commercial-documents.customer-debit-notes',
+            'storeRoute' => 'commercial-documents.customer-debit-notes.store',
+            'saveLabel' => 'Guardar nota débito',
+            'referenceType' => 'sale',
+            'editConsecutive' => false,
+        ],
+        'supplier_credit_note' => [
+            'label' => 'Nota crédito proveedores',
+            'prefix' => 'NCP',
+            'party' => 'supplier',
+            'partyLabel' => 'Proveedor',
+            'indexRoute' => 'commercial-documents.supplier-credit-notes',
+            'storeRoute' => 'commercial-documents.supplier-credit-notes.store',
+            'saveLabel' => 'Guardar nota crédito',
+            'referenceType' => 'purchase',
+            'editConsecutive' => false,
+        ],
         'supplier_debit_note' => [
             'label' => 'Nota débito proveedores',
             'prefix' => 'ND',
@@ -143,11 +175,11 @@ class CommercialDocumentController extends Controller
         );
         $prefilledReferenceSale = null;
         $prefilledReferencePurchase = null;
-        if (! $currentDocument && $referenceInvoiceId && $type === 'customer_credit_note') {
+        if (! $currentDocument && $referenceInvoiceId && ($configuration['referenceType'] ?? null) === 'sale') {
             $prefilledReferenceSale = Sale::query()
                 ->with(['details', 'paymentMethod'])
                 ->findOrFail($referenceInvoiceId);
-        } elseif (! $currentDocument && $referenceInvoiceId && $type === 'supplier_debit_note') {
+        } elseif (! $currentDocument && $referenceInvoiceId && ($configuration['referenceType'] ?? null) === 'purchase') {
             $prefilledReferencePurchase = Purchase::query()
                 ->with(['details', 'paymentMethod'])
                 ->findOrFail($referenceInvoiceId);
@@ -168,20 +200,21 @@ class CommercialDocumentController extends Controller
             ->get(['id', 'name', 'code', 'type', 'sale_price', 'purchase_price', 'stock', 'base_unit']);
 
         $referenceInvoices = collect();
-        if ($type === 'customer_credit_note') {
-            $referenceInvoices = $prefilledReferenceSale
-                ? collect([$prefilledReferenceSale])
-                : Sale::query()
-                    ->latest('id')
-                    ->limit(100)
-                    ->get(['id', 'invoice_number', 'sale_date', 'customer_name', 'customer_document', 'total']);
-        } elseif ($type === 'supplier_debit_note') {
-            $referenceInvoices = $prefilledReferencePurchase
-                ? collect([$prefilledReferencePurchase])
-                : Purchase::query()
-                    ->latest('id')
-                    ->limit(100)
-                    ->get(['id', 'invoice_number', 'purchase_date', 'provider', 'total_pagar']);
+        if (($configuration['referenceType'] ?? null) === 'sale') {
+            $referenceInvoices = Sale::query()
+                ->latest('id')
+                ->limit(100)
+                ->get(['id', 'invoice_number', 'sale_date', 'customer_name', 'customer_document', 'total']);
+            $selectedReference = $prefilledReferenceSale ?? $currentDocument?->referenceSale;
+        } elseif (($configuration['referenceType'] ?? null) === 'purchase') {
+            $referenceInvoices = Purchase::query()
+                ->latest('id')
+                ->limit(100)
+                ->get(['id', 'invoice_number', 'purchase_date', 'provider', 'total_pagar']);
+            $selectedReference = $prefilledReferencePurchase ?? $currentDocument?->referencePurchase;
+        }
+        if (isset($selectedReference) && ! $referenceInvoices->contains('id', $selectedReference->id)) {
+            $referenceInvoices->prepend($selectedReference);
         }
 
         $selectedThirdPartyId = old('third_party_id', $currentDocument?->third_party_id);
@@ -198,29 +231,12 @@ class CommercialDocumentController extends Controller
             $prefilledRecipientEmail = $supplier?->email;
         }
 
-        $referenceFormLines = $prefilledReferenceSale
-            ? $prefilledReferenceSale->details->map(fn (SaleDetail $detail): array => [
-                'item_id' => $detail->item_id,
-                'unit_conversion_id' => $detail->unit_conversion_id,
-                'quantity' => $detail->quantity,
-                'unit_price' => $detail->unit_price,
-                'iva_percentage' => $detail->iva_percentage,
-                'discount_percentage' => $detail->discount_percentage,
-                'utility_percentage' => 0,
-            ])->all()
-            : ($prefilledReferencePurchase
-                ? $prefilledReferencePurchase->details
-                    ->whereNotNull('item_id')
-                    ->map(fn (PurchaseDetail $detail): array => [
-                        'item_id' => $detail->item_id,
-                        'unit_conversion_id' => $detail->unit_conversion_id,
-                        'quantity' => $detail->quantity,
-                        'unit_price' => $detail->cost_price,
-                        'iva_percentage' => $detail->iva_percentage,
-                        'discount_percentage' => 0,
-                        'utility_percentage' => 0,
-                    ])->values()->all()
-                : []);
+        $referenceFormLines = $prefilledReferenceSale || $prefilledReferencePurchase
+            ? $this->referenceLines($prefilledReferenceSale ?? $prefilledReferencePurchase)
+            : [];
+        $referenceOmittedLines = $prefilledReferenceSale || $prefilledReferencePurchase
+            ? ($prefilledReferenceSale ?? $prefilledReferencePurchase)->details->count() - count($referenceFormLines)
+            : 0;
 
         $documents = CommercialDocument::query()
             ->with(['lines.item', 'referenceSale:id,invoice_number', 'referencePurchase:id,invoice_number', 'accountingVoucher', 'paymentMethod'])
@@ -251,7 +267,7 @@ class CommercialDocumentController extends Controller
             'discount_percentage' => 0,
             'utility_percentage' => 0,
         ]]));
-        $withholdingConcepts = $type === 'customer_credit_note'
+        $withholdingConcepts = ($configuration['referenceType'] ?? null) === 'sale'
             ? config('colombia_withholdings.sales_concepts')
             : [];
         $selectedWithholdingConcept = old(
@@ -266,7 +282,7 @@ class CommercialDocumentController extends Controller
         );
         $selectedCorrectionConceptCode = old('correction_concept_code', $currentDocument?->correction_concept_code ?? '');
         $uvt = (float) config('colombia_withholdings.uvt');
-        $correctionConcepts = self::DIAN_CREDIT_NOTE_REASONS;
+        $correctionConcepts = $type === 'customer_debit_note' ? self::DIAN_DEBIT_NOTE_REASONS : self::DIAN_CREDIT_NOTE_REASONS;
 
         return view('commercial-documents.index', compact(
             'type',
@@ -281,6 +297,7 @@ class CommercialDocumentController extends Controller
             'isPurchaseDocument',
             'referenceInvoices',
             'referenceInvoiceId',
+            'referenceOmittedLines',
             'selectedThirdPartyId',
             'selectedPaymentMethodId',
             'selectedWithholdingConcept',
@@ -292,6 +309,36 @@ class CommercialDocumentController extends Controller
             'correctionConcepts',
             'uvt',
         ));
+    }
+
+    public function referenceInvoiceLines(Request $request, int $invoice): JsonResponse
+    {
+        $type = $this->documentType($request);
+        $reference = match ($type) {
+            'customer_credit_note', 'customer_debit_note' => Sale::query()->with('details')->findOrFail($invoice),
+            'supplier_credit_note', 'supplier_debit_note' => Purchase::query()->with('details')->findOrFail($invoice),
+            default => abort(404),
+        };
+        $lines = $this->referenceLines($reference);
+
+        return response()->json([
+            'lines' => $lines,
+            'omitted_lines' => $reference->details->count() - count($lines),
+        ]);
+    }
+
+    private function referenceLines(Sale|Purchase $reference): array
+    {
+        return $reference->details->whereNotNull('item_id')
+            ->map(fn (SaleDetail|PurchaseDetail $detail): array => [
+                'item_id' => $detail->item_id,
+                'unit_conversion_id' => $detail->unit_conversion_id,
+                'quantity' => $detail->quantity,
+                'unit_price' => $detail instanceof SaleDetail ? $detail->unit_price : $detail->cost_price,
+                'iva_percentage' => $detail->iva_percentage,
+                'discount_percentage' => $detail instanceof SaleDetail ? $detail->discount_percentage : 0,
+                'utility_percentage' => 0,
+            ])->values()->all();
     }
 
     public function store(Request $request): RedirectResponse
@@ -324,22 +371,22 @@ class CommercialDocumentController extends Controller
                 Rule::exists('payment_methods', 'id')->where('company_id', (int) session('company_id')),
             ],
             'withholding_concept' => [
-                Rule::requiredIf($type === 'customer_credit_note'),
+                Rule::requiredIf(($configuration['referenceType'] ?? null) === 'sale'),
                 'nullable',
                 'string',
                 Rule::in(array_keys(config('colombia_withholdings.sales_concepts'))),
             ],
             'correction_concept_code' => [
-                Rule::requiredIf($type === 'customer_credit_note'),
+                Rule::requiredIf(($configuration['referenceType'] ?? null) === 'sale'),
                 'nullable',
-                Rule::in(array_keys(self::DIAN_CREDIT_NOTE_REASONS)),
+                Rule::in(array_keys($type === 'customer_debit_note' ? self::DIAN_DEBIT_NOTE_REASONS : self::DIAN_CREDIT_NOTE_REASONS)),
             ],
             'recipient_email' => ['nullable', 'email', 'max:255'],
             'document_date' => ['required', 'date_format:Y-m-d'],
             'due_date' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:document_date'],
             'notes' => ['nullable', 'string', 'max:3000'],
             'items' => ['required', 'array', 'min:1', 'max:100'],
-            'items.*.item_id' => ['required', 'integer', 'distinct', 'exists:items,id'],
+            'items.*.item_id' => ['required', 'integer', ...(! isset($configuration['referenceType']) ? ['distinct'] : []), 'exists:items,id'],
             'items.*.quantity' => ['required', 'numeric', 'gt:0', 'max:1000000'],
             'items.*.unit_conversion_id' => ['nullable', 'integer', 'exists:item_unit_conversions,id'],
             'items.*.unit_price' => ['required', 'numeric', 'min:0', 'max:999999999'],
@@ -347,6 +394,14 @@ class CommercialDocumentController extends Controller
             'items.*.discount_percentage' => [$type === 'purchase_order' ? 'nullable' : 'required', 'numeric', 'min:0', 'max:100'],
             'items.*.utility_percentage' => [$type === 'purchase_order' ? 'required' : 'nullable', 'numeric', 'min:0', 'max:1000'],
         ]);
+
+        if (isset($configuration['referenceType'])) {
+            $periodModule = $configuration['referenceType'] === 'sale' ? 'income' : 'purchases';
+            $this->periodService->assertWritable($periodModule, $data['document_date']);
+            if ($currentDocument) {
+                $this->periodService->assertWritable($periodModule, $currentDocument->document_date->toDateString());
+            }
+        }
 
         $partyFlag = $configuration['party'] === 'supplier' ? 'is_supplier' : 'is_customer';
         $thirdParty = ThirdParty::query()
@@ -356,7 +411,7 @@ class CommercialDocumentController extends Controller
 
         $referenceSale = null;
         $referencePurchase = null;
-        if ($type === 'customer_credit_note') {
+        if (($configuration['referenceType'] ?? null) === 'sale') {
             $referenceSale = Sale::query()
                 ->where(function ($query) use ($thirdParty): void {
                     if ($thirdParty->document) {
@@ -366,13 +421,18 @@ class CommercialDocumentController extends Controller
                     }
                 })
                 ->findOrFail($data['reference_invoice_id']);
-        } elseif ($type === 'supplier_debit_note') {
+        } elseif (($configuration['referenceType'] ?? null) === 'purchase') {
             $referencePurchase = Purchase::query()
                 ->where('provider', $thirdParty->name)
                 ->findOrFail($data['reference_invoice_id']);
         }
 
         if ($currentDocument && $referenceSale && $currentDocument->reference_sale_id !== $referenceSale->id) {
+            throw ValidationException::withMessages([
+                'reference_invoice_id' => 'No puedes cambiar la factura origen de una nota ya guardada.',
+            ]);
+        }
+        if ($currentDocument && $referencePurchase && $currentDocument->reference_purchase_id !== $referencePurchase->id) {
             throw ValidationException::withMessages([
                 'reference_invoice_id' => 'No puedes cambiar la factura origen de una nota ya guardada.',
             ]);
@@ -416,7 +476,7 @@ class CommercialDocumentController extends Controller
             $ivaTotal += $ivaAmount;
         }
 
-        $retention = $type === 'customer_credit_note'
+        $retention = ($configuration['referenceType'] ?? null) === 'sale'
             ? $this->salesRetentionCalculator->calculate(
                 $data['withholding_concept'],
                 $subtotal,
@@ -433,7 +493,11 @@ class CommercialDocumentController extends Controller
 
             abort_if($document->exists && $document->status !== 'draft', 409);
 
-            if ($referenceSale && $type === 'customer_credit_note') {
+            if ($referencePurchase) {
+                Purchase::query()->lockForUpdate()->findOrFail($referencePurchase->id);
+            }
+
+            if ($referenceSale) {
                 $lockedReferenceSale = Sale::query()->lockForUpdate()->findOrFail($referenceSale->id);
                 $alreadyCredited = CommercialDocument::query()
                     ->where('document_type', 'customer_credit_note')
@@ -441,7 +505,15 @@ class CommercialDocumentController extends Controller
                     ->when($document->exists, fn ($query) => $query->where('id', '<>', $document->id))
                     ->sum('total');
 
-                if (round((float) $alreadyCredited + $documentTotal, 2) > (float) $lockedReferenceSale->total) {
+                $alreadyDebited = CommercialDocument::query()
+                    ->where('document_type', 'customer_debit_note')
+                    ->where('reference_sale_id', $lockedReferenceSale->id)
+                    ->when($document->exists, fn ($query) => $query->where('id', '<>', $document->id))
+                    ->sum('total');
+                $credits = (float) $alreadyCredited + ($type === 'customer_credit_note' ? $documentTotal : 0);
+                $debits = (float) $alreadyDebited + ($type === 'customer_debit_note' ? $documentTotal : 0);
+
+                if (round($credits, 2) > round((float) $lockedReferenceSale->total + $debits, 2)) {
                     throw ValidationException::withMessages([
                         'items' => 'El total de las notas crédito no puede superar el valor de la factura origen.',
                     ]);
@@ -469,7 +541,7 @@ class CommercialDocumentController extends Controller
                 'subtotal' => round($subtotal, 2),
                 'discount_total' => round($discountTotal, 2),
                 'iva_total' => round($ivaTotal, 2),
-                'withholding_concept' => $type === 'customer_credit_note' ? $data['withholding_concept'] : 'none',
+                'withholding_concept' => ($configuration['referenceType'] ?? null) === 'sale' ? $data['withholding_concept'] : 'none',
                 'retention_base' => $retention['retention_base'],
                 'retention_total' => $retention['retention_total'],
                 'correction_concept_code' => $data['correction_concept_code'] ?? null,
@@ -564,29 +636,32 @@ class CommercialDocumentController extends Controller
 
     public function sendToDian(CommercialDocument $document): RedirectResponse
     {
-        abort_unless($document->document_type === 'customer_credit_note', 422);
-        abort_unless($document->status === 'draft', 409);
+        abort_unless(in_array($document->document_type, ['customer_credit_note', 'customer_debit_note'], true), 422);
+        abort_unless(in_array($document->status, ['draft', 'accounted'], true), 409);
         abort_if($document->dian_status === 'sent', 409);
 
         $skipReason = null;
-        if (! $this->factusService->sendCustomerCreditNote($document, session('company_id'), $skipReason)) {
+        $sent = $document->document_type === 'customer_debit_note'
+            ? $this->factusService->sendCustomerDebitNote($document, session('company_id'), $skipReason)
+            : $this->factusService->sendCustomerCreditNote($document, session('company_id'), $skipReason);
+        if (! $sent) {
             return back()->with('error', 'La nota no se envió: '.($skipReason ?? 'Factus no confirmó el envío.'));
         }
 
-        return back()->with('success', 'Nota crédito enviada y validada por la DIAN.');
+        return back()->with('success', 'Nota '.($document->document_type === 'customer_debit_note' ? 'débito' : 'crédito').' enviada y validada por la DIAN.');
     }
 
     public function statement(CommercialDocument $document): View
     {
-        abort_unless(in_array($document->document_type, ['customer_credit_note', 'supplier_debit_note'], true), 422);
+        abort_unless(in_array($document->document_type, ['customer_credit_note', 'customer_debit_note', 'supplier_credit_note', 'supplier_debit_note'], true), 422);
 
-        $isCustomer = $document->document_type === 'customer_credit_note';
+        $isCustomer = in_array($document->document_type, ['customer_credit_note', 'customer_debit_note'], true);
         $referenceInvoice = $isCustomer
             ? $document->referenceSale()->firstOrFail()
             : $document->referencePurchase()->firstOrFail();
         $relatedNotes = CommercialDocument::query()
             ->with('accountingVoucher')
-            ->where('document_type', $document->document_type)
+            ->whereIn('document_type', $isCustomer ? ['customer_credit_note', 'customer_debit_note'] : ['supplier_credit_note', 'supplier_debit_note'])
             ->where($isCustomer ? 'reference_sale_id' : 'reference_purchase_id', $referenceInvoice->id)
             ->orderBy('document_date')
             ->orderBy('id')
@@ -606,8 +681,8 @@ class CommercialDocumentController extends Controller
                 'date' => $relatedNote->document_date,
                 'document' => $relatedNote->consecutive,
                 'description' => CommercialDocument::TYPES[$relatedNote->document_type],
-                'debit' => $isCustomer ? 0 : (float) $relatedNote->total,
-                'credit' => $isCustomer ? (float) $relatedNote->total : 0,
+                'debit' => $isCustomer && $relatedNote->document_type === 'customer_credit_note' ? 0 : (float) $relatedNote->total,
+                'credit' => $isCustomer && $relatedNote->document_type === 'customer_credit_note' ? (float) $relatedNote->total : 0,
                 'status' => $relatedNote->accountingVoucher ? 'Contabilizada' : 'Pendiente de contabilizar',
             ]);
         }
@@ -616,10 +691,12 @@ class CommercialDocumentController extends Controller
             ? $transactions->sum('debit') - $transactions->sum('credit')
             : $transactions->sum('credit') - $transactions->sum('debit');
         $partyLabel = $isCustomer ? 'Cliente' : 'Proveedor';
+        $indexRoute = self::CONFIGURATION[$document->document_type]['indexRoute'];
 
         return view('commercial-documents.statement', compact(
             'balance',
             'document',
+            'indexRoute',
             'partyLabel',
             'referenceInvoice',
             'transactions',

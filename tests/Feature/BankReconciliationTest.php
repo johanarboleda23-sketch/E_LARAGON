@@ -28,6 +28,70 @@ class BankReconciliationTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_contact_can_be_assigned_to_a_manual_account_reconciliation_and_undone(): void
+    {
+        $company = Company::factory()->create();
+        $bank = $this->createBankAccount($company);
+        $user = User::factory()->create();
+        $user->companies()->attach($company->id, ['role' => 'admin']);
+        $this->actingAs($user)->withSession(['company_id' => $company->id]);
+        $party = ThirdParty::create([
+            'company_id' => $company->id, 'name' => 'Contacto bancario', 'active' => true,
+            'is_customer' => false, 'is_supplier' => false,
+        ]);
+        $account = ChartOfAccount::create([
+            'company_id' => $company->id, 'code' => '519901', 'name' => 'Otros gastos',
+            'class' => 5, 'nature' => 'debit', 'active' => true, 'allows_posting' => true,
+        ]);
+        $statement = BankStatement::create([
+            'company_id' => $company->id, 'payment_method_id' => $bank->id, 'transaction_date' => '2026-11-11',
+            'transaction_type' => 'debit', 'amount' => 100, 'status' => 'pending',
+        ]);
+
+        $this->get(route('bank-reconciliation.index'))->assertSee('Definir contacto')->assertSee('Contacto bancario');
+        $this->post(route('bank-reconciliation.reconcile', $statement), [
+            'matched_type' => 'manual', 'reconciliation_mode' => 'contact', 'third_party_id' => $party->id,
+            'amount' => 100, 'counter_account_id' => $account->id,
+        ])->assertSessionHas('success');
+
+        $voucher = $statement->fresh()->accountingVoucher;
+        $this->assertSame('Contacto bancario', $voucher->third_party);
+        $this->assertDatabaseHas('accounting_voucher_lines', [
+            'accounting_voucher_id' => $voucher->id, 'chart_of_account_id' => $account->id, 'debit' => 100,
+        ]);
+        $this->get(route('bank-reconciliation.index'))->assertSee('Desconciliar y anular comprobante');
+        $this->delete(route('bank-reconciliation.delete-voucher', $statement))->assertSessionHas('success');
+        $this->assertSame('pending', $statement->fresh()->status);
+        $this->assertSoftDeleted($voucher);
+    }
+
+    public function test_contact_reconciliation_rejects_missing_inactive_and_foreign_contacts(): void
+    {
+        $company = Company::factory()->create();
+        $otherCompany = Company::factory()->create();
+        $bank = $this->createBankAccount($company);
+        $user = User::factory()->create();
+        $user->companies()->attach($company->id, ['role' => 'admin']);
+        $this->actingAs($user)->withSession(['company_id' => $company->id]);
+        $inactive = ThirdParty::create(['company_id' => $company->id, 'name' => 'Inactivo', 'active' => false]);
+        $foreign = ThirdParty::create(['company_id' => $otherCompany->id, 'name' => 'Otro contacto', 'active' => true]);
+        $account = ChartOfAccount::create([
+            'company_id' => $company->id, 'code' => '519902', 'name' => 'Otros gastos',
+            'class' => 5, 'nature' => 'debit', 'active' => true, 'allows_posting' => true,
+        ]);
+        $statement = BankStatement::create([
+            'company_id' => $company->id, 'payment_method_id' => $bank->id, 'transaction_date' => '2026-11-11',
+            'transaction_type' => 'debit', 'amount' => 100, 'status' => 'pending',
+        ]);
+        $payload = ['matched_type' => 'manual', 'reconciliation_mode' => 'contact', 'amount' => 100, 'counter_account_id' => $account->id];
+
+        $this->post(route('bank-reconciliation.reconcile', $statement), $payload)->assertSessionHasErrors('third_party_id');
+        $this->post(route('bank-reconciliation.reconcile', $statement), $payload + ['third_party_id' => $foreign->id])->assertSessionHasErrors('third_party_id');
+        $this->post(route('bank-reconciliation.reconcile', $statement), $payload + ['third_party_id' => $inactive->id])->assertSessionHasErrors('manual_reconcile');
+        $this->assertSame('pending', $statement->fresh()->status);
+        $this->assertDatabaseCount('accounting_vouchers', 0);
+    }
+
     public function test_invoice_reconciliation_applies_explicit_adjustment_without_changing_cash(): void
     {
         $company = Company::factory()->create();
@@ -538,6 +602,7 @@ class BankReconciliationTest extends TestCase
         $this->assertSame(50.0, $purchase->fresh()->balanceDue(100));
         $this->assertDatabaseHas('accounting_voucher_lines', ['accounting_voucher_id' => $payment->accounting_voucher_id,
             'chart_of_account_id' => $advance->id, 'debit' => 100, 'credit' => 0]);
+        $this->get(route('bank-reconciliation.index'))->assertSee('Eliminar comprobante y pago')->assertSee('Desconciliar');
 
         $this->delete(route('bank-reconciliation.delete-voucher', $statement))->assertSessionHas('success');
         $this->assertSame(100.0, $purchase->fresh()->balanceDue(100));

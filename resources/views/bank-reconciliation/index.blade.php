@@ -241,6 +241,7 @@
                                         <summary class="cursor-pointer rounded-md bg-emerald-600 px-3 py-1 text-xs font-semibold text-white">Conciliar ▾</summary>
                                         <div class="mt-1 grid w-48 gap-1 rounded-md border border-slate-200 bg-white p-2 shadow-lg">
                                             <button type="button" class="rounded px-2 py-2 text-left text-xs hover:bg-slate-100" onclick="openReconciliation({{ $statement->id }}, 'invoice')">Conciliar factura</button>
+                                            <button type="button" class="rounded px-2 py-2 text-left text-xs hover:bg-slate-100" onclick="openReconciliation({{ $statement->id }}, 'contact')">Definir contacto</button>
                                             <button type="button" class="rounded px-2 py-2 text-left text-xs hover:bg-slate-100" onclick="openReconciliation({{ $statement->id }}, 'account')">Establecer cuenta PUC</button>
                                             <button type="button" class="rounded px-2 py-2 text-left text-xs hover:bg-slate-100" onclick="openReconciliation({{ $statement->id }}, 'transfer')">Transferencia interna</button>
                                         </div>
@@ -301,6 +302,31 @@
                                                 <p class="text-xs text-slate-600">Si el banco supera el saldo y no eliges cuenta, la factura queda abierta y podrás distribuir el movimiento después.</p>
                                                 <button type="submit" data-invoice-submit class="rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Registrar pago y conciliar</button>
                                             </form>
+                                            <form data-mode="contact" method="POST" action="{{ route('bank-reconciliation.reconcile', $statement) }}" class="mt-5 hidden gap-4" hidden>
+                                                @csrf
+                                                <input type="hidden" name="matched_type" value="manual">
+                                                <input type="hidden" name="reconciliation_mode" value="contact">
+                                                <input type="hidden" name="manual_reconcile_statement_id" value="{{ $statement->id }}">
+                                                <input type="hidden" name="amount" value="{{ number_format((float) $statement->amount, 2, '.', '') }}">
+                                                <label class="grid gap-1 text-sm font-semibold">Contacto
+                                                    <select name="third_party_id" required>
+                                                        <option value="">Selecciona un tercero</option>
+                                                        @foreach($thirdParties as $thirdParty)
+                                                            <option value="{{ $thirdParty->id }}" @selected($reopeningManualForm && old('third_party_id') == $thirdParty->id)>{{ $thirdParty->name }}{{ $thirdParty->document ? ' · '.$thirdParty->document : '' }}</option>
+                                                        @endforeach
+                                                    </select>
+                                                </label>
+                                                <label class="grid gap-1 text-sm font-semibold">Cuenta PUC de contrapartida
+                                                    <select name="counter_account_id" required>
+                                                        <option value="">Busca una cuenta PUC</option>
+                                                        @foreach($postingAccounts as $account)
+                                                            <option value="{{ $account->id }}" @selected($reopeningManualForm && old('counter_account_id') == $account->id)>{{ $account->code }} - {{ $account->name }}</option>
+                                                        @endforeach
+                                                    </select>
+                                                </label>
+                                                <p class="text-xs text-slate-600">El contacto y la cuenta se guardan al conciliar el movimiento.</p>
+                                                <button class="rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white">Crear comprobante y conciliar</button>
+                                            </form>
                                             <form data-mode="account" method="POST" action="{{ route('bank-reconciliation.reconcile', $statement) }}" class="mt-5 hidden gap-4" hidden>
                                                 @csrf
                                                 <input type="hidden" name="matched_type" value="manual">
@@ -330,23 +356,27 @@
                                         </div>
                                     </dialog>
                                 @else
-                                    @if($statement->accountingVoucher)
-                                        <form method="POST" action="{{ route('bank-reconciliation.delete-voucher', $statement) }}" onsubmit="return confirm('Se anulará el comprobante y su pago, si existe. El movimiento volverá a pendientes. ¿Deseas continuar?')">
-                                            @csrf
-                                            @method('DELETE')
-                                            <button class="mb-2 rounded-md border border-red-200 px-3 py-1 text-xs font-semibold text-red-700">Eliminar comprobante</button>
-                                        </form>
-                                    @endif
                                     <span class="text-xs text-amber-700">Asigna un diario bancario antes de conciliar este movimiento.</span>
                                 @endif
                             @else
                                 @if(in_array($statement->matched_type, ['manual', 'transfer'], true) && $statement->accounting_voucher_id)
-                                    <span class="text-xs text-slate-500">Comprobante publicado; usa un ajuste para corregirlo.</span>
+                                    <form method="POST" action="{{ route('bank-reconciliation.delete-voucher', $statement) }}" onsubmit="return confirm('Se anulará el comprobante. Los movimientos asociados volverán a pendientes. ¿Deseas continuar?')">
+                                        @csrf
+                                        @method('DELETE')
+                                        <button class="rounded-md border border-red-200 px-3 py-1 text-xs font-semibold text-red-700">Desconciliar y anular comprobante</button>
+                                    </form>
                                 @else
                                     <form method="POST" action="{{ route('bank-reconciliation.unmatch', $statement) }}">
                                         @csrf
                                         <button class="rounded-md border border-amber-200 px-3 py-1 text-xs font-semibold text-amber-700">Desconciliar</button>
                                     </form>
+                                    @if($statement->accountingVoucher)
+                                        <form method="POST" action="{{ route('bank-reconciliation.delete-voucher', $statement) }}" onsubmit="return confirm('Se anulará el comprobante y su pago. El movimiento volverá a pendientes. ¿Deseas continuar?')">
+                                            @csrf
+                                            @method('DELETE')
+                                            <button class="mt-2 rounded-md border border-red-200 px-3 py-1 text-xs font-semibold text-red-700">Eliminar comprobante y pago</button>
+                                        </form>
+                                    @endif
                                 @endif
                             @endif
                         </td>
@@ -364,7 +394,7 @@
 <script>
     function openReconciliation(id, mode) {
         const dialog = document.getElementById(`reconciliation-${id}`);
-        const titles = { invoice: 'Conciliar factura', account: 'Establecer cuenta PUC', transfer: 'Transferencia interna' };
+        const titles = { invoice: 'Conciliar factura', contact: 'Definir contacto', account: 'Establecer cuenta PUC', transfer: 'Transferencia interna' };
         dialog.querySelector('[data-dialog-title]').textContent = titles[mode];
         dialog.querySelectorAll('form[data-mode]').forEach((form) => {
             const active = form.dataset.mode === mode;

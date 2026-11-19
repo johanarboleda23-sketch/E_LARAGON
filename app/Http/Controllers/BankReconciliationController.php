@@ -409,15 +409,16 @@ class BankReconciliationController extends Controller
             'matched_type' => ['required', 'string', 'in:payment,manual'],
             'matched_id' => ['nullable', 'integer'],
             'manual_reconcile_statement_id' => ['nullable', 'integer'],
-            'reconciliation_mode' => ['nullable', 'in:invoice,account'],
+            'reconciliation_mode' => ['nullable', 'in:invoice,account,contact'],
             'third_party_id' => [
                 'required_with:invoice',
                 'required_if:reconciliation_mode,invoice',
+                'required_if:reconciliation_mode,contact',
                 'nullable',
                 'integer',
                 Rule::exists('third_parties', 'id')->where('company_id', (int) session('company_id')),
             ],
-            'invoice' => ['required_if:reconciliation_mode,invoice', 'prohibited_if:reconciliation_mode,account', 'nullable', 'string', 'max:40', 'regex:/^(sale|purchase|support_document):[1-9][0-9]*$/'],
+            'invoice' => ['required_if:reconciliation_mode,invoice', 'prohibited_if:reconciliation_mode,account,contact', 'nullable', 'string', 'max:40', 'regex:/^(sale|purchase|support_document):[1-9][0-9]*$/'],
             'amount' => ['required_if:matched_type,manual', 'numeric', 'gt:0'],
             'applied_amount' => ['nullable', 'numeric', 'gt:0', 'decimal:0,2'],
             'adjustment_total' => ['nullable', 'numeric', 'min:0', 'decimal:0,2'],
@@ -465,7 +466,10 @@ class BankReconciliationController extends Controller
                 ? ThirdParty::query()->findOrFail($data['third_party_id'])
                 : null;
             $isCredit = $lockedStatement->transaction_type === 'credit';
-            if ($thirdParty && ! ($isCredit ? $thirdParty->is_customer : $thirdParty->is_supplier)) {
+            if ($thirdParty && ! $thirdParty->active) {
+                return $this->manualReconciliationError($lockedStatement->id, 'Selecciona un tercero activo.');
+            }
+            if ($thirdParty && filled($data['invoice'] ?? null) && ! ($isCredit ? $thirdParty->is_customer : $thirdParty->is_supplier)) {
                 return $this->manualReconciliationError($lockedStatement->id, 'Selecciona un tercero '.($isCredit ? 'marcado como cliente' : 'marcado como proveedor').'.');
             }
 

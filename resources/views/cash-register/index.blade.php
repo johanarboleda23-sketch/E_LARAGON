@@ -60,7 +60,21 @@
                 </div>
             </section>
 
-            <section class="flex flex-wrap items-end justify-between gap-4 rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm">
+            <nav aria-label="Flujo de arqueo" class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                @foreach ([
+                    ['number' => '01', 'label' => 'Preparar', 'hint' => 'Caja y lote', 'target' => 'cash-setup', 'active' => ! $openSession],
+                    ['number' => '02', 'label' => 'Registrar', 'hint' => 'Ventas y pagos', 'target' => 'cash-movements', 'active' => (bool) $openSession],
+                    ['number' => '03', 'label' => 'Liquidar', 'hint' => 'Cobros y gastos', 'target' => 'cash-settlement', 'active' => (bool) $selectedRoute],
+                    ['number' => '04', 'label' => 'Cerrar', 'hint' => 'Conteo físico', 'target' => 'cash-closing', 'active' => (bool) $openSession],
+                ] as $step)
+                    <a href="#{{ $step['target'] }}" class="flex items-center gap-3 rounded-xl border {{ $step['active'] ? 'border-[#227c70] bg-[#edf7f4]' : 'border-[#d7dfd8] bg-white' }} px-3 py-3 transition hover:border-[#227c70]">
+                        <span class="grid h-8 w-8 shrink-0 place-items-center rounded-lg {{ $step['active'] ? 'bg-[#227c70] text-white' : 'bg-[#e9eeeb] text-[#71807a]' }} text-xs font-black">{{ $step['number'] }}</span>
+                        <span class="min-w-0"><span class="block truncate text-xs font-black text-[#192522]">{{ $step['label'] }}</span><span class="block truncate text-[11px] text-[#71807a]">{{ $step['hint'] }}</span></span>
+                    </a>
+                @endforeach
+            </nav>
+
+            <section id="cash-setup" class="scroll-mt-6 flex flex-wrap items-end justify-between gap-4 rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm">
                 <div>
                     <h3 class="text-sm font-black text-[#192522]">Consulta de lote</h3>
                     <p class="mt-1 text-xs text-[#71807a]">Elige una ruta para revisar y liquidar sus facturas.</p>
@@ -118,7 +132,7 @@
             @endif
 
             @if ($openSession)
-                <section class="rounded-2xl border border-[#b9ddd3] bg-[#edf7f4] p-5 shadow-sm">
+                <section id="cash-movements" class="scroll-mt-6 rounded-2xl border border-[#b9ddd3] bg-[#edf7f4] p-5 shadow-sm">
                     <div class="flex flex-wrap items-start justify-between gap-4">
                         <div>
                             <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-[#227c70]">Ventas del día</p>
@@ -155,7 +169,7 @@
                     @endif
                 </section>
 
-                <section class="rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm">
+                <section id="supplier-payments" class="scroll-mt-6 rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm">
                     <div>
                         <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-[#b65338]">Cartera de proveedores</p>
                         <h3 class="mt-1 text-sm font-black text-[#192522]">Abonar una factura de compra</h3>
@@ -201,7 +215,7 @@
             @endif
 
             @if ($selectedRoute)
-                <section class="flex flex-wrap items-end justify-between gap-4 rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm">
+                <section id="cash-route" class="scroll-mt-6 flex flex-wrap items-end justify-between gap-4 rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm">
                     <div>
                         <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-[#71807a]">Ruta seleccionada</p>
                         <h3 class="mt-1 text-lg font-black text-[#227c70]">Lote {{ $selectedRoute->code }}</h3>
@@ -243,7 +257,7 @@
                     <input type="hidden" name="route_id" value="{{ $selectedRoute->id }}">
                     <input type="hidden" name="session_id" value="{{ $openSession->id }}">
                     <input type="hidden" name="route_date" id="batchRouteDate" value="{{ $selectedRoute->route_date->toDateString() }}">
-                    <section class="space-y-4 rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm">
+                    <section id="cash-settlement" class="scroll-mt-6 space-y-4 rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm">
                         <div class="flex flex-wrap items-center justify-between gap-3">
                             <div>
                                 <h3 class="text-sm font-black uppercase tracking-wider text-[#227c70]">Facturas del lote y formas de pago</h3>
@@ -386,7 +400,7 @@
 
                 @endif
 
-                <section class="rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm">
+                <section id="receivables" class="scroll-mt-6 rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm">
                     <h3 class="text-sm font-black text-[#227c70]">Cobro de cartera</h3>
                     <p class="mt-1 text-xs text-[#71807a]">Registra el pago y la contabilización de una factura sin afectar inventario.</p>
                     <form method="POST" action="{{ route('cash-register.collect-receivable') }}" class="mt-4 flex flex-wrap items-end gap-3">
@@ -417,7 +431,7 @@
                 </section>
 
                 @unless ($selectedRoute)
-                    <section class="rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm">
+                    <section id="cash-expenses" class="scroll-mt-6 rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm">
                         <h3 class="text-sm font-black text-[#b65338]">Gasto de caja</h3>
                         <p class="mt-1 text-xs text-[#71807a]">Para abonar una factura, usa la sección Cartera de proveedores.</p>
                         <form method="POST" action="{{ route('cash-register.expenses.store', $openSession) }}" class="mt-4 flex flex-wrap items-end gap-3">
@@ -441,7 +455,7 @@
                     </section>
                 @endunless
 
-                <form method="POST" action="{{ route('cash-register.close', $openSession) }}" class="rounded-2xl border border-[#e8d9b7] bg-white p-5 shadow-sm sm:p-6">
+                <form id="cash-closing" method="POST" action="{{ route('cash-register.close', $openSession) }}" class="scroll-mt-6 rounded-2xl border border-[#e8d9b7] bg-white p-5 shadow-sm sm:p-6">
                     @csrf
                     <div class="flex flex-wrap items-start justify-between gap-3">
                         <div>

@@ -35,6 +35,10 @@ class CashRegisterControllerTest extends TestCase
         $this->get(route('cash-register.index'))
             ->assertOk()
             ->assertSeeText('Arqueo y control de caja')
+            ->assertSeeText('Preparar')
+            ->assertSeeText('Registrar')
+            ->assertSeeText('Liquidar')
+            ->assertSeeText('Cerrar')
             ->assertSeeText('Apertura de caja')
             ->assertSeeText('Abrir caja');
     }

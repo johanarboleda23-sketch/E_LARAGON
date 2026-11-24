@@ -1,14 +1,15 @@
-<!doctype html>
-<html lang="es">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Ruta {{ $route->code }}</title>
-    @vite(['resources/css/app.css', 'resources/js/app.js'])
-</head>
-<body class="bg-[#f3f5f1]">
-<div class="mx-auto max-w-6xl px-6 py-8">
-    <a href="{{ route('logistics.index') }}" class="text-sm font-bold text-[#227c70]">&larr; Volver a logística</a>
+<x-app-layout>
+    <x-slot name="header">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+                <p class="text-xs font-bold uppercase text-[#d96b4c]">Logística</p>
+                <h2 class="mt-1 text-xl font-black text-[#192522]">Ruta {{ $route->code }}</h2>
+            </div>
+            <a href="{{ route('logistics.index') }}" class="rounded-lg border border-[#d7dfd8] bg-white px-3 py-2 text-sm font-bold text-[#227c70]">&larr; Volver a logística</a>
+        </div>
+    </x-slot>
+<div class="min-h-screen bg-[#f3f5f1] px-4 py-6 sm:px-8">
+<div class="mx-auto max-w-7xl">
 
     <section class="mt-3 rounded-2xl bg-[#192522] p-6 text-white shadow-lg">
         <div class="flex flex-wrap items-center justify-between gap-4">
@@ -29,10 +30,13 @@
     </section>
 
     @if (session('success'))
-        <div class="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{{ session('success') }}</div>
+        <div role="status" class="mt-5 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{{ session('success') }}</div>
+    @endif
+    @if (session('error'))
+        <div role="alert" class="mt-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">{{ session('error') }}</div>
     @endif
     @if ($errors->any())
-        <div class="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{{ $errors->first() }}</div>
+        <div role="alert" class="mt-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{{ $errors->first() }}</div>
     @endif
 
     <div class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -41,7 +45,7 @@
             <p class="text-sm font-bold text-[#192522]">🧾 Agregar factura al lote</p>
             <p class="mt-1 text-xs text-[#71807a]">La factura quedará como parada de entrega y estará disponible al cargar este lote en el arqueo.</p>
             <div class="mt-3 flex flex-wrap items-end gap-2">
-                <label class="grid min-w-64 flex-1 gap-1 text-xs font-bold text-[#52635b]">
+                <label class="grid min-w-0 flex-1 gap-1 text-xs font-bold text-[#52635b]">
                     Factura disponible
                     <select name="sale_id" class="rounded-lg border-[#cbd6cf] text-sm" required>
                         <option value="">Selecciona factura</option>
@@ -70,7 +74,7 @@
         <form method="POST" action="{{ route('logistics.stops.store', $route) }}" class="rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm">
             @csrf
             <p class="text-sm font-bold text-[#192522]">➕ Agregar parada manual</p>
-            <div class="mt-3 grid grid-cols-2 gap-2">
+            <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <input name="customer_name" placeholder="Cliente" class="rounded-lg border-[#cbd6cf] text-sm" required>
                 <input name="address" placeholder="Dirección" class="rounded-lg border-[#cbd6cf] text-sm" required>
                 <input name="city" placeholder="Ciudad" class="rounded-lg border-[#cbd6cf] text-sm">
@@ -146,5 +150,5 @@
         @endforelse
     </div>
 </div>
-</body>
-</html>
+</div>
+</x-app-layout>

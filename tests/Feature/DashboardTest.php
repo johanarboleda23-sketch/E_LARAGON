@@ -21,6 +21,27 @@ class DashboardTest extends TestCase
             ->assertSee('Buscar módulo, acción o tercero...');
     }
 
+    public function test_dashboard_groups_commercial_documents_and_keeps_each_link(): void
+    {
+        $response = $this->get(route('dashboard'))
+            ->assertOk()
+            ->assertSeeText('Notas comerciales')
+            ->assertSeeText('Documentos comerciales');
+
+        foreach ([
+            'commercial-documents.customer-credit-notes',
+            'commercial-documents.customer-debit-notes',
+            'commercial-documents.supplier-credit-notes',
+            'commercial-documents.supplier-debit-notes',
+            'commercial-documents.quotations',
+            'commercial-documents.sales-orders',
+            'commercial-documents.remissions',
+            'commercial-documents.purchase-orders',
+        ] as $routeName) {
+            $response->assertSee(route($routeName));
+        }
+    }
+
     public function test_authenticated_dashboard_configures_live_third_party_search(): void
     {
         $company = Company::factory()->create();

@@ -1,32 +1,44 @@
-<!doctype html>
-<html lang="es">
-<head>
-    <meta charset="utf-8">
-    <title>Logística</title>
-    @vite('resources/css/app.css')
-</head>
-<body class="bg-gray-50">
-<div class="mx-auto max-w-5xl px-6 py-8">
-    <a href="{{ route('dashboard') }}" class="text-sm text-teal-700">&larr; Volver al tablero</a>
-    <h1 class="mt-3 text-2xl font-bold text-gray-900">Logística de rutas</h1>
-    <p class="text-sm text-gray-500">Crea rutas de reparto, importa paradas por lote y planifica de la más fácil a la más difícil.</p>
+<x-app-layout>
+    <x-slot name="header">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+                <p class="text-xs font-bold uppercase text-[#d96b4c]">Operaciones</p>
+                <h2 class="mt-1 text-xl font-black text-[#192522]">Logística de rutas</h2>
+            </div>
+            <a href="{{ route('dashboard') }}" class="rounded-lg border border-[#d7dfd8] bg-white px-3 py-2 text-sm font-bold text-[#227c70]">&larr; Tablero</a>
+        </div>
+    </x-slot>
+<div class="min-h-screen bg-[#f3f5f1] px-4 py-6 sm:px-8">
+<div class="mx-auto max-w-7xl">
 
     @if (session('success'))
-        <div class="mt-4 rounded-md bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{{ session('success') }}</div>
+        <div role="status" class="mb-4 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{{ session('success') }}</div>
+    @endif
+    @if ($errors->any())
+        <div role="alert" class="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{{ $errors->first() }}</div>
     @endif
 
-    <form method="POST" action="{{ route('logistics.store') }}" class="mt-6 grid grid-cols-1 gap-3 rounded-lg border border-gray-200 bg-white p-4 sm:grid-cols-5">
+    <h1 class="mb-4 text-lg font-bold text-[#192522]">Nueva ruta</h1>
+    <form method="POST" action="{{ route('logistics.store') }}" class="grid grid-cols-1 items-end gap-3 border-b border-[#d7dfd8] pb-6 sm:grid-cols-2 lg:grid-cols-5">
         @csrf
-        <input name="code" placeholder="Código (ej. RUTA-001)" class="rounded-md border-gray-300 sm:col-span-1" required>
-        <input name="vehicle_plate" placeholder="Placa del vehículo" class="rounded-md border-gray-300 sm:col-span-1" required>
-        <input name="driver_name" placeholder="Conductor" class="rounded-md border-gray-300 sm:col-span-1" required>
-        <input type="date" name="route_date" class="rounded-md border-gray-300 sm:col-span-1" required>
-        <button class="rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white sm:col-span-1">Crear ruta</button>
+        <label class="grid gap-1 text-xs font-bold text-[#52635b]">Código
+            <input name="code" value="{{ old('code') }}" placeholder="RUTA-001" class="w-full rounded-md border-[#cbd6cf] text-sm" required>
+        </label>
+        <label class="grid gap-1 text-xs font-bold text-[#52635b]">Placa del vehículo
+            <input name="vehicle_plate" value="{{ old('vehicle_plate') }}" class="w-full rounded-md border-[#cbd6cf] text-sm" required>
+        </label>
+        <label class="grid gap-1 text-xs font-bold text-[#52635b]">Conductor
+            <input name="driver_name" value="{{ old('driver_name') }}" class="w-full rounded-md border-[#cbd6cf] text-sm" required>
+        </label>
+        <label class="grid gap-1 text-xs font-bold text-[#52635b]">Fecha
+            <input type="date" name="route_date" value="{{ old('route_date') }}" class="w-full rounded-md border-[#cbd6cf] text-sm" required>
+        </label>
+        <button class="rounded-md bg-[#227c70] px-4 py-2.5 text-sm font-bold text-white hover:bg-[#1b665c]">Crear ruta</button>
     </form>
 
-    <div class="mt-6 overflow-hidden rounded-lg border border-gray-200 bg-white">
+    <div class="mt-6 overflow-x-auto border border-[#d7dfd8] bg-white">
         <table class="min-w-full divide-y divide-gray-200 text-sm">
-            <thead class="bg-gray-50">
+            <thead class="bg-[#192522] text-white">
                 <tr>
                     <th class="p-3 text-left">Código</th>
                     <th class="p-3 text-left">Vehículo</th>
@@ -57,5 +69,5 @@
 
     {{ $routes->links() }}
 </div>
-</body>
-</html>
+</div>
+</x-app-layout>

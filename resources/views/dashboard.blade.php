@@ -75,10 +75,12 @@
                     ['name' => 'Documento soporte', 'hint' => 'Compras a no obligados', 'route' => 'support-documents.index', 'icon' => '🧾'],
                     ['name' => 'Conciliación bancaria', 'hint' => 'Extractos y cruces', 'route' => 'bank-reconciliation.index', 'icon' => '🏦'],
                     ['name' => 'Cierres contables', 'hint' => 'Informes y bloqueo de periodos', 'route' => 'period-closing.index', 'icon' => '🔒'],
-                    ['name' => 'Nota crédito clientes', 'hint' => 'Devoluciones a clientes', 'route' => 'commercial-documents.customer-credit-notes', 'icon' => '↩️'],
-                    ['name' => 'Nota débito clientes', 'hint' => 'Ajustes a clientes', 'route' => 'commercial-documents.customer-debit-notes', 'icon' => '↪️'],
-                    ['name' => 'Nota crédito proveedores', 'hint' => 'Ajustes de proveedores', 'route' => 'commercial-documents.supplier-credit-notes', 'icon' => '↩️'],
-                    ['name' => 'Nota débito proveedores', 'hint' => 'Ajustes a proveedores', 'route' => 'commercial-documents.supplier-debit-notes', 'icon' => '↪️'],
+                    ['name' => 'Notas comerciales', 'hint' => 'Crédito y débito de clientes y proveedores', 'keywords' => 'nota credito clientes nota debito clientes nota credito proveedores nota debito proveedores devoluciones ajustes', 'icon' => '↩️', 'links' => [
+                        ['name' => 'Nota crédito clientes', 'route' => 'commercial-documents.customer-credit-notes'],
+                        ['name' => 'Nota débito clientes', 'route' => 'commercial-documents.customer-debit-notes'],
+                        ['name' => 'Nota crédito proveedores', 'route' => 'commercial-documents.supplier-credit-notes'],
+                        ['name' => 'Nota débito proveedores', 'route' => 'commercial-documents.supplier-debit-notes'],
+                    ]],
                     ['name' => 'Logística', 'hint' => 'Rutas y entregas', 'route' => 'logistics.index', 'icon' => '🚚'],
                     ['name' => 'Reportes financieros', 'hint' => 'Excel y PDF', 'route' => 'reports.index', 'icon' => '📈'],
                     ['name' => 'Terceros', 'hint' => 'Clientes, proveedores, empleados', 'route' => 'third-parties.index', 'icon' => '🧑‍🤝‍🧑'],
@@ -86,10 +88,12 @@
                     ['name' => 'Indicadores financieros', 'hint' => 'Rentabilidad, cartera e inventario', 'route' => 'financial-dashboard.index', 'icon' => '📈'],
                     ['name' => 'Costos y márgenes', 'hint' => 'Costo promedio y precio sugerido', 'route' => 'costs.index', 'icon' => '💹'],
                     ['name' => 'Punto de venta', 'hint' => 'Ventas rápidas (POS)', 'route' => 'pos.index', 'icon' => '🛒'],
-                    ['name' => 'Cotizaciones', 'hint' => 'Ofertas a clientes', 'route' => 'commercial-documents.quotations', 'icon' => '📝'],
-                    ['name' => 'Órdenes de venta', 'hint' => 'Pedidos confirmados', 'route' => 'commercial-documents.sales-orders', 'icon' => '🗂️'],
-                    ['name' => 'Remisiones', 'hint' => 'Entregas sin factura', 'route' => 'commercial-documents.remissions', 'icon' => '📦'],
-                    ['name' => 'Órdenes de compra', 'hint' => 'Pedidos a proveedores', 'route' => 'commercial-documents.purchase-orders', 'icon' => '📋'],
+                    ['name' => 'Documentos comerciales', 'hint' => 'Cotizaciones, órdenes y remisiones', 'keywords' => 'cotizaciones ordenes de venta remisiones ordenes de compra pedidos', 'icon' => '📝', 'links' => [
+                        ['name' => 'Cotizaciones', 'route' => 'commercial-documents.quotations'],
+                        ['name' => 'Órdenes de venta', 'route' => 'commercial-documents.sales-orders'],
+                        ['name' => 'Remisiones', 'route' => 'commercial-documents.remissions'],
+                        ['name' => 'Órdenes de compra', 'route' => 'commercial-documents.purchase-orders'],
+                    ]],
                     ['name' => 'Arqueo de caja', 'hint' => 'Cuadre de caja general y menor', 'route' => 'cash-register.index', 'icon' => '🧾'],
                     ['name' => 'TRM y monedas', 'hint' => 'Tasas de cambio y conversor', 'route' => 'currency.index', 'icon' => '💱'],
                     ['name' => 'Borradores de impuestos', 'hint' => 'Renta, retención, IVA e ICA', 'route' => 'tax-drafts.index', 'icon' => '🧮'],
@@ -98,13 +102,31 @@
 
             <div id="modules-grid" class="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
                 @foreach($modules as $module)
-                    <a href="{{ route($module['route']) }}" data-module-name="{{ $module['name'].' '.$module['hint'].' '.($module['keywords'] ?? '') }}" class="flex items-center gap-4 rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-md">
-                        <div class="text-3xl">{{ $module['icon'] }}</div>
-                        <div>
-                            <h3 class="font-bold text-[#192522]">{{ $module['name'] }}</h3>
-                            <p class="text-xs text-[#8b9992]">{{ $module['hint'] }}</p>
-                        </div>
-                    </a>
+                    @if (isset($module['links']))
+                        <details data-module-name="{{ $module['name'].' '.$module['hint'].' '.($module['keywords'] ?? '') }}" class="rounded-lg border border-[#d7dfd8] bg-white shadow-sm">
+                            <summary class="flex cursor-pointer items-center gap-4 p-5">
+                                <span class="text-3xl">{{ $module['icon'] }}</span>
+                                <span>
+                                    <span class="block font-bold text-[#192522]">{{ $module['name'] }}</span>
+                                    <span class="block text-xs text-[#71807a]">{{ $module['hint'] }}</span>
+                                </span>
+                                <span aria-hidden="true" class="ml-auto text-[#71807a]">▾</span>
+                            </summary>
+                            <div class="grid gap-1 border-t border-[#e6ede8] p-3">
+                                @foreach ($module['links'] as $link)
+                                    <a href="{{ route($link['route']) }}" class="rounded-md px-2 py-2 text-sm font-semibold text-[#227c70] hover:bg-[#f3f5f1]">{{ $link['name'] }}</a>
+                                @endforeach
+                            </div>
+                        </details>
+                    @else
+                        <a href="{{ route($module['route']) }}" data-module-name="{{ $module['name'].' '.$module['hint'].' '.($module['keywords'] ?? '') }}" class="flex items-center gap-4 rounded-2xl border border-[#d7dfd8] bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-md">
+                            <div class="text-3xl">{{ $module['icon'] }}</div>
+                            <div>
+                                <h3 class="font-bold text-[#192522]">{{ $module['name'] }}</h3>
+                                <p class="text-xs text-[#8b9992]">{{ $module['hint'] }}</p>
+                            </div>
+                        </a>
+                    @endif
                 @endforeach
             </div>
             <p id="modules-empty" class="mt-6 hidden text-sm text-[#71807a]">Ningún módulo coincide con tu búsqueda.</p>

@@ -43,6 +43,17 @@ class LogisticsControllerTest extends TestCase
         $this->assertDatabaseHas('delivery_routes', ['code' => 'RUTA-001']);
     }
 
+    public function test_route_page_displays_planning_errors(): void
+    {
+        $this->authenticateWithCompany();
+        $route = $this->createRoute();
+
+        $this->withSession(['error' => 'No hay paradas para planificar.'])
+            ->get(route('logistics.show', $route))
+            ->assertOk()
+            ->assertSeeText('No hay paradas para planificar.');
+    }
+
     public function test_route_page_lists_unassigned_invoices_and_can_add_one_to_the_batch(): void
     {
         $this->authenticateWithCompany();

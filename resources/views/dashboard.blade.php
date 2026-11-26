@@ -19,17 +19,26 @@
 
                 <!-- 2. Buscador Comercial Directo (Consecutivos) -->
                 <div class="flex flex-col gap-2 sm:flex-row sm:items-center bg-[#f3f5f1] p-1.5 rounded-xl border border-[#d7dfd8]">
-                    <input id="consecutivo_directo_dashboard" type="text" placeholder="Pegar consecutivo aquí..." class="w-full sm:w-40 rounded-lg border-0 bg-white py-1.5 px-3 text-sm text-[#192522] placeholder:text-[#8b9992] focus:ring-2 focus:ring-[#227c70]">
-                    
-                    <select id="tipo_comprobante_directo_dashboard" class="rounded-lg border-0 bg-white py-1.5 pl-3 pr-8 text-sm font-bold text-[#227c70] focus:ring-2 focus:ring-[#227c70]">
+                    <select id="tipo_comprobante_directo_dashboard" aria-label="Tipo de comprobante" class="w-full rounded-lg border-0 bg-white py-1.5 pl-3 pr-8 text-sm font-bold text-[#227c70] focus:ring-2 focus:ring-[#227c70] sm:w-52">
                         <option value="">Seleccione tipo...</option>
-                        <option value="venta_factura">Venta (Factura)</option>
-                        <option value="compra_factura">Compra (Factura)</option>
-                        <option value="documento_soporte">Documento soporte</option>
-                        <option value="nomina_periodo">Nómina (Periodo)</option>
-                        <option value="comprobante_contable">Comprobante contable</option>
+                        <option value="sale">Factura de venta</option>
+                        <option value="purchase">Factura de compra</option>
+                        <option value="pos">Factura de punto de venta</option>
+                        <option value="voucher">Comprobante contable</option>
+                        <option value="egreso">Egreso</option>
+                        <option value="recibo_caja">Recibo de caja</option>
+                        <option value="closing">Cierre</option>
+                        <option value="third_party">Terceros</option>
+                        <option value="customer_credit_note">Nota crédito clientes</option>
+                        <option value="customer_debit_note">Nota débito clientes</option>
+                        <option value="supplier_credit_note">Nota crédito proveedores</option>
+                        <option value="supplier_debit_note">Nota débito proveedores</option>
+                        <option value="support_document">Documento soporte</option>
+                        <option value="payroll">Nómina (periodo)</option>
+                        <option value="social_security">Seguridad social</option>
                     </select>
 
+                    <input id="consecutivo_directo_dashboard" type="text" aria-label="Consecutivo o identificación" placeholder="Consecutivo" class="w-full sm:w-40 rounded-lg border-0 bg-white py-1.5 px-3 text-sm text-[#192522] placeholder:text-[#8b9992] focus:ring-2 focus:ring-[#227c70]">
                     <button type="button" id="btn_buscar_comercial_dashboard" class="rounded-lg bg-[#227c70] px-4 py-1.5 text-sm font-bold text-white hover:bg-[#1a5f55] transition">Buscar</button>
                 </div>
                 <p id="mensaje_busqueda_comercial" class="hidden w-full text-xs font-bold sm:w-auto"></p>
@@ -147,16 +156,6 @@
         const btnBuscar = document.getElementById('btn_buscar_comercial_dashboard');
         const mensaje = document.getElementById('mensaje_busqueda_comercial');
 
-        // El <select> usa claves en español; el backend (DocumentLookupController::MODULES)
-        // espera estas otras claves.
-        const mapaTipos = {
-            venta_factura: 'sale',
-            compra_factura: 'purchase',
-            documento_soporte: 'support_document',
-            nomina_periodo: 'payroll',
-            comprobante_contable: 'voucher',
-        };
-
         function mostrarMensaje(texto, tipo) {
             mensaje.textContent = texto;
             mensaje.classList.remove('hidden', 'text-[#b91c1c]', 'text-[#227c70]');
@@ -179,13 +178,12 @@
                 return;
             }
 
-            const modulo = mapaTipos[tipoSeleccionado];
             btnBuscar.disabled = true;
             btnBuscar.innerText = 'Buscando...';
             mensaje.classList.add('hidden');
 
             const url = new URL('{{ route('documents.lookup') }}', window.location.origin);
-            url.searchParams.set('module', modulo);
+            url.searchParams.set('module', tipoSeleccionado);
             url.searchParams.set('consecutive', consecutivo);
 
             fetch(url, {
@@ -222,6 +220,12 @@
         }
 
         btnBuscar.addEventListener('click', ejecutarBusqueda);
+        selectTipo.addEventListener('change', () => {
+            inputConsecutivo.placeholder = selectTipo.value === 'third_party'
+                ? 'Nombre o documento'
+                : (['closing', 'payroll', 'social_security'].includes(selectTipo.value) ? 'Periodo o consecutivo' : 'Consecutivo');
+            mensaje.classList.add('hidden');
+        });
         inputConsecutivo.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') ejecutarBusqueda();
         });

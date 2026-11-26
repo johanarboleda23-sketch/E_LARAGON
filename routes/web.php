@@ -24,6 +24,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PurchaseController;
 use App\Http\Controllers\RegulationController;
 use App\Http\Controllers\ReportController;
+use App\Http\Controllers\RetentionCertificateController;
 use App\Http\Controllers\SaleController;
 use App\Http\Controllers\SupportDocumentController;
 use App\Http\Controllers\TaxDraftController;
@@ -84,6 +85,15 @@ Route::middleware(['auth', 'company'])->group(function () {
     Route::get('/reportes', [ReportController::class, 'index'])->name('reports.index');
     Route::get('/reportes/excel', [ReportController::class, 'excel'])->name('reports.excel');
     Route::get('/reportes/pdf', [ReportController::class, 'pdf'])->name('reports.pdf');
+    Route::get('/reportes/certificados-retencion/{certificate}/editar', [RetentionCertificateController::class, 'edit'])->name('retention-certificates.edit');
+    Route::get('/reportes/certificados-retencion/{certificate}/descargar', [RetentionCertificateController::class, 'download'])->name('retention-certificates.download');
+    Route::middleware('module:reports')->group(function () {
+        Route::post('/reportes/certificados-retencion/generar', [RetentionCertificateController::class, 'generate'])->name('retention-certificates.generate');
+        Route::patch('/reportes/certificados-retencion/{certificate}', [RetentionCertificateController::class, 'update'])->name('retention-certificates.update');
+        Route::post('/reportes/certificados-retencion/{certificate}/enviar', [RetentionCertificateController::class, 'send'])->name('retention-certificates.send');
+        Route::post('/reportes/certificados-retencion/enviar-todos', [RetentionCertificateController::class, 'sendAll'])->name('retention-certificates.send-all');
+        Route::delete('/reportes/certificados-retencion/{certificate}', [RetentionCertificateController::class, 'destroy'])->name('retention-certificates.destroy');
+    });
     Route::get('/indicadores-financieros', [FinancialDashboardController::class, 'index'])->name('financial-dashboard.index');
     Route::get('/normativa', [RegulationController::class, 'index'])->name('regulations.index');
     Route::get('/impuestos', [TaxDraftController::class, 'index'])->name('tax-drafts.index');

@@ -3,10 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Models\AccountingVoucherLine;
+use App\Models\ChartOfAccount;
 use App\Models\CommercialDocument;
 use App\Models\PaymentMethod;
 use App\Models\PayrollRun;
 use App\Models\Purchase;
+use App\Models\RetentionCertificate;
 use App\Models\Sale;
 use App\Models\SupportDocument;
 use Illuminate\Http\Request;
@@ -111,6 +113,17 @@ class ReportController extends Controller
     {
         $report = $this->data($request);
         $report['cashAndBanks'] = $this->cashAndBankBalances();
+        $validated = $request->validate(['retention_year' => ['nullable', 'integer', 'min:2000', 'max:2100']]);
+        $report['retentionYear'] = (int) ($validated['retention_year'] ?? now()->year);
+        $report['retentionCertificates'] = RetentionCertificate::query()
+            ->where('taxable_year', $report['retentionYear'])
+            ->with('thirdParty')
+            ->latest('id')
+            ->get();
+        $report['retentionAccounts'] = ChartOfAccount::query()
+            ->where('allows_posting', true)
+            ->orderBy('code')
+            ->get(['id', 'code', 'name']);
 
         return view('reports.index', $report);
     }

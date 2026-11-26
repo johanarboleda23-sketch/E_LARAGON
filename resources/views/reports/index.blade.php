@@ -8,6 +8,12 @@
 
 	<div class="min-h-screen bg-gray-50 p-5">
 		<div class="mx-auto max-w-7xl rounded-xl bg-white p-5 shadow-sm">
+			@if (session('success'))
+				<div role="status" class="mb-4 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{{ session('success') }}</div>
+			@endif
+			@if (session('error'))
+				<div role="alert" class="mb-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">{{ session('error') }}</div>
+			@endif
 			<form method="GET" action="{{ route('reports.index') }}" class="grid gap-3 md:grid-cols-4">
 				<div>
 					<label class="mb-1 block text-xs font-semibold">Desde</label>
@@ -60,6 +66,63 @@
 				<a href="{{ route('reports.excel', request()->query()) }}" class="rounded bg-emerald-600 px-3 py-2 text-xs font-bold text-white">⇩ Descargar Excel</a>
 				<a href="{{ route('reports.pdf', request()->query()) }}" target="_blank" class="rounded bg-red-600 px-3 py-2 text-xs font-bold text-white">▣ Ver / guardar PDF</a>
 			</div>
+
+			<section class="mt-6 rounded-2xl border border-[#d7dfd8] bg-[#f8faf8] p-5" aria-labelledby="retention-certificates-title">
+				<div class="flex flex-wrap items-end justify-between gap-4">
+					<div>
+						<p class="text-[10px] font-bold uppercase tracking-[0.18em] text-[#227c70]">Gestión tributaria</p>
+						<h3 id="retention-certificates-title" class="mt-1 text-lg font-black text-[#192522]">Certificados de retención</h3>
+						<p class="mt-1 max-w-3xl text-xs leading-relaxed text-[#71807a]">Selecciona las cuentas de retención aplicables a cada tipo de documento. Los valores incluyen reversos contables.</p>
+						<p class="mt-1 text-xs text-[#b65338]">Los terceros se identifican por nombre en el comprobante. Revisa destinatarios y valores antes de enviar.</p>
+					</div>
+					<form method="GET" action="{{ route('reports.index') }}" class="flex items-end gap-2">
+						<label class="grid gap-1 text-xs font-bold text-[#52635b]">Año gravable
+							<input name="retention_year" type="number" min="2000" max="2100" value="{{ $retentionYear }}" class="w-32 rounded-lg border-[#cbd6cf] text-sm" required>
+						</label>
+						<button class="rounded-lg border border-[#227c70] px-4 py-2.5 text-xs font-bold text-[#227c70]">Consultar año</button>
+					</form>
+				</div>
+				<div class="mt-4 flex flex-wrap gap-2">
+					<form id="retention-customer-form" method="POST" action="{{ route('retention-certificates.generate') }}" class="grid gap-2">
+						@csrf <input type="hidden" name="kind" value="customer"><input type="hidden" name="taxable_year" value="{{ $retentionYear }}">
+						<label class="grid gap-1 text-xs font-bold text-[#52635b]">Cuentas para certificados a clientes
+							<select name="account_ids[]" multiple required class="h-28 min-w-64 rounded-lg border-[#cbd6cf] text-sm">
+								@foreach ($retentionAccounts as $account)<option value="{{ $account->id }}">{{ $account->code }} | {{ $account->name }}</option>@endforeach
+							</select>
+						</label>
+						<button class="rounded-lg bg-[#227c70] px-4 py-2.5 text-xs font-bold text-white">Generar certificados a clientes</button>
+					</form>
+					<form method="POST" action="{{ route('retention-certificates.generate') }}" class="grid gap-2">
+						@csrf <input type="hidden" name="kind" value="supplier"><input type="hidden" name="taxable_year" value="{{ $retentionYear }}">
+						<label class="grid gap-1 text-xs font-bold text-[#52635b]">Cuentas para solicitudes a proveedores
+							<select name="account_ids[]" multiple required class="h-28 min-w-64 rounded-lg border-[#cbd6cf] text-sm">
+								@foreach ($retentionAccounts as $account)<option value="{{ $account->id }}">{{ $account->code }} | {{ $account->name }}</option>@endforeach
+							</select>
+						</label>
+						<button class="rounded-lg border border-[#227c70] px-4 py-2.5 text-xs font-bold text-[#227c70]">Generar solicitudes a proveedores</button>
+					</form>
+					<form method="POST" action="{{ route('retention-certificates.send-all') }}" onsubmit="return confirm('¿Enviar los certificados pendientes a los clientes del año {{ $retentionYear }}?')">
+						@csrf <input type="hidden" name="kind" value="customer"><input type="hidden" name="taxable_year" value="{{ $retentionYear }}">
+						<button class="rounded-lg bg-[#192522] px-4 py-2.5 text-xs font-bold text-white">Enviar certificados a clientes</button>
+					</form>
+					<form method="POST" action="{{ route('retention-certificates.send-all') }}" onsubmit="return confirm('¿Enviar las solicitudes pendientes a los proveedores del año {{ $retentionYear }}?')">
+						@csrf <input type="hidden" name="kind" value="supplier"><input type="hidden" name="taxable_year" value="{{ $retentionYear }}">
+						<button class="rounded-lg border border-[#192522] px-4 py-2.5 text-xs font-bold text-[#192522]">Enviar solicitudes a proveedores</button>
+					</form>
+				</div>
+				<div class="mt-5 overflow-x-auto rounded-xl border border-[#d7dfd8] bg-white">
+					<table class="w-full min-w-[900px] text-left text-xs">
+						<thead class="bg-[#192522] uppercase tracking-wider text-white"><tr><th class="p-3">Tercero</th><th class="p-3">Tipo</th><th class="p-3">Correo</th><th class="p-3 text-right">Valor</th><th class="p-3">Estado</th><th class="p-3 text-right">Acciones</th></tr></thead>
+						<tbody class="divide-y divide-[#e6ede8]">
+							@forelse ($retentionCertificates as $certificate)
+								<tr><td class="p-3 font-bold text-[#192522]">{{ $certificate->third_party_name }}{{ $certificate->third_party_document ? ' · '.$certificate->third_party_document : '' }}</td><td class="p-3">{{ $certificate->kind === 'customer' ? 'Certificado cliente' : 'Solicitud proveedor' }}</td><td class="p-3 {{ blank($certificate->recipient_email) ? 'font-bold text-red-600' : 'text-[#52635b]' }}">{{ $certificate->recipient_email ?: 'Sin correo registrado' }}</td><td class="p-3 text-right font-bold text-[#227c70]">${{ number_format($certificate->total_amount, 2, ',', '.') }}</td><td class="p-3"><span class="rounded-full px-2 py-1 text-[10px] font-bold {{ $certificate->status === 'sent' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800' }}">{{ $certificate->status === 'sent' ? 'Enviado' : 'Borrador' }}</span></td><td class="p-3"><div class="flex justify-end gap-1"><a href="{{ route('retention-certificates.edit', $certificate) }}" class="rounded border border-[#d7dfd8] px-2 py-1 font-bold text-[#52635b]">Editar</a><a href="{{ route('retention-certificates.download', $certificate) }}" target="_blank" class="rounded border border-[#d7dfd8] px-2 py-1 font-bold text-[#227c70]">Descargar</a>@if($certificate->recipient_email)<form method="POST" action="{{ route('retention-certificates.send', $certificate) }}">@csrf<button class="rounded bg-[#227c70] px-2 py-1 font-bold text-white">Enviar</button></form>@endif<form method="POST" action="{{ route('retention-certificates.destroy', $certificate) }}" onsubmit="return confirm('¿Eliminar este registro?')">@csrf @method('DELETE')<button class="rounded border border-red-200 px-2 py-1 font-bold text-red-600">Eliminar</button></form></div></td></tr>
+							@empty
+								<tr><td colspan="6" class="p-6 text-center text-[#71807a]">Todavía no hay certificados generados para {{ $retentionYear }}.</td></tr>
+							@endforelse
+						</tbody>
+					</table>
+				</div>
+			</section>
 
 			@if (in_array($type, ['accounting', 'taxes'], true) && $rows->isNotEmpty())
 				<div class="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

@@ -9,8 +9,10 @@ use App\Models\Company;
 use App\Models\RetentionCertificate;
 use App\Models\ThirdParty;
 use App\Models\User;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 class RetentionCertificateControllerTest extends TestCase
@@ -154,6 +156,27 @@ class RetentionCertificateControllerTest extends TestCase
         $this->get(route('retention-certificates.download', $certificate))->assertNotFound();
         $this->delete(route('retention-certificates.destroy', $certificate))->assertNotFound();
         $this->assertDatabaseHas('retention_certificates', ['id' => $certificate->id]);
+    }
+
+    public function test_partial_migration_restores_indexes_without_deleting_existing_documents(): void
+    {
+        $company = $this->authenticateWithCompany();
+        $certificate = RetentionCertificate::create([
+            'company_id' => $company->id, 'taxable_year' => 2026, 'kind' => 'customer',
+            'third_party_name' => 'Cliente', 'subject' => 'Certificado', 'body' => 'Contenido',
+        ]);
+        Schema::table('retention_certificates', function (Blueprint $table): void {
+            $table->dropUnique('ret_cert_company_year_party_unique');
+            $table->dropIndex('ret_cert_company_year_kind_idx');
+        });
+
+        $migration = require database_path('migrations/2026_11_24_053511_create_retention_certificates_table.php');
+        $migration->up();
+        $migration->up();
+
+        $this->assertDatabaseHas('retention_certificates', ['id' => $certificate->id, 'body' => 'Contenido']);
+        $this->assertTrue(Schema::hasIndex('retention_certificates', ['company_id', 'taxable_year', 'kind', 'third_party_id'], 'unique'));
+        $this->assertTrue(Schema::hasIndex('retention_certificates', 'ret_cert_company_year_kind_idx'));
     }
 
     private function authenticateWithCompany(): Company

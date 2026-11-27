@@ -18,6 +18,7 @@
     </style>
 </head>
 <body>
+    @include('layouts.navigation', ['standalone' => true])
     <h1>Editar documento soporte</h1>
     <p class="hint">Al guardar, si ya estaba contabilizado se revierte el asiento anterior y se genera uno nuevo con los valores corregidos.</p>
     <form method="POST" action="{{ route('support-documents.update', $document) }}">

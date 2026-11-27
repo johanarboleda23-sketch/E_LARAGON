@@ -51,6 +51,7 @@
     </style>
 </head>
 <body>
+    @include('layouts.navigation', ['standalone' => true])
 
     <div class="form-container">
         @if(session('success'))<div style="padding:10px;background:#ecfdf5;color:#047857;margin-bottom:12px;border-radius:8px;font-weight:bold;font-size:12px;">{{ session('success') }}</div>@endif

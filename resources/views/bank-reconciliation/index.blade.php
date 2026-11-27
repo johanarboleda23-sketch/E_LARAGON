@@ -8,6 +8,7 @@
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body class="bg-slate-50 text-slate-800">
+@include('layouts.navigation', ['standalone' => true])
 <div class="mx-auto max-w-7xl px-6 py-8">
     <div class="flex flex-wrap items-center justify-between gap-4">
         <div>

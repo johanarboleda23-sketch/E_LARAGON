@@ -2,10 +2,12 @@
 <html lang="es">
 <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Operaciones masivas</title>
     @vite('resources/css/app.css')
 </head>
 <body class="bg-gray-50">
+@include('layouts.navigation', ['standalone' => true])
 <div class="mx-auto max-w-6xl px-6 py-8">
     <a href="{{ route('dashboard') }}" class="text-sm text-teal-700">&larr; Volver al tablero</a>
     <h1 class="mt-3 text-2xl font-bold text-gray-900">Operaciones masivas</h1>

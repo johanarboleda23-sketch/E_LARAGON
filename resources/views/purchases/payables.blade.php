@@ -18,6 +18,7 @@
     </style>
 </head>
 <body>
+    @include('layouts.navigation', ['standalone' => true])
     <header>
         <div>
             <p style="color:#6b7280;margin:0 0 2px;">Cuentas por pagar · Por proveedor</p>

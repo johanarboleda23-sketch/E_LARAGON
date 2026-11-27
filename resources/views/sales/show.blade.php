@@ -9,6 +9,7 @@
     </style>
 </head>
 <body>
+    @include('layouts.navigation', ['standalone' => true])
     @if(session('success'))<div style="padding:10px;background:#ecfdf5;color:#047857;margin-bottom:14px;border-radius:6px;font-weight:bold;">{{ session('success') }}</div>@endif
     <div class="actions">
         @if($sale->factus_status !== 'enviada')

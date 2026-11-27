@@ -30,6 +30,7 @@
     </style>
 </head>
 <body>
+@include('layouts.navigation', ['standalone' => true])
     <div class="form-container">
         @if(session('success'))<div class="alert">{{ session('success') }}</div>@endif
         <div class="alert-warn">⚠ Al guardar, se revierte el stock y la contabilización anteriores de esta factura y se vuelven a calcular con los datos nuevos.</div>

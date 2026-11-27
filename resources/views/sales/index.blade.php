@@ -11,6 +11,7 @@
     </style>
 </head>
 <body>
+@include('layouts.navigation', ['standalone' => true])
 <div class="sale-shell">
     @if(session('success'))<div style="padding:8px;background:#ecfdf5;color:#047857;margin-bottom:10px;">{{ session('success') }}</div>@endif
     @if($selectedSale)

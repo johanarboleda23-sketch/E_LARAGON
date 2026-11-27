@@ -54,4 +54,42 @@ class DashboardTest extends TestCase
             ->assertSee('Buscar módulo, acción o tercero...')
             ->assertSee(route('third-parties.search'));
     }
+
+    public function test_authenticated_users_can_access_main_modules_from_shared_and_standalone_pages(): void
+    {
+        $company = Company::factory()->create();
+        $user = User::factory()->create();
+        $user->companies()->attach($company->id, ['role' => 'consulta']);
+        $this->actingAs($user)->withSession(['company_id' => $company->id]);
+
+        foreach (['dashboard', 'sales.index', 'purchases.index', 'bank-reconciliation.index', 'bulk-operations.index', 'cash-register.index', 'reports.index'] as $pageRoute) {
+            $this->get(route($pageRoute))
+                ->assertOk()
+                ->assertSee('aria-label="Navegación principal"', false)
+                ->assertSee(route('sales.index'))
+                ->assertSee(route('purchases.index'))
+                ->assertSee(route('cash-register.index'))
+                ->assertSee(route('reports.index'));
+        }
+    }
+
+    public function test_guest_navigation_does_not_expose_module_menu(): void
+    {
+        $this->get(route('dashboard'))
+            ->assertOk()
+            ->assertDontSee('aria-label="Accesos a módulos"', false);
+    }
+
+    public function test_standalone_navigation_shows_administration_only_to_administrators(): void
+    {
+        $company = Company::factory()->create();
+        $user = User::factory()->create();
+        $user->companies()->attach($company->id, ['role' => 'consulta']);
+        $this->actingAs($user)->withSession(['company_id' => $company->id]);
+
+        $this->get(route('sales.index'))->assertOk()->assertDontSee(route('admin.index'));
+
+        $user->companies()->updateExistingPivot($company->id, ['role' => 'admin']);
+        $this->get(route('sales.index'))->assertOk()->assertSee(route('admin.index'));
+    }
 }
